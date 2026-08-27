@@ -1,7 +1,8 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: planning complete, ready to build
+status: Phase 1 (ingestion) complete — repo live, Phase 2 (SQLite schema) next
 last updated: 2026-08-27
+repo: https://github.com/egilq137/spain-trials-landscape
 ---
 
 # Portfolio Project Spec: Clinical Data Science (Madrid job search)
@@ -54,9 +55,11 @@ some details from the official PDF manual, see quirks below):
    but the manual states the constraint explicitly).
 
 3. `https://reec.aemps.es/reec-services/json/detalle/{identificador}` — per-study
-   detail lookup by EudraCT code or CodigoGESTO (documented, not yet tested;
-   probably unnecessary since endpoints 1–2 already return full records including
-   the `calendario` date block).
+   detail lookup by EudraCT code or CodigoGESTO. Documented, not yet tested live.
+   **Update:** confirmed via the manual (see below) that this is NOT redundant with
+   1–2 — it's the only source of phase, purpose, population, and
+   disease/indication data. In scope, deferred to a later build-plan phase; see
+   the decision note below.
 
 4. `https://reec.aemps.es/reec-services/json/hospitales[/{codigo}]` and
    `.../centros[/{codigo}]` — hospital / primary care center directories
@@ -174,17 +177,35 @@ quality problem — confirmed by the mature 2019 cohort showing strong fill rate
 - **Dashboard:** Streamlit, deployed on Streamlit Community Cloud (free, gives a
   live link)
 - **Version control:** Git/GitHub, real incremental commit history (not one dump
-  commit — this is explicitly flagged as a portfolio red flag)
+  commit — this is explicitly flagged as a portfolio red flag). Live at
+  https://github.com/egilq137/spain-trials-landscape (public, created and pushed
+  during Phase 1).
+- **Testing:** every new function gets unit tests with mocked I/O (no live network
+  calls in the automated suite) — success criteria stated up front, ordinary +
+  edge cases covered, not just the happy path. Adopted from Phase 1 onward
+  (`tests/`, stdlib `unittest.mock`, no `pytest` dependency added since stdlib
+  sufficed).
 
 ### 3.5 Pipeline architecture
 
-1. **Ingestion** — loop year-by-year (respecting the ~1-year range cap), calling
-   `getestudios`/`estudios` endpoints, caching raw JSON locally to avoid
-   re-hitting the API on every run.
+1. **Ingestion** (built — `ingestion/`) — two distinct fetch functions, matching
+   two distinct real needs rather than one function reused two ways:
+   - `fetch_year()` (`estudios` endpoint, bounded ~1yr range) — the one-time
+     historical backfill, looped year-by-year via `run_backfill()` in
+     `ingestion/backfill.py`, which skips years already cached.
+   - `fetch_since()` (`getestudios` endpoint, unbounded "since date") — reserved
+     for incremental refreshes after the backfill (not wired up yet; no
+     scheduled/periodic run exists yet, just the function).
+   `ingestion/cache.py` handles JSON persistence to `data/raw/{year}.json`
+   (`raw_dir` passed as an argument, not a module-level global, so each piece
+   stays independently testable). The backfill is runnable directly —
+   `python -m ingestion.backfill [--start-year N] [--end-year N]` — not just
+   importable, so it can be re-run manually without relying on ad-hoc commands.
 2. **Transformation** — parse raw JSON into the relational schema; standardize
    date parsing (handling the two different formats); flag/derive censoring
-   status per study.
+   status per study. Not started (Phase 2).
 3. **Analysis & dashboard** — the exploratory notebooks feed the Streamlit app.
+   Not started.
 
 ### 3.6 Finish line — definition of done
 
