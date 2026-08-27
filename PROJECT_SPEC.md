@@ -179,16 +179,22 @@ quality problem — confirmed by the mature 2019 cohort showing strong fill rate
 Working in small steps on purpose: every phase ends with something concrete to
 look at (a chart, a query result, a running app) before moving to the next.
 
-### Phase 0 — Scaffolding (no logic yet)
-- [ ] Create folder structure (`ingestion/`, `db/`, `analysis/`, `app/`),
+### Phase 0 — Scaffolding (no logic yet) — done
+- [x] Create folder structure (`ingestion/`, `db/`, `analysis/`, `app/`),
       `run_pipeline.py` stub, `requirements.txt`
-- [ ] `git init` + first commit
+- [x] `git init` + first commit
 - Verify: `git log` shows one clean init commit; folders exist.
 
 ### Phase 1 — Ingestion
-- [ ] Minimal fetch against `getestudios/{fecha}` for a short window (e.g. last
+- [x] Minimal fetch against `getestudios/{fecha}` for a short window (e.g. last
       30 days) — small payload, fast to iterate on
-- Verify: inspect raw JSON for 1–2 studies, confirm fields match §3.2
+- Verify: inspect raw JSON for 1–2 studies, confirm fields match §3.2 — done,
+  fields match exactly. Noted for Phase 2 schema: `centros`/`intervenciones`
+  nest one level deeper (`.centro[]` / `.intervencion[]`), and flags like
+  `enfermedadRara`/`huerfano` are string `"0"`/`"1"`, not booleans. Also found:
+  registry data starts at 2017 (0 records 2011–2016; 2017 has an unusually
+  large 3,304-record count, likely a one-time backlog from RD 1090/2015 making
+  REEC mandatory, not organic trial volume).
 - [ ] Extend to full year-by-year loop (respecting ~1-year range cap), caching
       raw JSON locally
 - Verify: cached files on disk, one per year, spot-check record counts
