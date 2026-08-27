@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — repo live, Phase 2 (SQLite schema) next
+status: Phase 1.3 built and verified — detail backfill running in sittings; Phase 2 (SQLite schema) next
 last updated: 2026-08-27
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
@@ -55,11 +55,11 @@ some details from the official PDF manual, see quirks below):
    but the manual states the constraint explicitly).
 
 3. `https://reec.aemps.es/reec-services/json/detalle/{identificador}` — per-study
-   detail lookup by EudraCT code or CodigoGESTO. Documented, not yet tested live.
-   **Update:** confirmed via the manual (see below) that this is NOT redundant with
-   1–2 — it's the only source of phase, purpose, population, and
-   disease/indication data. In scope, deferred to a later build-plan phase; see
-   the decision note below.
+   detail lookup by EudraCT code or CodigoGESTO. **Confirmed working live** (Phase
+   1.3). Not redundant with 1–2 — it's the only source of phase, purpose,
+   population, and disease/indication data. ~23KB per study, ~0.2s response with
+   connection reuse. Works for both id formats: legacy EudraCT (`2019-000302-29`)
+   and CTIS-era (`2023-506669-70-00`), with all blocks populated in both.
 
 4. `https://reec.aemps.es/reec-services/json/hospitales[/{codigo}]` and
    `.../centros[/{codigo}]` — hospital / primary care center directories
@@ -80,8 +80,8 @@ indication/disease info are **only** available via the `detalle/{identificador}`
 endpoint (§4.5–4.6 of the manual) — not on the list endpoints (`getestudios`/`estudios`)
 Phase 1's ingestion is built on. This data is valuable enough (phase, population,
 disease type feed multiple analysis questions in §3.3) that we're committing to
-fetching it, not just the list-level data. Implications, tracked as Phase 1.3 in
-Section 4 (not designed/built yet):
+fetching it, not just the list-level data. Implications, addressed by Phase 1.3
+in Section 4 (built and verified; the backfill itself runs in sittings):
 - **Sequencing:** detail fetch depends on `identificador` values that only exist after
   list ingestion runs — so it's necessarily a later phase, not a replacement for it.
 - **Scale:** ~1 call per study (thousands total) vs. ~1 call per year for the list
@@ -93,6 +93,13 @@ Section 4 (not designed/built yet):
   mind rather than list-only and retrofitted later.
 
 **Known quirks to handle in the ingestion script:**
+- **`detalle` returns HTTP 200 for a study that doesn't exist**, with the
+  plain-text body `El ensayo no existe en el sistema` under a
+  `Content-Type: application/json` header — not a 404, and not parseable JSON.
+  Undocumented; found by probing. Failure handling therefore cannot key off
+  status codes: parse the body, and match the sentinel by equality after
+  stripping (not `in`, or a real record quoting that phrase in a free-text field
+  would be silently discarded).
 - Two different date formats across endpoints (dashes vs slashes) — do not
   assume consistency.
 - Query param names are lowercase and unforgiving (`fechadesde` failed silently
@@ -142,6 +149,40 @@ quality problem — confirmed by the mature 2019 cohort showing strong fill rate
   Right-censor at data-extraction date for any study without a real end date.
 - `fechaFinPrematuro` (~26% of mature cohort) is a genuine bonus signal — model
   as a distinct event type or covariate rather than discarding it.
+
+### 3.2b Detail record schema (`detalle/{identificador}`, confirmed live)
+
+Blocks beyond what the list endpoints return (~23KB/study):
+
+| Block | Content |
+|---|---|
+| `proposito` | 24 int 0/1 flags: **`faseUno`–`faseCuatro`**, plus purpose (`tratamiento`, `diagnostico`, `profilaxis`), objective (`seguridad`, `eficacia`, `farmacocinetica`, `bioequivalencia`…) and data-source flags |
+| `poblacion` | 19 int flags: `pacientes`, `voluntariossanos`, `pobvulnerable`, age bands (`ninos`, `adultos`, `ancianos`…), plus **`total`** (planned participants) |
+| `areasTerapeuticas.area[]` | **coded** therapeutic area: `eutct` id + `nombre_es`/`nombre_en`, e.g. "Diseases [C] - Cardiovascular Diseases [C14]". Not mentioned in the manual's field list; this is the therapeutic-landscape analysis and it needs no text mining |
+| `organismo` | sponsor + **`financiador`** (funder — useful for industry vs. academic), plus contact `mail`/`telefono`/`personaContacto` |
+| `informacion` | 22 free-text fields ×2 languages (titles, indications, inclusion/exclusion criteria, endpoints). ~80% of the payload bytes; feeds no §3.3 question |
+| `centros`, `intervenciones` | richer than the list version (`atcs`, `sustancias`, `formaFarmaceutica`) |
+| `calendario` | identical to the list endpoint — useful as a consistency check |
+
+**Design decisions from this pilot:**
+- **Phase is not mutually exclusive.** `faseDos` and `faseTres` are both `1` on
+  combined-phase trials (seen live). The Phase 2 schema must keep four boolean
+  columns or a derived label that can express "II/III" — a single `phase` enum
+  would silently mangle them.
+- **Keep the whole response** in the raw cache, `informacion` included: refetching
+  costs ~4 hours of API calls, re-parsing costs seconds. Field selection is a
+  Phase 2 transform concern, not an ingestion concern.
+- **Drop the sponsor contact fields at Phase 2** — `mail`/`telefono`/
+  `personaContacto` are named individuals' details. Public by mandate, so caching
+  them locally (gitignored) is fine, but they must not reach the DB or the
+  deployed dashboard. Covered in the README's privacy/limitations section.
+- **`poblacion.total` looks right-censored like the `calendario` fields** — 0 on
+  4 of 5 sampled 2026 trials, 654/20 on older ones. Measure its fill rate on a
+  mature cohort (2019) before relying on it.
+- Year in `data/raw/detalle/{year}.jsonl` means "which list file the study came
+  from", **not** the trial's own year — `2026.json` contains ids prefixed
+  `2024-`/`2025-`. Phase 2 should derive any year column from
+  `fechaAutorizacionAEMPS`, not from the filename.
 
 ### 3.3 Analysis questions / insights to extract
 
@@ -258,19 +299,38 @@ look at (a chart, a query result, a running app) before moving to the next.
   mocked (no live network in the test suite). Runnable directly:
   `python -m ingestion.backfill [--start-year N] [--end-year N]`.
 
-**1.3 — Detail-endpoint enrichment (deferred until now, see §3.1)**
-- [ ] Fetch `detalle/{identificador}` for every study collected in 1.2, to get
-      phase (`FaseUno`–`FaseCuatro`), purpose flags, population/participant
-      totals, and disease/indication — data the list endpoints don't have
-- [ ] Its own caching strategy (per-study files or a single indexed store —
-      not yet decided) and a politeness delay between calls, given the scale
-      (~1 call per study, thousands total, vs. ~10 for the list loop — the N+1
-      pattern already flagged in §3.1)
-- [ ] Runnable directly, same pattern as 1.2 (`python -m ingestion.<module>`)
-- Verify: spot-check a handful of fetched detail records against what's visible
-  on the REEC website for the same study ID; confirm phase/population fields
-  are populated at a fill rate consistent with what §3.2 found for the
-  calendario fields (i.e. not silently empty/broken)
+**1.3 — Detail-endpoint enrichment (see §3.1, §3.2b)**
+- [x] `ingestion/detail.py` — fetches `detalle/{identificador}` for every study
+      collected in 1.2, giving phase, purpose flags, population totals and coded
+      therapeutic area. Schema in §3.2b.
+- [x] Caching + politeness, given the N+1 scale (11,847 studies, ~1 call each,
+      vs. ~10 calls for the whole list loop):
+      - append-per-record to `data/raw/detalle/{year}.jsonl`, so an interrupted
+        run loses at most the study in flight
+      - **resume by study id**, not by year: a re-run diffs the list cache
+        against what's on disk, so the same zero-argument command does the next
+        chunk of work each time (state lives on disk, not in the command)
+      - failures to a `{year}.failures.jsonl` sidecar, splitting expected data
+        issues (study not in registry) from real failures (error page, network)
+        via distinct exception types per CLAUDE.md §5
+      - fixed 1s delay, sequential, single connection; abort after 5 consecutive
+        unexpected failures rather than hammering a service that's unhappy
+      - each run stops at the year boundary or the time budget (default 60 min),
+        whichever comes first, so a partial run always leaves a year either
+        complete or cleanly partial — never silently half-analysed
+- [x] Runnable directly: `python -m ingestion.detail`
+      `[--max-minutes N] [--year N] [--limit N] [--continue-past-year] [--status]`
+- [x] Verify: 51 unit tests (all mocked, no live network in the suite); happy
+      path, resume-without-duplicates, and the not-found sentinel additionally
+      confirmed against the live endpoint. `--status` reports per-year coverage
+      (listed / fetched / failed / pending) so partial ingestion can't be
+      mistaken for complete data in Phase 2.
+- [ ] Run to completion — ~3.9h total, newest year first, in ≤1h sittings
+      (~10 sessions). Still to check once a mature year lands: `poblacion.total`
+      fill rate (§3.2b), and a spot-check of a few records against the REEC
+      website.
+- Deliberately not built: `--retry-failures` (no real failures observed yet —
+  build it once we know what they look like rather than guessing).
 
 ### Phase 2 — Transformation + SQLite schema
 - [ ] Design normalized schema (studies, sponsors, interventions, centers,
