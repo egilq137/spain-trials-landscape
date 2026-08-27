@@ -80,8 +80,8 @@ indication/disease info are **only** available via the `detalle/{identificador}`
 endpoint (§4.5–4.6 of the manual) — not on the list endpoints (`getestudios`/`estudios`)
 Phase 1's ingestion is built on. This data is valuable enough (phase, population,
 disease type feed multiple analysis questions in §3.3) that we're committing to
-fetching it, not just the list-level data. Implications, to be handled as their own
-build-plan step (Section 4) once list ingestion is proven out — not designed yet:
+fetching it, not just the list-level data. Implications, tracked as Phase 1.3 in
+Section 4 (not designed/built yet):
 - **Sequencing:** detail fetch depends on `identificador` values that only exist after
   list ingestion runs — so it's necessarily a later phase, not a replacement for it.
 - **Scale:** ~1 call per study (thousands total) vs. ~1 call per year for the list
@@ -234,6 +234,8 @@ look at (a chart, a query result, a running app) before moving to the next.
 - Verify: `git log` shows one clean init commit; folders exist.
 
 ### Phase 1 — Ingestion
+
+**1.1 — Minimal fetch, verify shape**
 - [x] Minimal fetch against `getestudios/{fecha}` for a short window (e.g. last
       30 days) — small payload, fast to iterate on
 - Verify: inspect raw JSON for 1–2 studies, confirm fields match §3.2 — done,
@@ -243,6 +245,7 @@ look at (a chart, a query result, a running app) before moving to the next.
   registry data starts at 2017 (0 records 2011–2016; 2017 has an unusually
   large 3,304-record count, likely a one-time backlog from RD 1090/2015 making
   REEC mandatory, not organic trial volume).
+**1.2 — Full historical backfill (list endpoint)**
 - [x] Extend to full year-by-year loop (respecting ~1-year range cap), caching
       raw JSON locally
 - Verify: cached files on disk, one per year, spot-check record counts — done.
@@ -252,7 +255,22 @@ look at (a chart, a query result, a running app) before moving to the next.
   Live run: 10 files in `data/raw/` (2017-2026, ~66MB total), record counts
   match the earlier manual probe exactly. Re-run confirmed instant/no-op when
   everything's already cached. 27 unit tests across fetch/cache/backfill, all
-  mocked (no live network in the test suite).
+  mocked (no live network in the test suite). Runnable directly:
+  `python -m ingestion.backfill [--start-year N] [--end-year N]`.
+
+**1.3 — Detail-endpoint enrichment (deferred until now, see §3.1)**
+- [ ] Fetch `detalle/{identificador}` for every study collected in 1.2, to get
+      phase (`FaseUno`–`FaseCuatro`), purpose flags, population/participant
+      totals, and disease/indication — data the list endpoints don't have
+- [ ] Its own caching strategy (per-study files or a single indexed store —
+      not yet decided) and a politeness delay between calls, given the scale
+      (~1 call per study, thousands total, vs. ~10 for the list loop — the N+1
+      pattern already flagged in §3.1)
+- [ ] Runnable directly, same pattern as 1.2 (`python -m ingestion.<module>`)
+- Verify: spot-check a handful of fetched detail records against what's visible
+  on the REEC website for the same study ID; confirm phase/population fields
+  are populated at a fill rate consistent with what §3.2 found for the
+  calendario fields (i.e. not silently empty/broken)
 
 ### Phase 2 — Transformation + SQLite schema
 - [ ] Design normalized schema (studies, sponsors, interventions, centers,
