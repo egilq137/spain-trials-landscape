@@ -62,6 +62,23 @@ some details from the official PDF manual, see quirks below):
    `.../centros[/{codigo}]` — hospital / primary care center directories
    (documented, not yet tested; useful for the geographic analysis).
 
+**Official reference:** AEMPS publishes a manual for this API — "Manual de Interacción
+REEC: Servicio de Extracción de Datos" (v1, 12/12/2020):
+https://sede.aemps.gob.es/docs/Manual-Interaccion-REEC-Servicio-Extraccion-Datos-v1.pdf
+(local copy: `Manual-Interaccion-REEC-Servicio-Extraccion-Datos-v1.pdf`). Cross-checked
+against our live testing — matches on the endpoints/params/date-format-per-endpoint
+documented above, with one minor inconsistency: the manual's own example response
+shows `FechaRegistro` with slashes (`01/02/2013`) inside the JSON/XML body, while our
+live pull returned dashes (`29-07-2026`) — trust the live behavior over the example.
+
+**Important scope note (deferred decision):** the manual confirms that trial phase
+(`FaseUno`–`FaseCuatro`), purpose flags, and population/participant totals are **only**
+available via the `detalle/{identificador}` endpoint (§4.5–4.6 of the manual) — not on
+the list endpoints (`getestudios`/`estudios`) this pipeline is built on. Getting phase
+data for §3.3's "Phase distribution" analysis would require one extra API call *per
+study* (potentially 2,000+ calls), a real cost/completeness tradeoff to decide
+explicitly before Phase 1.3/4 of the build plan (Section 4) — not yet decided.
+
 **Known quirks to handle in the ingestion script:**
 - Two different date formats across endpoints (dashes vs slashes) — do not
   assume consistency.
