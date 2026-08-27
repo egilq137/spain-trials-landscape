@@ -71,13 +71,23 @@ documented above, with one minor inconsistency: the manual's own example respons
 shows `FechaRegistro` with slashes (`01/02/2013`) inside the JSON/XML body, while our
 live pull returned dashes (`29-07-2026`) — trust the live behavior over the example.
 
-**Important scope note (deferred decision):** the manual confirms that trial phase
-(`FaseUno`–`FaseCuatro`), purpose flags, and population/participant totals are **only**
-available via the `detalle/{identificador}` endpoint (§4.5–4.6 of the manual) — not on
-the list endpoints (`getestudios`/`estudios`) this pipeline is built on. Getting phase
-data for §3.3's "Phase distribution" analysis would require one extra API call *per
-study* (potentially 2,000+ calls), a real cost/completeness tradeoff to decide
-explicitly before Phase 1.3/4 of the build plan (Section 4) — not yet decided.
+**Decision: detail-endpoint enrichment is in scope.** The manual confirms that trial
+phase (`FaseUno`–`FaseCuatro`), purpose flags, population/participant totals, and
+indication/disease info are **only** available via the `detalle/{identificador}`
+endpoint (§4.5–4.6 of the manual) — not on the list endpoints (`getestudios`/`estudios`)
+Phase 1's ingestion is built on. This data is valuable enough (phase, population,
+disease type feed multiple analysis questions in §3.3) that we're committing to
+fetching it, not just the list-level data. Implications, to be handled as their own
+build-plan step (Section 4) once list ingestion is proven out — not designed yet:
+- **Sequencing:** detail fetch depends on `identificador` values that only exist after
+  list ingestion runs — so it's necessarily a later phase, not a replacement for it.
+- **Scale:** ~1 call per study (thousands total) vs. ~1 call per year for the list
+  loop — the classic N+1 pattern (cheap to list N things, expensive to fetch each one's
+  detail). Needs its own caching/resumability and likely a politeness delay between
+  calls.
+- **Schema impact:** the Phase 2 `studies` table needs columns sourced only from detail
+  data (phase, population total, disease/indication) — design that table with this in
+  mind rather than list-only and retrofitted later.
 
 **Known quirks to handle in the ingestion script:**
 - Two different date formats across endpoints (dashes vs slashes) — do not
@@ -212,9 +222,16 @@ look at (a chart, a query result, a running app) before moving to the next.
   registry data starts at 2017 (0 records 2011–2016; 2017 has an unusually
   large 3,304-record count, likely a one-time backlog from RD 1090/2015 making
   REEC mandatory, not organic trial volume).
-- [ ] Extend to full year-by-year loop (respecting ~1-year range cap), caching
+- [x] Extend to full year-by-year loop (respecting ~1-year range cap), caching
       raw JSON locally
-- Verify: cached files on disk, one per year, spot-check record counts
+- Verify: cached files on disk, one per year, spot-check record counts — done.
+  `ingestion/fetch.py` (fetch_year, estudios endpoint), `ingestion/cache.py`
+  (save/load/is_cached, raw_dir passed as an arg — no module-level globals),
+  `ingestion/backfill.py` (run_backfill loop, skips already-cached years).
+  Live run: 10 files in `data/raw/` (2017-2026, ~66MB total), record counts
+  match the earlier manual probe exactly. Re-run confirmed instant/no-op when
+  everything's already cached. 27 unit tests across fetch/cache/backfill, all
+  mocked (no live network in the test suite).
 
 ### Phase 2 — Transformation + SQLite schema
 - [ ] Design normalized schema (studies, sponsors, interventions, centers,
