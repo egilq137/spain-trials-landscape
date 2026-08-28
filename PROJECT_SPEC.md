@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion, list + detail) complete — 11,847/11,847 studies; Phase 2 (SQLite schema) next
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.1 (schema design/ERD) done; 2.2 (DDL) next
 last updated: 2026-08-28
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
@@ -184,7 +184,88 @@ Blocks beyond what the list endpoints return (~23KB/study):
   `2024-`/`2025-`. Phase 2 should derive any year column from
   `fechaAutorizacionAEMPS`, not from the filename.
 
+### 3.2c Relational schema design (Phase 2 Step 1 — done)
+
+Full ERD: `docs/phase2-schema-erd.html` (also published as an artifact). **15
+tables, 6 many-to-many bridges.** Reviewed as a diagram before any DDL was
+written, per the Phase 2 verify step. Every decision below was settled by
+querying the cached data rather than by assuming — the counts are the evidence
+and are worth keeping, since they're what makes the design defensible.
+
+**Multi-valued fields arrive pipe-delimited and must be normalized.**
+`sustancias` (`"DESMOPRESSIN|DESMOPRESSIN2|"`), `atcs`, `viasAdministracion`
+and `organismo.financiador` are all lists crammed into one string — a 1NF
+violation that would force `LIKE '%…%'` matching instead of joins. Each gets a
+lookup table + bridge: `substances`/`atc_codes`/`administration_routes` keyed
+off `interventions`, and `funders` keyed off `studies`. Co-funding is real, not
+a formatting artifact: **27 of 629** studies in the 2019 cohort list more than
+one funder (e.g. Roche + Leap Therapeutics + EORTC).
+
+**Sponsor stays one-to-many; funder is many-to-many.** `organismo` is a `dict`
+in **629/629** records checked — REEC never records more than one `promotor`
+per study, so `studies.sponsor_id` is a plain FK. Real trials *can* have
+co-sponsors; the source simply doesn't capture it, and modelling a
+relationship the data can't populate would be wrong. Field name is
+`organismo.promotor`, not `nombre`.
+
+**`departamento` belongs on the `study_centers` bridge, not on `centers`.**
+Of 361 distinct centre `referencia`s across 2019–2020, **245 (68%)** appear
+with different departments across different studies — it's an attribute of the
+*pairing* (this trial at this hospital), not of the hospital. Its primary key
+is widened to `(study_id, center_id, departamento)` because **4,398 of 11,700**
+studies-with-centres repeat the same centre under a *different* department
+(e.g. one trial running through both Endocrinología and Cardiología); a
+two-column key would reject those as duplicates. Kept as plain text, not
+normalized — raw values are inconsistent free text ("Oncología" / "ONCOLOGY" /
+"Servicio de Oncología Médica"), so a lookup table wouldn't yet support
+reliable grouping.
+  - **Loader detail:** blank `departamento` must load as `''`, never `NULL`.
+    SQL treats each `NULL` as distinct for uniqueness purposes, so two
+    blank-department rows for the same study+centre would both survive,
+    silently defeating the composite key exactly where the department is
+    unknown.
+
+**`centros` field names, confirmed live** (the manual's §4.7 matches): `tipo`,
+`referencia` (**not** `codigo` — an earlier draft invented that name),
+`situacion`, `nombre`, `domicilio`, `localidad`, `codPostal`, `provincia`,
+`ccaa`, `departamento`, `investigador`. Raw field names are kept verbatim in
+the schema so columns stay directly cross-checkable against an API response.
+
+**`investigador` is excluded** — confirmed live to be real principal-
+investigator names ("Ebymar Arismendi Núñez"), so it falls under the same
+named-individual rule already applied to `mail`/`telefono`/`personaContacto`
+above: fine in the gitignored local cache, must not reach the DB or dashboard.
+
+**`mujerusa`/`mujernousa` meanings are inferred, not documented.** The AEMPS
+manual lists both fields but defines neither. Cross-referencing
+`informacion.criteriosInclusion`/`criteriosExclusion` on matching studies:
+`mujerusa` correlates with "women of childbearing potential must use an
+acceptable contraceptive method", `mujernousa` with "postmenopausal or
+surgically sterile" (i.e. *not* of childbearing potential, so contraception is
+moot) — a standard WOCBP eligibility split. Flagged as inferred in the ERD
+rather than asserted; do not present it as documented.
+
+**`areasTerapeuticas.area[]` is a list** — a study can carry several coded
+areas, so it needs `therapeutic_areas` + a `study_therapeutic_areas` bridge.
+The first record sampled happened to have one element; the field's *type*, not
+a sample, is what settles cardinality.
+
+**Derived at load time, not in notebooks:** `censored`, `survival_start`
+(= `fechaAutorizacionAEMPS`) and `survival_end` (= `fechaFinRealEspana`, or
+the extraction date when censored), so Phase 4 doesn't re-derive censoring
+logic per analysis.
+
 ### 3.3 Analysis questions / insights to extract
+
+**These are a minimum, not a ceiling.** The list below is the starting set of
+questions, not the full scope of what the data can answer — so the Phase 2
+schema deliberately keeps every *structured* field REEC returns (population by
+sex/age/vulnerability, all 24 purpose/objective/data-source flags, ATC codes,
+administration routes), including fields no question below currently uses.
+Schema design stays ahead of the question list so a new question later doesn't
+require re-ingesting or redesigning. Only free text (`informacion`) and
+named-individual fields are dropped, and for the specific reasons given in
+§3.2b–c.
 
 - **Volume & momentum:** trials authorized per year; look for a visible break
   around January 2023 (mandatory EU CTIS transition).
@@ -208,9 +289,12 @@ Blocks beyond what the list endpoints return (~23KB/study):
 ### 3.4 Tools
 
 - **Ingestion:** Python, `requests`
-- **Storage:** SQLite (or DuckDB) — normalized schema: studies, sponsors,
-  interventions, centers, study–centers bridge table. Real SQL queries, not
-  pandas-only, to demonstrate the skill explicitly requested in job postings.
+- **Storage:** SQLite via stdlib `sqlite3` with hand-written SQL — no ORM, so
+  every query is one that can be walked through in an interview. DDL lives in
+  `db/schema.sql` (version-controlled; the `.db` file is a disposable build
+  artifact). Normalized schema of 15 tables — see §3.2c and the ERD. Real SQL
+  queries, not pandas-only, to demonstrate the skill explicitly requested in
+  job postings.
 - **Survival analysis:** `lifelines` (`KaplanMeierFitter`, `CoxPHFitter`,
   `logrank_test` / `multivariate_logrank_test`)
 - **Visualization:** Plotly (interactive charts + Spain choropleth map),
@@ -250,10 +334,13 @@ Blocks beyond what the list endpoints return (~23KB/study):
 
 ### 3.6 Finish line — definition of done
 
-- Public GitHub repo, modular layout (`ingestion/`, `db/`, `analysis/`, `app/`),
+- Public GitHub repo, modular layout (`ingestion/`, `db/`, `analysis/`, `app/`,
+  plus `docs/` for design documentation and the AEMPS manual — kept out of the
+  Python packages so code directories stay code-only),
   bilingual (EN/ES) README covering the question, data source, method, and
   explicit limitations (registry-level metadata, not patient data; CTIS-transition
-  discontinuity; results-reporting skew).
+  discontinuity; results-reporting skew; PI names and sponsor contact details
+  deliberately excluded despite being public by mandate).
 - Rebuildable SQLite database with cleaned REEC data.
 - Live, deployed Streamlit dashboard: KPI summary cards, filters (year /
   therapeutic area / phase / region), the Spain map, the volume time series, the
@@ -354,12 +441,40 @@ detail-level enrichment (1.3) are both complete for all 11,847 studies, 2017
 through 2026. Phase 2 (transformation + SQLite schema) is next.
 
 ### Phase 2 — Transformation + SQLite schema
-- [ ] Design normalized schema (studies, sponsors, interventions, centers,
-      study–centers bridge) — review as a diagram before writing the loader
-- [ ] Write loader (raw JSON → tables): handle two date formats, derive
-      censoring status per study
+
+**2.1 — Schema design (ERD)**
+- [x] Design normalized schema — reviewed as a diagram before writing the
+      loader. **15 tables, 6 many-to-many bridges**; full design and the
+      evidence behind each decision in §3.2c, diagram in
+      `docs/phase2-schema-erd.html`. Five errors were caught during review
+      that would otherwise have reached the loader: an invented `centros`
+      field name, `departamento` on the wrong table, a too-narrow composite
+      key, four un-normalized pipe-delimited fields, and a wrong sponsor
+      field name.
+
+**2.2 — DDL**
+- [ ] `db/schema.sql` — hand-written `CREATE TABLE` statements built from the
+      ERD; PK/FK constraints, `NOT NULL` only where fill rates justify it
+      (e.g. `fechaAutorizacionAEMPS` is 100% filled in both cohorts sampled)
+
+**2.3 — Loader**
+- [ ] `db/loader.py` — raw JSON/JSONL → rows → `INSERT`s. Takes the DB
+      connection and `raw_dir` as arguments (same explicit-dependency pattern
+      as `ingestion/cache.py`, so it stays testable against
+      `sqlite3.connect(":memory:")`). Handles: the two date formats,
+      `"0"`/`"1"` strings → booleans, the `.centro[]`/`.intervencion[]`
+      nesting, pipe-splitting the four multi-valued fields, blank
+      `departamento` → `''` not `NULL`, and deriving `censored` /
+      `survival_start` / `survival_end`
+- [ ] Wire into `run_pipeline.py` as the composition root, so the whole DB
+      rebuilds from `data/raw/` in one command
+
+**2.4 — Tests + verify**
+- [ ] Unit tests following the existing `tests/` pattern (stdlib
+      `unittest.mock`, small fixtures, no live network/DB): date parsing both
+      formats, flag conversion, censoring derivation, pipe-splitting
 - Verify: SQL queries against the DB (e.g. count grouped by year) match counts
-  seen in cached JSON
+  seen in cached JSON — 11,847 studies total
 
 ### Phase 3 — First analysis + visualization checkpoint
 - [ ] Volume per year / CTIS-transition break (single query + one Plotly chart)

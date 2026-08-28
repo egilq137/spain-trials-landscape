@@ -5,3 +5,6 @@ venv/
 data/raw/
 *.db
 .streamlit/secrets.toml
+
+# Personal study notes — kept local, not part of the portfolio deliverable
+docs/phase2-concepts.html
