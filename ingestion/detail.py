@@ -28,6 +28,7 @@ from ingestion.cache import DEFAULT_RAW_DIR, load_year
 
 DETALLE_URL = "https://reec.aemps.es/reec-services/json/detalle"
 NOT_FOUND_BODY = "El ensayo no existe en el sistema"
+NOT_IN_REGISTRY_REASON = "not in registry"
 
 REQUEST_DELAY = 1.0
 REQUEST_TIMEOUT = 30
@@ -157,7 +158,7 @@ def fetch_year_details(
             record = fetch_detail(identificador, session)
         except StudyNotFound:
             _record_failure(
-                identificador, "not in registry", failures_path(year, raw_dir)
+                identificador, NOT_IN_REGISTRY_REASON, failures_path(year, raw_dir)
             )
             stats["missing"] += 1
             consecutive_failures = 0
@@ -180,6 +181,132 @@ def fetch_year_details(
         time.sleep(delay)
 
     return stats
+
+
+def _failure_records(path: Path) -> list[dict]:
+    """Failure sidecar rows as dicts, skipping a truncated tail line."""
+    if not path.exists():
+        return []
+    records = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return records
+
+
+def retryable_ids(year: int, raw_dir: Path = DEFAULT_RAW_DIR) -> list[str]:
+    """Failed ids worth another attempt -- everything except confirmed absences.
+
+    A study the registry says doesn't exist will say so again; retrying it
+    only spends the server's time and ours for a result we already have.
+    """
+    return [
+        r["identificador"]
+        for r in _failure_records(failures_path(year, raw_dir))
+        if r.get("reason") != NOT_IN_REGISTRY_REASON
+    ]
+
+
+def _rewrite_failures(path: Path, records: list[dict]) -> None:
+    """Replace the sidecar wholesale with `records` (possibly empty)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def retry_year_failures(
+    year: int,
+    session: requests.Session,
+    raw_dir: Path = DEFAULT_RAW_DIR,
+    delay: float = REQUEST_DELAY,
+) -> dict:
+    """Re-attempt a year's retryable failures; rewrite the sidecar to reflect
+    what's still actually unresolved.
+
+    A retryable id that succeeds moves to the data file and drops out of the
+    sidecar entirely. One that fails again keeps a single, freshly-timestamped
+    entry rather than accumulating a duplicate per retry pass. One that now
+    turns out to be a confirmed absence (StudyNotFound) is recorded as such,
+    which also makes it non-retryable on the next pass.
+    """
+    path = failures_path(year, raw_dir)
+    records = _failure_records(path)
+    candidates = [r for r in records if r.get("reason") != NOT_IN_REGISTRY_REASON]
+    untouched = [r for r in records if r.get("reason") == NOT_IN_REGISTRY_REASON]
+    print(f"{year}: retrying {len(candidates)} failed studies")
+
+    stats = {"year": year, "resolved": 0, "still_missing": 0, "still_failed": 0}
+    still_failing: list[dict] = []
+    consecutive_failures = 0
+
+    for record in candidates:
+        identificador = record["identificador"]
+        try:
+            detail = fetch_detail(identificador, session)
+        except StudyNotFound:
+            still_failing.append(
+                {
+                    "identificador": identificador,
+                    "reason": NOT_IN_REGISTRY_REASON,
+                    "at": dt.datetime.now().isoformat(timespec="seconds"),
+                }
+            )
+            stats["still_missing"] += 1
+            consecutive_failures = 0
+        except DetailFetchError as exc:
+            still_failing.append(
+                {
+                    "identificador": identificador,
+                    "reason": str(exc),
+                    "at": dt.datetime.now().isoformat(timespec="seconds"),
+                }
+            )
+            stats["still_failed"] += 1
+            consecutive_failures += 1
+            if consecutive_failures >= CONSECUTIVE_FAILURE_LIMIT:
+                _rewrite_failures(path, untouched + still_failing)
+                raise DetailFetchError(
+                    f"{consecutive_failures} consecutive failures, aborting "
+                    f"retry (last: {exc})"
+                )
+        else:
+            _append_jsonl(detail_path(year, raw_dir), detail)
+            stats["resolved"] += 1
+            consecutive_failures = 0
+        time.sleep(delay)
+
+    _rewrite_failures(path, untouched + still_failing)
+    return stats
+
+
+def retry_failures(
+    raw_dir: Path = DEFAULT_RAW_DIR, delay: float = REQUEST_DELAY
+) -> None:
+    """Retry every year's retryable failures, oldest data first is irrelevant
+    here -- there are always few enough that order doesn't matter."""
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
+
+    any_candidates = False
+    for year in cached_years(raw_dir):
+        if not retryable_ids(year, raw_dir):
+            continue
+        any_candidates = True
+        stats = retry_year_failures(year, session, raw_dir, delay)
+        print(
+            f"{year}: {stats['resolved']} resolved, {stats['still_missing']} "
+            f"confirmed not in registry, {stats['still_failed']} still failing"
+        )
+
+    if not any_candidates:
+        print("no retryable failures")
+
+    print()
+    print_coverage(raw_dir)
 
 
 def coverage(raw_dir: Path = DEFAULT_RAW_DIR) -> list[dict]:
@@ -265,10 +392,17 @@ if __name__ == "__main__":
         help="keep going into older years until the time budget runs out",
     )
     parser.add_argument("--status", action="store_true", help="print coverage and exit")
+    parser.add_argument(
+        "--retry-failures",
+        action="store_true",
+        help="retry previously failed studies (not confirmed absences), then exit",
+    )
     args = parser.parse_args()
 
     if args.status:
         print_coverage()
+    elif args.retry_failures:
+        retry_failures()
     else:
         run(
             max_minutes=args.max_minutes,

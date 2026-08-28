@@ -13,8 +13,18 @@ Success criteria per function:
   coverage: listed/fetched/failed/pending per year
   run: newest year first, skips complete years, stops at the year boundary
     unless continue_past_year
+  retryable_ids: failed ids minus confirmed absences (not in registry)
+  retry_year_failures: retryable ids only; success moves the record to the
+    data file and drops it from the sidecar; a repeat failure refreshes its
+    sidecar entry rather than duplicating it; a StudyNotFound discovered on
+    retry is recorded as a confirmed absence; untouched confirmed absences
+    are preserved verbatim; aborts after CONSECUTIVE_FAILURE_LIMIT
+  retry_failures: iterates years with retryable failures, skips years with
+    none, reports when nothing is retryable anywhere
 """
 
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -27,6 +37,7 @@ from ingestion.detail import (
     CONSECUTIVE_FAILURE_LIMIT,
     DETALLE_URL,
     NOT_FOUND_BODY,
+    NOT_IN_REGISTRY_REASON,
     DetailFetchError,
     StudyNotFound,
     _append_jsonl,
@@ -39,6 +50,9 @@ from ingestion.detail import (
     fetch_detail,
     fetch_year_details,
     pending_ids,
+    retry_failures,
+    retry_year_failures,
+    retryable_ids,
     run,
 )
 
@@ -54,6 +68,22 @@ def make_response(text, status_ok=True):
         response.raise_for_status.side_effect = requests.HTTPError("500")
     response.json.side_effect = lambda: json.loads(text)
     return response
+
+
+class CapturedOutput(unittest.TestCase):
+    """Base for tests whose subject prints progress.
+
+    Captures stdout so a passing suite stays quiet -- noisy output hides the one
+    diagnostic that matters when something fails -- and so the printed output
+    can be asserted on rather than merely tolerated.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.stdout = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
+
+    def output(self):
+        return self.stdout.getvalue()
 
 
 def write_list_cache(raw_dir, year, identificadores):
@@ -479,6 +509,185 @@ class FetchYearDetailsTests(unittest.TestCase):
 
         requested = [c.args[0].rsplit("/", 1)[-1] for c in session.get.call_args_list]
         self.assertEqual(requested, ["b", "c"])
+
+
+def write_failures(raw_dir, year, records):
+    path = failures_path(year, raw_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+
+
+class RetryableIdsTests(unittest.TestCase):
+    def test_excludes_confirmed_absences_includes_real_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            write_failures(
+                raw_dir,
+                2023,
+                [
+                    {"identificador": "a", "reason": NOT_IN_REGISTRY_REASON},
+                    {"identificador": "b", "reason": "SSLError: EOF"},
+                ],
+            )
+
+            self.assertEqual(retryable_ids(2023, raw_dir), ["b"])
+
+    def test_no_failures_file_yields_nothing_retryable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(retryable_ids(2023, Path(tmp)), [])
+
+    def test_all_confirmed_absences_yields_nothing_retryable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            write_failures(
+                raw_dir, 2023, [{"identificador": "a", "reason": NOT_IN_REGISTRY_REASON}]
+            )
+
+            self.assertEqual(retryable_ids(2023, raw_dir), [])
+
+
+class RetryYearFailuresTests(CapturedOutput):
+    def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.raw_dir = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def sidecar_rows(self):
+        path = failures_path(2023, self.raw_dir)
+        if not path.exists():
+            return []
+        return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines()]
+
+    def test_a_success_moves_the_record_to_the_data_file_and_off_the_sidecar(self):
+        write_failures(self.raw_dir, 2023, [{"identificador": "a", "reason": "boom"}])
+        session = Mock()
+        session.get.return_value = make_response('{"identificador": "a"}')
+
+        stats = retry_year_failures(2023, session, self.raw_dir, delay=0)
+
+        self.assertEqual(stats["resolved"], 1)
+        self.assertEqual(self.sidecar_rows(), [])
+        detail_lines = detail_path(2023, self.raw_dir).read_text(
+            encoding="utf-8"
+        ).splitlines()
+        self.assertEqual(json.loads(detail_lines[0])["identificador"], "a")
+
+    def test_a_repeat_failure_refreshes_rather_than_duplicates_the_entry(self):
+        write_failures(
+            self.raw_dir,
+            2023,
+            [{"identificador": "a", "reason": "boom", "at": "2020-01-01T00:00:00"}],
+        )
+        session = Mock()
+        session.get.return_value = make_response("<html>still down</html>")
+
+        stats = retry_year_failures(2023, session, self.raw_dir, delay=0)
+
+        self.assertEqual(stats["still_failed"], 1)
+        rows = self.sidecar_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["identificador"], "a")
+        self.assertNotEqual(rows[0]["at"], "2020-01-01T00:00:00")
+
+    def test_a_retry_that_now_confirms_absence_is_recorded_as_such(self):
+        write_failures(self.raw_dir, 2023, [{"identificador": "a", "reason": "boom"}])
+        session = Mock()
+        session.get.return_value = make_response(NOT_FOUND_BODY)
+
+        stats = retry_year_failures(2023, session, self.raw_dir, delay=0)
+
+        self.assertEqual(stats["still_missing"], 1)
+        rows = self.sidecar_rows()
+        self.assertEqual(rows[0]["reason"], NOT_IN_REGISTRY_REASON)
+        # and it's therefore excluded from the next retry pass:
+        self.assertEqual(retryable_ids(2023, self.raw_dir), [])
+
+    def test_confirmed_absences_are_left_untouched_no_request_made(self):
+        write_failures(
+            self.raw_dir, 2023, [{"identificador": "a", "reason": NOT_IN_REGISTRY_REASON}]
+        )
+        session = Mock()
+
+        stats = retry_year_failures(2023, session, self.raw_dir, delay=0)
+
+        session.get.assert_not_called()
+        self.assertEqual((stats["resolved"], stats["still_failed"]), (0, 0))
+        self.assertEqual(self.sidecar_rows(), [{"identificador": "a", "reason": NOT_IN_REGISTRY_REASON}])
+
+    def test_mixed_batch_success_and_failure_leaves_only_the_failure_behind(self):
+        write_failures(
+            self.raw_dir,
+            2023,
+            [
+                {"identificador": "a", "reason": "boom"},
+                {"identificador": "b", "reason": NOT_IN_REGISTRY_REASON},
+                {"identificador": "c", "reason": "boom2"},
+            ],
+        )
+        session = Mock()
+
+        def respond(url, timeout):
+            ident = url.rsplit("/", 1)[-1]
+            if ident == "c":
+                return make_response("<html>nope</html>")
+            return make_response(json.dumps({"identificador": ident}))
+
+        session.get.side_effect = respond
+
+        stats = retry_year_failures(2023, session, self.raw_dir, delay=0)
+
+        self.assertEqual(stats["resolved"], 1)
+        rows = {r["identificador"]: r["reason"] for r in self.sidecar_rows()}
+        self.assertEqual(rows["b"], NOT_IN_REGISTRY_REASON)
+        self.assertIn("unparseable body", rows["c"])
+
+    def test_aborts_after_consecutive_unexpected_failures_and_still_persists_progress(self):
+        ids = [str(n) for n in range(CONSECUTIVE_FAILURE_LIMIT + 2)]
+        write_failures(
+            self.raw_dir, 2023, [{"identificador": i, "reason": "boom"} for i in ids]
+        )
+        session = Mock()
+        session.get.side_effect = requests.ConnectionError("down")
+
+        with self.assertRaises(DetailFetchError):
+            retry_year_failures(2023, session, self.raw_dir, delay=0)
+
+        self.assertEqual(session.get.call_count, CONSECUTIVE_FAILURE_LIMIT)
+        self.assertEqual(len(self.sidecar_rows()), CONSECUTIVE_FAILURE_LIMIT)
+
+
+class RetryFailuresTests(CapturedOutput):
+    def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.raw_dir = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    @patch("ingestion.detail.requests.Session")
+    @patch("ingestion.detail.retry_year_failures")
+    def test_only_visits_years_with_retryable_failures(self, mock_retry, mock_session):
+        write_list_cache(self.raw_dir, 2023, [])
+        write_list_cache(self.raw_dir, 2022, [])
+        write_failures(self.raw_dir, 2023, [{"identificador": "a", "reason": "boom"}])
+        write_failures(
+            self.raw_dir, 2022, [{"identificador": "b", "reason": NOT_IN_REGISTRY_REASON}]
+        )
+        mock_retry.return_value = {"year": 2023, "resolved": 1, "still_missing": 0, "still_failed": 0}
+
+        retry_failures(self.raw_dir)
+
+        self.assertEqual(mock_retry.call_count, 1)
+        self.assertEqual(mock_retry.call_args.args[0], 2023)
+
+    def test_no_failures_anywhere_prints_a_clear_message_and_does_nothing(self):
+        write_list_cache(self.raw_dir, 2023, [])
+
+        retry_failures(self.raw_dir)
+
+        self.assertIn("no retryable failures", self.output())
 
 
 class CoverageTests(unittest.TestCase):
