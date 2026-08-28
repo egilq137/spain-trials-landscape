@@ -1,7 +1,7 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1.3 built and verified — detail backfill running in sittings; Phase 2 (SQLite schema) next
-last updated: 2026-08-27
+status: Phase 1 (ingestion, list + detail) complete — 11,847/11,847 studies; Phase 2 (SQLite schema) next
+last updated: 2026-08-28
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
 
@@ -320,17 +320,38 @@ look at (a chart, a query result, a running app) before moving to the next.
         complete or cleanly partial — never silently half-analysed
 - [x] Runnable directly: `python -m ingestion.detail`
       `[--max-minutes N] [--year N] [--limit N] [--continue-past-year] [--status]`
-- [x] Verify: 51 unit tests (all mocked, no live network in the suite); happy
+- [x] Verify: 68 unit tests (all mocked, no live network in the suite); happy
       path, resume-without-duplicates, and the not-found sentinel additionally
       confirmed against the live endpoint. `--status` reports per-year coverage
       (listed / fetched / failed / pending) so partial ingestion can't be
       mistaken for complete data in Phase 2.
-- [ ] Run to completion — ~3.9h total, newest year first, in ≤1h sittings
-      (~10 sessions). Still to check once a mature year lands: `poblacion.total`
-      fill rate (§3.2b), and a spot-check of a few records against the REEC
-      website.
-- Deliberately not built: `--retry-failures` (no real failures observed yet —
-  build it once we know what they look like rather than guessing).
+- [x] `--retry-failures` — added once real failures existed to design against,
+      rather than guessing. Skips confirmed absences (`reason == "not in
+      registry"`, which repeats identically on every attempt) and re-attempts
+      the rest; a resolved failure moves to the data file and drops off the
+      sidecar, a repeat failure refreshes its sidecar entry instead of
+      duplicating it. Same consecutive-failure abort as the main loop.
+      All failures seen so far have been transient network drops
+      (`RemoteDisconnected`, SSL `EOF`), clustered within seconds of each
+      other — confirmed by hand that a manually-retried id returns fine — not
+      genuine absences, and every one resolved on its first retry.
+- [x] `poblacion.total` fill rate checked on the mature 2019 cohort (629
+      studies): **100% present, 81.6% non-zero** — confirms the right-censoring
+      read from §3.2b (brand-new 2026 trials were mostly `total: 0` since
+      enrollment hasn't been reported yet). Safe to use for population-size
+      analysis once Phase 2 excludes trials still in progress.
+- [x] Run to completion — **all 10 years complete: 11,847/11,847 studies
+      fetched, 0 pending, 0 unresolved failures anywhere.** `data/raw/detalle/`
+      is 208MB. A few years' `.failures.jsonl` sidecars are now empty (0 bytes)
+      rather than absent — they hit transient failures that `--retry-failures`
+      later resolved. Kept on disk deliberately: an empty sidecar records that
+      the year had failures and recovered, which a missing file wouldn't.
+- [ ] Still open: spot-check a handful of fetched records against the REEC
+      website for the same study ID (§3.6's verify step) — not yet done.
+
+Phase 1 (ingestion) is now fully done: list-level data (1.1–1.2) and
+detail-level enrichment (1.3) are both complete for all 11,847 studies, 2017
+through 2026. Phase 2 (transformation + SQLite schema) is next.
 
 ### Phase 2 — Transformation + SQLite schema
 - [ ] Design normalized schema (studies, sponsors, interventions, centers,
