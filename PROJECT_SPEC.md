@@ -68,7 +68,7 @@ some details from the official PDF manual, see quirks below):
 **Official reference:** AEMPS publishes a manual for this API — "Manual de Interacción
 REEC: Servicio de Extracción de Datos" (v1, 12/12/2020):
 https://sede.aemps.gob.es/docs/Manual-Interaccion-REEC-Servicio-Extraccion-Datos-v1.pdf
-(local copy: `Manual-Interaccion-REEC-Servicio-Extraccion-Datos-v1.pdf`). Cross-checked
+(local copy: `docs/Manual-Interaccion-REEC-Servicio-Extraccion-Datos-v1.pdf`). Cross-checked
 against our live testing — matches on the endpoints/params/date-format-per-endpoint
 documented above, with one minor inconsistency: the manual's own example response
 shows `FechaRegistro` with slashes (`01/02/2013`) inside the JSON/XML body, while our

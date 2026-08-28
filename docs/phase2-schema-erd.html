@@ -1,0 +1,869 @@
+<title>Trials Data Model</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #eef2f1;
+    --surface: #ffffff;
+    --surface-soft: #e3eae7;
+    --ink: #16231f;
+    --ink-soft: #51655f;
+    --border: #c7d3cf;
+    --accent: #1f6f6b;
+    --accent-soft: #d7ece9;
+    --derived: #a3591f;
+    --derived-soft: #f3e2ce;
+    --excluded: #82527a;
+    --excluded-soft: #ece0e9;
+    --caveat: #b5552e;
+    --caveat-soft: #f5e0d3;
+    --mono-bg: #f4f7f6;
+    --shadow: 0 1px 2px rgba(22,35,31,0.06), 0 6px 20px rgba(22,35,31,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101c19;
+      --surface: #16241f;
+      --surface-soft: #1c2e28;
+      --ink: #e7f0ec;
+      --ink-soft: #a3b8b0;
+      --border: #2c433c;
+      --accent: #5fd4c8;
+      --accent-soft: #1c3a35;
+      --derived: #e6a25c;
+      --derived-soft: #3a2c1a;
+      --excluded: #d29ecb;
+      --excluded-soft: #362a35;
+      --caveat: #e6926a;
+      --caveat-soft: #3a281c;
+      --mono-bg: #0f1c19;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101c19;
+    --surface: #16241f;
+    --surface-soft: #1c2e28;
+    --ink: #e7f0ec;
+    --ink-soft: #a3b8b0;
+    --border: #2c433c;
+    --accent: #5fd4c8;
+    --accent-soft: #1c3a35;
+    --derived: #e6a25c;
+    --derived-soft: #3a2c1a;
+    --excluded: #d29ecb;
+    --excluded-soft: #362a35;
+    --caveat: #e6926a;
+    --caveat-soft: #3a281c;
+    --mono-bg: #0f1c19;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 48px 28px 80px;
+  }
+  h1, h2, h3 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-weight: 700;
+    text-wrap: balance;
+    margin: 0;
+  }
+  code, .mono, .col-name, .col-type {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  header.page-head {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 { font-size: clamp(28px, 4vw, 38px); }
+  .subhead {
+    max-width: 68ch;
+    color: var(--ink-soft);
+    font-size: 15.5px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-top: 4px;
+  }
+  .meta-row span b { color: var(--ink); font-weight: 500; }
+
+  section { margin-top: 40px; }
+  h2 { font-size: 20px; margin-bottom: 14px; }
+  .section-note { color: var(--ink-soft); font-size: 14px; max-width: 70ch; margin: 0 0 16px; }
+
+  /* --- ERD figure --- */
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 18px 14px;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  figure svg { display: block; width: 100%; height: auto; min-width: 780px; }
+  figcaption {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .erd-entity-title { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 13.5px; }
+  .erd-tag { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; }
+  .erd-label { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; }
+  .erd-card { font-family: "IBM Plex Mono", monospace; font-size: 9.5px; font-weight: 500; }
+
+  /* --- legend --- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-top: 18px;
+  }
+  .legend .chip { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .swatch.pk { background: var(--accent); }
+  .swatch.fk { background: var(--accent-soft); border: 1.5px solid var(--accent); }
+  .swatch.derived { background: var(--derived-soft); border: 1.5px solid var(--derived); }
+  .swatch.excluded { background: var(--excluded-soft); border: 1.5px solid var(--excluded); }
+  .swatch.caveat { background: var(--caveat-soft); border: 1.5px solid var(--caveat); }
+
+  /* --- callouts --- */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 14.5px;
+  }
+  .callout.excluded-callout { border-left-color: var(--excluded); }
+  .callout.caveat-callout { border-left-color: var(--caveat); }
+  .callout p { margin: 0 0 8px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout ul { margin: 8px 0 0; padding-left: 20px; }
+  .callout li { margin-bottom: 4px; }
+  .callout .stat { font-family: "IBM Plex Mono", monospace; font-size: 13px; background: var(--mono-bg); padding: 8px 12px; border-radius: 6px; display: inline-block; margin: 6px 0; }
+
+  /* --- entity cards --- */
+  .entity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 22px;
+    align-items: start;
+  }
+  .entity-grid .entity-card.wide { grid-column: 1 / -1; }
+  .entity-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .entity-card > .entity-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--surface-soft);
+    border-bottom: 1px solid var(--border);
+  }
+  .entity-head .name { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 16px; }
+  .entity-head .purpose { font-size: 12.5px; color: var(--ink-soft); text-align: right; }
+  .entity-card table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .entity-card th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 8px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .entity-card td { padding: 7px 18px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .entity-card tr:last-child td { border-bottom: none; }
+  .entity-card tbody tr.pk-row { background: var(--accent-soft); }
+  .entity-card tbody tr.derived-row { background: var(--derived-soft); }
+  .entity-card tbody tr.caveat-row { background: var(--caveat-soft); }
+  .col-type { color: var(--ink-soft); font-size: 12.5px; white-space: nowrap; }
+  .col-note { color: var(--ink-soft); font-size: 12.5px; }
+  .tag {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+  }
+  .tag.pk { background: var(--accent); color: var(--surface); }
+  .tag.fk { color: var(--accent); border: 1px solid var(--accent); }
+  .tag.derived { color: var(--derived); border: 1px solid var(--derived); }
+  .tag.caveat { color: var(--caveat); border: 1px solid var(--caveat); }
+
+  .cluster-note {
+    font-size: 13px;
+    color: var(--ink-soft);
+    background: var(--mono-bg);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin: 0 0 4px;
+  }
+
+  details.group {
+    border-top: 1px solid var(--border);
+  }
+  details.group > summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--mono-bg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  details.group > summary::-webkit-details-marker { display: none; }
+  details.group > summary::before {
+    content: "▸";
+    color: var(--accent);
+    font-size: 11px;
+    transition: transform 0.15s ease;
+  }
+  details.group[open] > summary::before { transform: rotate(90deg); }
+  details.group > summary .count {
+    margin-left: auto;
+    color: var(--ink-soft);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+  }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  footer code { background: var(--mono-bg); padding: 1px 5px; border-radius: 4px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    details.group > summary::before { transition: none; }
+  }
+</style>
+
+<main>
+  <header class="page-head">
+    <span class="eyebrow">Spain Clinical Trials Landscape · Phase 2, Step 1 · rev. 2</span>
+    <h1>Trials Data Model</h1>
+    <p class="subhead">
+      Relational schema for REEC study data, drawn from what the list
+      (<code>estudios</code>/<code>getestudios</code>) and detail
+      (<code>detalle/{id}</code>) endpoints actually return, cross-checked
+      against the official AEMPS manual (<code>docs/Manual-Interaccion-
+      REEC-Servicio-Extraccion-Datos-v1.pdf</code>). Scoped generously — every
+      structured field REEC gives us gets a column, not only the ones the
+      current analysis questions require.
+    </p>
+    <div class="meta-row">
+      <span>15 tables</span>
+      <span><b>studies</b> carries 58 columns across 4 groups</span>
+      <span>6 many-to-many bridges</span>
+      <span>Not yet built — review before <code>db/schema.sql</code></span>
+    </div>
+  </header>
+
+  <section class="figure-wrap">
+    <h2>Entity relationships</h2>
+    <p class="section-note">
+      <code>studies</code> is the hub. Sponsors own studies one-to-many (REEC
+      only ever records one <code>promotor</code> per study — confirmed by
+      checking the raw type, not assumed). Centers, therapeutic areas, and
+      funders are each many-to-many with studies, so each gets a bridge
+      table. Interventions belong to exactly one study — but three of
+      their own fields (substances, ATC codes, administration routes) are
+      themselves pipe-delimited lists, so the same many-to-many pattern
+      repeats one level down.
+    </p>
+    <figure>
+      <svg viewBox="0 0 1160 860" role="img" aria-label="Entity relationship diagram. Sponsors connect one-to-many to studies. Studies connect many-to-many to funders, to centers, and to therapeutic areas, each via its own bridge table. Studies connect one-to-many to interventions. Interventions connect many-to-many to substances, ATC codes, and administration routes, each via its own bridge table — the same pattern repeated at the intervention level.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g stroke="currentColor" stroke-opacity="0.5" fill="none" stroke-width="1.5">
+          <!-- sponsors -> studies -->
+          <path d="M 110 110 L 335 262" marker-end="url(#arrow)"/>
+          <!-- funders <-> study_funders <-> studies -->
+          <path d="M 410 110 L 410 150"/>
+          <path d="M 410 200 L 410 260" marker-end="url(#arrow)"/>
+          <!-- centers <-> study_centers <-> studies -->
+          <path d="M 710 110 L 710 140"/>
+          <path d="M 710 205 L 710 260" marker-end="url(#arrow)"/>
+          <!-- therapeutic_areas <-> study_therapeutic_areas <-> studies -->
+          <path d="M 1010 110 L 1010 150"/>
+          <path d="M 1010 200 L 940 260" marker-end="url(#arrow)"/>
+          <!-- studies -> interventions -->
+          <path d="M 345 450 L 175 500" marker-end="url(#arrow)"/>
+          <!-- interventions -> intervention_substances -> substances -->
+          <path d="M 150 600 L 150 650"/>
+          <path d="M 150 695 L 150 740" marker-end="url(#arrow)"/>
+          <!-- interventions -> intervention_atcs -> atc_codes -->
+          <path d="M 270 600 L 430 650"/>
+          <path d="M 430 695 L 430 740" marker-end="url(#arrow)"/>
+          <!-- interventions -> intervention_routes -> administration_routes -->
+          <path d="M 295 585 L 720 650"/>
+          <path d="M 720 695 L 720 740" marker-end="url(#arrow)"/>
+        </g>
+
+        <g class="erd-label" fill="currentColor" fill-opacity="0.8">
+          <text x="185" y="175" text-anchor="middle">1 · organizes · *</text>
+          <text x="410" y="235" text-anchor="middle">* · funded by · *</text>
+          <text x="710" y="235" text-anchor="middle">* · hosted at · *</text>
+          <text x="985" y="235" text-anchor="middle">* · coded as · *</text>
+          <text x="240" y="480" text-anchor="middle">1 · administers · *</text>
+          <text x="150" y="625" text-anchor="middle">* · contains · *</text>
+          <text x="345" y="628" text-anchor="middle">* · classified · *</text>
+          <text x="510" y="618" text-anchor="middle">* · given via · *</text>
+        </g>
+
+        <!-- sponsors -->
+        <g transform="translate(20,40)">
+          <rect width="180" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">sponsors</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK sponsor_id</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">promotor</text>
+        </g>
+
+        <!-- funders -->
+        <g transform="translate(320,40)">
+          <rect width="180" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">funders</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK funder_id</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">nombre</text>
+        </g>
+
+        <!-- centers -->
+        <g transform="translate(620,40)">
+          <rect width="180" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">centers</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK center_id</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">nombre · ccaa · provincia</text>
+        </g>
+
+        <!-- therapeutic_areas -->
+        <g transform="translate(920,40)">
+          <rect width="180" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">therapeutic_areas</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK eutct_code</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">nombre_es · nombre_en</text>
+        </g>
+
+        <!-- study_funders bridge -->
+        <g transform="translate(320,150)">
+          <rect width="180" height="50" rx="8" fill="var(--surface-soft)" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3 3"/>
+          <text x="12" y="20" class="erd-card" fill="currentColor">study_funders</text>
+          <text x="12" y="36" class="erd-card" fill="currentColor" fill-opacity="0.6">FK study_id, funder_id</text>
+        </g>
+
+        <!-- study_centers bridge (carries an attribute, so solid not dashed) -->
+        <g transform="translate(600,140)">
+          <rect width="220" height="65" rx="8" fill="var(--surface-soft)" stroke="var(--accent)" stroke-opacity="0.7" stroke-width="1.5"/>
+          <text x="12" y="20" class="erd-card" fill="currentColor">study_centers</text>
+          <text x="12" y="36" class="erd-card" fill="currentColor" fill-opacity="0.6">FK study_id, center_id</text>
+          <text x="12" y="52" class="erd-card" fill="var(--caveat)">PK also includes departamento</text>
+        </g>
+
+        <!-- study_therapeutic_areas bridge -->
+        <g transform="translate(920,150)">
+          <rect width="180" height="50" rx="8" fill="var(--surface-soft)" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3 3"/>
+          <text x="12" y="20" class="erd-card" fill="currentColor">study_therapeutic_areas</text>
+          <text x="12" y="36" class="erd-card" fill="currentColor" fill-opacity="0.6">FK study_id, eutct_code</text>
+        </g>
+
+        <!-- studies (hub) -->
+        <g transform="translate(280,260)">
+          <rect width="820" height="190" rx="10" fill="var(--surface)" stroke="var(--accent)" stroke-width="2.5"/>
+          <text x="18" y="30" class="erd-entity-title" fill="currentColor" font-size="15">studies</text>
+          <text x="18" y="52" class="erd-tag" fill="var(--accent)">PK identificador</text>
+          <text x="18" y="70" class="erd-tag" fill="var(--accent)">FK sponsor_id</text>
+          <text x="18" y="92" class="erd-tag" fill="currentColor" fill-opacity="0.65">+ calendario · 9 cols</text>
+          <text x="18" y="110" class="erd-tag" fill="currentColor" fill-opacity="0.65">+ poblacion · 19 cols</text>
+          <text x="18" y="128" class="erd-tag" fill="currentColor" fill-opacity="0.65">+ proposito · 24 cols</text>
+          <text x="18" y="150" class="erd-tag" fill="var(--derived)">+ derived: censored, survival_*</text>
+          <text x="18" y="172" class="erd-tag" fill="currentColor" fill-opacity="0.5">acronimo · enfermedad_rara</text>
+        </g>
+
+        <!-- interventions -->
+        <g transform="translate(40,500)">
+          <rect width="260" height="100" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">interventions</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK intervention_id</text>
+          <text x="14" y="58" class="erd-tag" fill="var(--accent)">FK study_id</text>
+          <text x="14" y="76" class="erd-tag" fill="currentColor" fill-opacity="0.6">tipo · nombre_comercial</text>
+          <text x="14" y="92" class="erd-tag" fill="currentColor" fill-opacity="0.6">huerfano · forma_farmaceutica</text>
+        </g>
+
+        <text x="40" y="635" class="erd-tag" fill="currentColor" fill-opacity="0.55" font-style="italic">interventions' own multi-valued fields — same bridge pattern, applied 3×</text>
+
+        <!-- intervention_substances bridge -->
+        <g transform="translate(40,650)">
+          <rect width="220" height="45" rx="8" fill="var(--surface-soft)" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3 3"/>
+          <text x="12" y="18" class="erd-card" fill="currentColor">intervention_substances</text>
+          <text x="12" y="34" class="erd-card" fill="currentColor" fill-opacity="0.6">FK intervention_id, substance_id</text>
+        </g>
+        <!-- substances -->
+        <g transform="translate(40,740)">
+          <rect width="220" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">substances</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK substance_id</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">nombre</text>
+        </g>
+
+        <!-- intervention_atcs bridge -->
+        <g transform="translate(320,650)">
+          <rect width="220" height="45" rx="8" fill="var(--surface-soft)" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3 3"/>
+          <text x="12" y="18" class="erd-card" fill="currentColor">intervention_atcs</text>
+          <text x="12" y="34" class="erd-card" fill="currentColor" fill-opacity="0.6">FK intervention_id, atc_code</text>
+        </g>
+        <!-- atc_codes -->
+        <g transform="translate(320,740)">
+          <rect width="220" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">atc_codes</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK atc_code</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">nombre, null</text>
+        </g>
+
+        <!-- intervention_routes bridge -->
+        <g transform="translate(600,650)">
+          <rect width="240" height="45" rx="8" fill="var(--surface-soft)" stroke="currentColor" stroke-opacity="0.4" stroke-dasharray="3 3"/>
+          <text x="12" y="18" class="erd-card" fill="currentColor">intervention_routes</text>
+          <text x="12" y="34" class="erd-card" fill="currentColor" fill-opacity="0.6">FK intervention_id, route_id</text>
+        </g>
+        <!-- administration_routes -->
+        <g transform="translate(600,740)">
+          <rect width="240" height="70" rx="8" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="14" y="24" class="erd-entity-title" fill="currentColor">administration_routes</text>
+          <text x="14" y="42" class="erd-tag" fill="var(--accent)">PK route_id</text>
+          <text x="14" y="58" class="erd-tag" fill="currentColor" fill-opacity="0.6">nombre</text>
+        </g>
+      </svg>
+      <figcaption>
+        Solid outline = base table. Dashed = pure bridge table (composite PK
+        only, no attributes of its own) — except <b>study_centers</b>, drawn
+        with a solid teal outline because it carries one real attribute,
+        <code>departamento</code> (it describes which department at that
+        center ran that specific study, not the study or the center alone —
+        checked, not assumed: see the note on that table below).
+        <code>1</code>/<code>*</code> marks cardinality on each side of a
+        relationship — <code>* · *</code> is why a bridge table exists there
+        instead of a plain foreign key. The <b>studies</b> box collapses its
+        58 columns into 4 groups here — full column lists are in the tables
+        below.
+      </figcaption>
+    </figure>
+
+    <div class="legend">
+      <span class="chip"><span class="swatch pk"></span>primary key</span>
+      <span class="chip"><span class="swatch fk"></span>foreign key</span>
+      <span class="chip"><span class="swatch derived"></span>derived at load time (not a raw field)</span>
+      <span class="chip"><span class="swatch caveat"></span>inferred meaning, not confirmed by a source</span>
+      <span class="chip"><span class="swatch excluded"></span>deliberately excluded from schema</span>
+    </div>
+  </section>
+
+  <section class="scope">
+    <h2>Scope: minimum, not ceiling</h2>
+    <div class="callout">
+      <p>
+        §3.3 of <code>PROJECT_SPEC.md</code> lists volume, therapeutic
+        landscape, phase, sponsor, geography, duration, and
+        results-compliance as the analysis questions. Those are a
+        <b>starting set</b>, not the full scope — this schema keeps
+        essentially every structured field REEC returns (population by sex/
+        age/vulnerability, purpose/objective flags, data-source flags) even
+        where no §3.3 question uses it yet, so a new question later doesn't
+        require re-ingesting or re-designing.
+      </p>
+      <p>
+        Only three categories are cut, and for a specific reason each — see
+        <a href="#excluded-fields">Excluded fields</a> below.
+      </p>
+    </div>
+  </section>
+
+  <section class="normalization">
+    <h2>Why six bridge tables, not six text columns</h2>
+    <div class="callout">
+      <p>
+        <code>sustancias</code>, <code>atcs</code>, <code>viasAdministracion</code>,
+        and <code>organismo.financiador</code> all arrive from REEC as
+        pipe-delimited strings (e.g. <code>"Amgen|AstraZeneca AB"</code>) —
+        one column secretly holding a list. Left as text, "how many trials
+        did AstraZeneca fund?" needs a <code>LIKE</code> string match instead
+        of a <code>JOIN</code>. Checked rather than assumed, on the 2019
+        cohort (629 studies):
+      </p>
+      <div class="stat">financiador → 602 single-funder · 27 (4.3%) multi-funder — real co-funding, not a formatting artifact</div>
+      <p>
+        Same shape as <code>centers</code>: whenever both "can one study/
+        intervention have several?" and "can one value apply to several
+        studies/interventions?" are yes, it's many-to-many and gets a lookup
+        table + bridge, not a delimited column.
+      </p>
+    </div>
+  </section>
+
+  <section class="entities">
+    <h2>Tables</h2>
+    <div class="entity-grid">
+
+      <div class="entity-card wide">
+        <div class="entity-head">
+          <span class="name">studies</span>
+          <span class="purpose">one row per trial · hub table</span>
+        </div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>identificador</td><td class="col-type">text</td><td class="col-note">EudraCT (<code>2019-000302-29</code>) or CTIS-era (<code>2023-506669-70-00</code>) id</td></tr>
+            <tr><td class="col-name"><span class="tag fk">FK</span>sponsor_id</td><td class="col-type">int</td><td class="col-note">→ sponsors.sponsor_id — one per study, confirmed: <code>organismo</code> is a dict in all 629/629 records checked (2019), never a list</td></tr>
+            <tr><td class="col-name">acronimo</td><td class="col-type">text, null</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">enfermedad_rara</td><td class="col-type">bool</td><td class="col-note">raw <code>"0"</code>/<code>"1"</code> string → real boolean at load</td></tr>
+            <tr class="derived-row"><td class="col-name"><span class="tag derived">derived</span>censored</td><td class="col-type">bool</td><td class="col-note">false once any real end date is present; true otherwise</td></tr>
+            <tr class="derived-row"><td class="col-name"><span class="tag derived">derived</span>survival_start</td><td class="col-type">date</td><td class="col-note">= fecha_autorizacion_aemps</td></tr>
+            <tr class="derived-row"><td class="col-name"><span class="tag derived">derived</span>survival_end</td><td class="col-type">date, null</td><td class="col-note">= fecha_fin_real_espana, or extraction date if censored</td></tr>
+          </tbody>
+        </table>
+
+        <details class="group" open>
+          <summary>calendario — 9 date columns <span class="count">dropped 2 of 11, see §3.2</span></summary>
+          <table>
+            <tbody>
+              <tr><td class="col-name">fecha_autorizacion_aemps</td><td class="col-type">date</td><td class="col-note">100% filled both cohorts — safe NOT NULL</td></tr>
+              <tr><td class="col-name">fecha_registro</td><td class="col-type">date</td><td class="col-note">100% filled both cohorts</td></tr>
+              <tr><td class="col-name">fecha_inicio_prevista</td><td class="col-type">date, null</td><td class="col-note">unreliable in recent years — do not depend on it</td></tr>
+              <tr><td class="col-name">fecha_inicio_real</td><td class="col-type">date, null</td><td class="col-note">actual start</td></tr>
+              <tr><td class="col-name">fecha_fin_real_espana</td><td class="col-type">date, null</td><td class="col-note">primary survival endpoint</td></tr>
+              <tr><td class="col-name">fecha_fin_real_global</td><td class="col-type">date, null</td><td class="col-note">multi-country trials</td></tr>
+              <tr><td class="col-name">fecha_interrupcion</td><td class="col-type">date, null</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">fecha_reinicio</td><td class="col-type">date, null</td><td class="col-note">restart after interruption</td></tr>
+              <tr><td class="col-name">fecha_fin_prematuro</td><td class="col-type">date, null</td><td class="col-note">early termination — model as distinct event type, not merged with normal completion</td></tr>
+            </tbody>
+          </table>
+        </details>
+
+        <details class="group">
+          <summary>poblacion — 19 columns <span class="count">sex, age band, vulnerable-group flags + total</span></summary>
+          <table>
+            <tbody>
+              <tr><td class="col-name">voluntarios_sanos</td><td class="col-type">bool</td><td class="col-note">healthy volunteers</td></tr>
+              <tr><td class="col-name">pacientes</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">pob_vulnerable</td><td class="col-type">bool</td><td class="col-note">vulnerable population</td></tr>
+              <tr class="caveat-row"><td class="col-name"><span class="tag caveat">?</span>mujer_usa</td><td class="col-type">bool</td><td class="col-note">no official definition in the AEMPS manual (only field name + 0/1 example). Cross-referenced against <code>informacion.criteriosInclusion</code> free text on matching studies: correlates with "women of childbearing potential must use an acceptable contraceptive method." Reasonably confident, not confirmed.</td></tr>
+              <tr class="caveat-row"><td class="col-name"><span class="tag caveat">?</span>mujer_no_usa</td><td class="col-type">bool</td><td class="col-note">same caveat — correlates with criteria like "postmenopausal or surgically sterile," i.e. not of childbearing potential (so contraception doesn't apply), rather than "childbearing-potential but skipping contraception"</td></tr>
+              <tr><td class="col-name">embarazadas</td><td class="col-type">bool</td><td class="col-note">pregnant</td></tr>
+              <tr><td class="col-name">lactancia</td><td class="col-type">bool</td><td class="col-note">breastfeeding</td></tr>
+              <tr><td class="col-name">urgencia</td><td class="col-type">bool</td><td class="col-note">emergency-recruited</td></tr>
+              <tr><td class="col-name">incapaces</td><td class="col-type">bool</td><td class="col-note">unable to consent</td></tr>
+              <tr><td class="col-name">intrauteros</td><td class="col-type">bool</td><td class="col-note">in utero</td></tr>
+              <tr><td class="col-name">prematuros</td><td class="col-type">bool</td><td class="col-note">premature infants</td></tr>
+              <tr><td class="col-name">recien_nacido</td><td class="col-type">bool</td><td class="col-note">newborn</td></tr>
+              <tr><td class="col-name">preescolar</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">ninos</td><td class="col-type">bool</td><td class="col-note">children</td></tr>
+              <tr><td class="col-name">adolescentes</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">adultos</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">ancianos</td><td class="col-type">bool</td><td class="col-note">elderly</td></tr>
+              <tr><td class="col-name">menores</td><td class="col-type">bool</td><td class="col-note">minors, general</td></tr>
+              <tr><td class="col-name">poblacion_total</td><td class="col-type">int, null</td><td class="col-note">planned participants — right-censored like the dates: 100% present but ~18% zero on the mature 2019 cohort (unstarted enrollment); treat 0 as "not yet reported," not "zero planned," for in-progress trials</td></tr>
+            </tbody>
+          </table>
+        </details>
+
+        <details class="group">
+          <summary>proposito — 24 columns <span class="count">phase, purpose, objective, data-source flags — order confirmed against the AEMPS manual §4.5</span></summary>
+          <table>
+            <tbody>
+              <tr><td class="col-name">fase_uno</td><td class="col-type">bool</td><td class="col-note" rowspan="4">4 separate columns — <b>not mutually exclusive</b> (combined-phase trials like "II/III" set two flags). Never collapse to one enum.</td></tr>
+              <tr><td class="col-name">fase_dos</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">fase_tres</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">fase_cuatro</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">diagnostico</td><td class="col-type">bool</td><td class="col-note">purpose: diagnostic</td></tr>
+              <tr><td class="col-name">profilaxis</td><td class="col-type">bool</td><td class="col-note">purpose: prophylaxis</td></tr>
+              <tr><td class="col-name">tratamiento</td><td class="col-type">bool</td><td class="col-note">purpose: treatment</td></tr>
+              <tr><td class="col-name">seguridad</td><td class="col-type">bool</td><td class="col-note">objective: safety</td></tr>
+              <tr><td class="col-name">eficacia</td><td class="col-type">bool</td><td class="col-note">objective: efficacy</td></tr>
+              <tr><td class="col-name">farmacocinetica</td><td class="col-type">bool</td><td class="col-note">pharmacokinetics</td></tr>
+              <tr><td class="col-name">farmacodinamica</td><td class="col-type">bool</td><td class="col-note">pharmacodynamics</td></tr>
+              <tr><td class="col-name">bioequivalencia</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">dosis</td><td class="col-type">bool</td><td class="col-note">dose-finding</td></tr>
+              <tr><td class="col-name">farmacogenetica</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">farmacogenomica</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">farmacoeconomica</td><td class="col-type">bool</td><td class="col-note">&nbsp;</td></tr>
+              <tr><td class="col-name">atencion_primaria</td><td class="col-type">bool</td><td class="col-note" rowspan="8">data-source flags — where outcome data comes from</td></tr>
+              <tr><td class="col-name">atencion_personalizada</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">hospitalizacion</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">medico</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">farmaceutico</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">historial_clinico</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">bases_datos</td><td class="col-type">bool</td></tr>
+              <tr><td class="col-name">otras_fuentes</td><td class="col-type">bool</td></tr>
+            </tbody>
+          </table>
+        </details>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">sponsors</span><span class="purpose">deduplicated by name</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>sponsor_id</td><td class="col-type">int, autoincr.</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">promotor</td><td class="col-type">text</td><td class="col-note">from <code>organismo.promotor</code> — corrected from an earlier draft that mislabeled this <code>nombre</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">funders</span><span class="purpose">deduplicated by name</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>funder_id</td><td class="col-type">int, autoincr.</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text</td><td class="col-note">split from <code>organismo.financiador</code> on <code>|</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">study_funders</span><span class="purpose">bridge — many-to-many</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>study_id</td><td class="col-type">text</td><td class="col-note">→ studies.identificador · composite PK with funder_id</td></tr>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>funder_id</td><td class="col-type">int</td><td class="col-note">→ funders.funder_id</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">centers</span><span class="purpose">hospitals / sites, deduplicated</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>center_id</td><td class="col-type">int, autoincr.</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">referencia</td><td class="col-type">text, null</td><td class="col-note">renamed from an earlier draft's invented <code>codigo</code> — this is the actual raw field name (<code>Referencia</code> in the manual, <code>referencia</code> live), kept as-is to stay directly cross-checkable against the API response</td></tr>
+            <tr><td class="col-name">tipo</td><td class="col-type">text, null</td><td class="col-note">CAP (primary care) or CHN (hospital), per manual §4.7</td></tr>
+            <tr><td class="col-name">provincia</td><td class="col-type">text, null</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">ccaa</td><td class="col-type">text, null</td><td class="col-note">region — feeds the geography/choropleth question</td></tr>
+            <tr><td class="col-name">cod_postal</td><td class="col-type">text, null</td><td class="col-note">finer-grained than ccaa/provincia — kept for possible later postal-district-level mapping</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">study_centers</span><span class="purpose">bridge — many-to-many, <b>plus a relationship attribute</b></span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>study_id</td><td class="col-type">text</td><td class="col-note">→ studies.identificador · composite PK with center_id + departamento</td></tr>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>center_id</td><td class="col-type">int</td><td class="col-note">→ centers.center_id</td></tr>
+            <tr class="pk-row caveat-row"><td class="col-name"><span class="tag pk">PK</span>departamento</td><td class="col-type">text, <b>not null</b> — see note</td><td class="col-note">belongs here, not on <code>centers</code> — checked empirically: of 361 distinct center <code>referencia</code>s across the 2019–2020 files, 245 (68%) show more than one distinct (departamento, investigador) pair across different studies. Same hospital, different department per trial — it describes the pairing, not the center. Kept as plain text: raw values are inconsistent free text ("Oncología" / "ONCOLOGY" / "Servicio de Oncología Médica" for what's presumably the same thing), so a normalized lookup wouldn't yet support reliable grouping — same reasoning as excluding the free-text <code>informacion</code> fields.</td></tr>
+          </tbody>
+        </table>
+        <p class="cluster-note">
+          <b>Why departamento is in the key, not just a column:</b> checked
+          whether the same (study, center) pair can have more than one
+          department — it can. 4,398 of 11,700 studies-with-centers (37.6%)
+          repeat the same center within one study under a different
+          department (e.g. a hospital running one trial through both
+          Endocrinología and Cardiología). A 2-column key
+          <code>(study_id, center_id)</code> would wrongly reject the second
+          department as a duplicate, so the key has to include
+          <code>departamento</code> too.
+        </p>
+        <p class="cluster-note">
+          <b>Loader must coalesce blank department to <code>''</code>, never
+          <code>NULL</code>:</b> SQL treats every <code>NULL</code> as
+          distinct from every other <code>NULL</code> for uniqueness
+          purposes — <code>NULL = NULL</code> is unknown, not true — so two
+          blank-department rows for the same study+center would silently
+          both be kept instead of collapsing into one, quietly defeating the
+          point of the 3-column key for exactly the rows where department is
+          unknown. <code>departamento.strip() or ''</code> at load time, not
+          <code>None</code>.
+        </p>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">therapeutic_areas</span><span class="purpose">coded disease/indication lookup</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>eutct_code</td><td class="col-type">text</td><td class="col-note">e.g. <code>999999000429</code></td></tr>
+            <tr><td class="col-name">nombre_es</td><td class="col-type">text</td><td class="col-note">e.g. "Enfermedades [C] - Tracto respiratorio [C08]"</td></tr>
+            <tr><td class="col-name">nombre_en</td><td class="col-type">text</td><td class="col-note">e.g. "Diseases [C] - Respiratory Tract Diseases [C08]"</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">study_therapeutic_areas</span><span class="purpose">bridge — many-to-many</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>study_id</td><td class="col-type">text</td><td class="col-note">→ studies.identificador · composite PK with eutct_code</td></tr>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>eutct_code</td><td class="col-type">text</td><td class="col-note">→ therapeutic_areas.eutct_code · a study's <code>areasTerapeuticas.area[]</code> can list more than one</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card wide">
+        <div class="entity-head">
+          <span class="name">interventions</span>
+          <span class="purpose">one-to-many from studies — each row belongs to one study</span>
+        </div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>intervention_id</td><td class="col-type">int, autoincr.</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name"><span class="tag fk">FK</span>study_id</td><td class="col-type">text</td><td class="col-note">→ studies.identificador</td></tr>
+            <tr><td class="col-name">tipo</td><td class="col-type">int, null</td><td class="col-note">0 comparator · 1 experimental · 2 treatment, per manual §4.8</td></tr>
+            <tr><td class="col-name">nombre_comercial</td><td class="col-type">text, null</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">nombre_cientifico</td><td class="col-type">text, null</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">codigo</td><td class="col-type">text, null</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">huerfano</td><td class="col-type">bool</td><td class="col-note">orphan-drug designation</td></tr>
+            <tr><td class="col-name">forma_farmaceutica</td><td class="col-type">text, null</td><td class="col-note">pharmaceutical form (ES/EN pair in the raw data)</td></tr>
+          </tbody>
+        </table>
+        <p class="cluster-note">
+          <code>sustancias</code>, <code>atcs</code>, and
+          <code>viasAdministracion</code> deliberately dropped from this
+          table — each was a pipe-delimited multi-valued field, now
+          normalized below as its own lookup + bridge, same reasoning as
+          <code>financiador</code>.
+        </p>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">substances</span><span class="purpose">deduplicated by name</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>substance_id</td><td class="col-type">int, autoincr.</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text</td><td class="col-note">split from <code>Sustancias</code> on <code>|</code>, e.g. <code>DESMOPRESSIN</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">intervention_substances</span><span class="purpose">bridge — many-to-many</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>intervention_id</td><td class="col-type">int</td><td class="col-note">→ interventions.intervention_id</td></tr>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>substance_id</td><td class="col-type">int</td><td class="col-note">→ substances.substance_id · combination therapies list more than one</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">atc_codes</span><span class="purpose">ATC classification lookup</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>atc_code</td><td class="col-type">text</td><td class="col-note">code is the natural key — REEC gives no separate description text</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text, null</td><td class="col-note">left null unless enriched from an external ATC reference later</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">intervention_atcs</span><span class="purpose">bridge — many-to-many</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>intervention_id</td><td class="col-type">int</td><td class="col-note">→ interventions.intervention_id</td></tr>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>atc_code</td><td class="col-type">text</td><td class="col-note">→ atc_codes.atc_code</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">administration_routes</span><span class="purpose">deduplicated by name</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>route_id</td><td class="col-type">int, autoincr.</td><td class="col-note">&nbsp;</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text</td><td class="col-note">split from <code>ViasAdministracion</code> on <code>|</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="entity-card">
+        <div class="entity-head"><span class="name">intervention_routes</span><span class="purpose">bridge — many-to-many</span></div>
+        <table>
+          <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>intervention_id</td><td class="col-type">int</td><td class="col-note">→ interventions.intervention_id</td></tr>
+            <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span><span class="tag fk">FK</span>route_id</td><td class="col-type">int</td><td class="col-note">→ administration_routes.route_id</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="excluded-fields">
+    <h2>Excluded fields</h2>
+    <div class="callout excluded-callout">
+      <p>Three categories are cut on purpose — everything else structured stays in:</p>
+      <ul>
+        <li><b>Free text</b> — the 22 <code>informacion</code> fields (×2 languages: titles, indications, inclusion/exclusion criteria, endpoints). ~80% of the detail payload's bytes, but unstructured — would need NLP to use, and feeds no current or reasonably-anticipated analysis question. (It's also what let us sanity-check <code>mujerusa</code> above — worth keeping in the raw cache even though it's out of the schema.)</li>
+        <li><b>Named-individual privacy</b> — <code>organismo.mail</code>, <code>organismo.telefono</code>, <code>organismo.personaContacto</code>, and <code>centros.centro[].investigador</code> (confirmed live: real principal-investigator names, e.g. "Ebymar Arismendi Núñez" — same category as <code>personaContacto</code>, not a role or department). Public by legal mandate, so caching them locally is fine, but per §3.2b they must not reach the DB or the deployed dashboard.</li>
+        <li><b>Two dead <code>calendario</code> fields</b> — <code>fechaFinPrevista</code> and <code>fechaClasificacion</code>, both 0% filled in every cohort sampled (§3.2).</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Draft for review — nothing in <code>db/</code> is built yet. Once this
+    shape is confirmed, next is <code>db/schema.sql</code> (DDL) and
+    <code>db/loader.py</code> (JSON → rows), per the Phase 2 plan.
+  </footer>
+</main>
