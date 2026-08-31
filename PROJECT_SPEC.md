@@ -648,6 +648,63 @@ spelling. Combined with the CTIS-era absence, `financiador` carries information
 beyond `promotor` for roughly **26% of the corpus** — 3,141 of 11,847. Worth
 stating before any "who funds Spanish trials" claim.
 
+#### interventions — and three planned tables that do not survive it
+
+Report: `docs/profiles/interventions.txt`. Counts are per **intervention
+element** (30,946) unless stated.
+
+**The block is genuinely optional, unlike `centros`.** `intervenciones` is
+*absent* from 1,514 studies — not blank, missing — and 1,516 studies end up
+with no intervention at all. The rest average 3.0, maximum 98.
+
+**`atcs` is empty in all 30,946 elements. Drop `atc_codes` and its bridge.**
+The ERD planned a lookup table and a many-to-many bridge for a field that has
+never carried a single value in this corpus. Two of the fifteen tables go.
+
+**`viasAdministracion` is never multi-valued, so its bridge is unjustified
+too.** Present in 17,268 elements and **exactly one route in every one of
+them** — 0 elements with two. The pipe delimiter implies a list the data never
+uses. Downgrade to a lookup plus a plain foreign key, or a column; a
+many-to-many models a relationship the source cannot express. A third bridge
+goes.
+
+**`sustancias` is genuinely multi-valued and keeps its bridge:** 12,389
+elements with one substance, 512 with two, 182 with three, up to 7. That is
+the one intervention bridge the data supports.
+
+**`sustancias` and `viasAdministracion` never co-occur — the source swapped one
+for the other.** Not one element has both:
+
+| | count | share |
+|---|---|---|
+| substances only | 13,236 | 42.8% |
+| routes only | 17,268 | 55.8% |
+| neither | 442 | 1.4% |
+| **both** | **0** | **0%** |
+
+By year, `sustancias` runs 97–98% through 2021 then falls to 4% in 2023 and 0%
+from 2024; `viasAdministracion` is 0% through 2021 and 96–100% from 2023. So
+neither field covers the corpus, and any analysis using either is confined to
+one side of the CTIS transition. They are not interchangeable — a substance is
+not a route — so this is a genuine loss of comparability, not a rename.
+
+**`nombreComercial` and `nombreCientifico` are the same string in 90.3% of
+elements.** Keeping both stores 27,949 duplicated values to preserve 2,997
+genuine differences. Worth deciding whether the scientific name earns its
+column.
+
+**`formaFarmaceutica` is 56.4% placeholder, and its two language columns are
+swapped for exactly that value.** `'Not indicated'` (English) sits in the
+Spanish column and `'No Indicado'` (Spanish) in the English one, 17,459 times.
+Every real value is correctly placed — `Comprimido recubierto con película` /
+`Film-coated tablet`. So the swap is specific to the placeholder, which means a
+loader that maps placeholders to NULL removes the problem rather than needing
+to correct it.
+
+**`huerfano`** is a string `'0'`/`'1'` like `enfermedadRara`, 99.9% present, 25
+blanks, 2,447 orphan-designated. **`codigo`** is 78.7% present and improves
+sharply over time — 52% through 2021, 100% from 2024.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of
@@ -888,7 +945,9 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       (study, centre) pairs whose geography varies within one study, to decide
       the `study_centers` key (§3.2c).
 - [x] `funders`, `therapeutic_areas`
-- [ ] `interventions` + substances / atc_codes / administration_routes
+- [x] `interventions` + substances / atc_codes / administration_routes
+- **Profiling complete.** Revise `docs/phase2-schema-erd.html` next (2.1),
+  then write the DDL from §3.2c.
 - Each table's findings go into §3.2c before its DDL is written.
 
 **2.3 — DDL (after profiling)**

@@ -136,6 +136,20 @@ TABLE_FIELDS = {
         "areasTerapeuticas.area[].nombre_es",
         "areasTerapeuticas.area[].nombre_en",
     ],
+    # sustancias, atcs and viasAdministracion are pipe-delimited inside each
+    # array element -- an array of records each holding several lists. Profiled
+    # as raw strings here; the splits are measured separately.
+    "interventions": [
+        "intervenciones.intervencion[].nombreComercial",
+        "intervenciones.intervencion[].nombreCientifico",
+        "intervenciones.intervencion[].codigo",
+        "intervenciones.intervencion[].huerfano",
+        "intervenciones.intervencion[].formaFarmaceutica",
+        "intervenciones.intervencion[].formaFarmaceutica_en",
+        "intervenciones.intervencion[].sustancias",
+        "intervenciones.intervencion[].atcs",
+        "intervenciones.intervencion[].viasAdministracion",
+    ],
     # The two top-level fields studies keeps. enfermedadRara sits here too: it
     # is the one flag in the record that is a string, not an integer.
     "studies.identity": [
@@ -148,7 +162,7 @@ TABLE_FIELDS = {
 # Tables whose report is rendered compactly.
 COMPACT_TABLES = {"studies.calendario", "studies.poblacion",
                   "studies.proposito", "centers",
-                  "therapeutic_areas"}
+                  "therapeutic_areas", "interventions"}
 
 ABSENT, NULL, BLANK, PRESENT = "absent", "null", "blank", "present"
 
