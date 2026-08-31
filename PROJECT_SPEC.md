@@ -351,6 +351,50 @@ not ended yet, and the field may also have stopped being populated. Those are
 not separable from this data alone, which matters because that field is the
 survival endpoint and therefore decides who is censored.
 
+#### studies.poblacion — 18 flags + participant total
+
+Report: `docs/profiles/studies-poblacion.txt`.
+
+**All 19 fields are JSON integers, not strings.** Only `enfermedadRara` is a
+string `"0"`/`"1"`; the 18 poblacion flags, all 24 proposito flags and
+`poblacion.total` are integers. §4's note that "flags are string `"0"`/`"1"`"
+holds for `enfermedadRara` and must not be generalised — the reverted DDL's
+comment that the source ships flag strings was wrong for 42 of 43 flags.
+
+**All 19 are present in 11,847/11,847** — never blank, null or absent. So
+`NOT NULL` is justified across the group.
+
+**12 of the 18 flags contain `-1`**, an undocumented third value. AEMPS defines
+neither it nor several of the fields.
+
+| flag | 0 | 1 | -1 |
+|---|---|---|---|
+| urgencia | 11,666 | 170 | **11** |
+| mujerusa | 5,796 | 6,043 | **8** |
+| embarazadas | 11,719 | 120 | **8** |
+| lactancia | 11,804 | 36 | **7** |
+| mujernousa | 9,842 | 1,999 | **6** |
+| incapaces | 10,263 | 1,578 | **6** |
+| preescolar, adolescentes | | | **2 each** |
+| intrauteros, prematuros, reciennacido, ninos | | | **1 each** |
+
+Six flags never carry it: `voluntariossanos`, `pacientes`, `pobvulnerable`,
+`adultos`, `ancianos`, `menores`.
+
+**`poblacion.total` carries two sentinels, not one.** 100% present, 1,307
+distinct, median 123. But **2,201 values (18.6%) are 0**, which means "not
+reported" rather than a trial planning nobody — and the maximum is **999999**,
+a single obvious placeholder, with one further 99999. Excluding zeros and both
+sentinels: n=9,644, min 1, median 180, max 99,999. No negatives.
+
+**Open decision — how sentinels reach the database.** `-1` and `total = 0` are
+the same problem: a value the source uses to mean "unknown", which SQL already
+has a word for. Storing them raw makes every `AVG` and `SUM` silently wrong;
+mapping them to `NULL` makes aggregates correct and forces analysis to handle
+absence explicitly. Either way the rule must be enumerated per field with
+counts, the way the sponsor normalisation is — the principle is no
+*undocumented* judgement, not no judgement.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of

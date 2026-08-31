@@ -1,0 +1,135 @@
+studies.poblacion  --  19 fields over 11847 studies
+
+poblacion.voluntariossanos
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  range     min 0  median 0  max 1
+  zeros     11284 (95.2%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.pacientes
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  range     min 0  median 1  max 1
+  zeros     5593 (47.2%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.pobvulnerable
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  range     min 0  median 0  max 1
+  zeros     6523 (55.1%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.mujerusa
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 1  max 1
+  zeros     5796 (48.9%)   NEGATIVES 8
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.mujernousa
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     9842 (83.1%)   NEGATIVES 6
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.embarazadas
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11719 (98.9%)   NEGATIVES 8
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.lactancia
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11804 (99.6%)   NEGATIVES 7
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.urgencia
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11666 (98.5%)   NEGATIVES 11
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.incapaces
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     10263 (86.6%)   NEGATIVES 6
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.intrauteros
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11840 (99.9%)   NEGATIVES 1
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.prematuros
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11790 (99.5%)   NEGATIVES 1
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.reciennacido
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11604 (97.9%)   NEGATIVES 1
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.preescolar
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     11259 (95.0%)   NEGATIVES 2
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.ninos
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     10897 (92.0%)   NEGATIVES 1
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.adolescentes
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  range     min -1  median 0  max 1
+  zeros     10544 (89.0%)   NEGATIVES 2
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.adultos
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  range     min 0  median 1  max 1
+  zeros     866 (7.3%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.ancianos
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  range     min 0  median 1  max 1
+  zeros     2463 (20.8%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.menores
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  range     min 0  median 0  max 1
+  zeros     10356 (87.4%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+poblacion.total
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1307 exact
+  range     min 0  median 123  max 999999
+  zeros     2201 (18.6%)
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+

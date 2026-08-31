@@ -63,10 +63,33 @@ TABLE_FIELDS = {
         "calendario.fechaReinicio",
         "calendario.fechaFinPrematuro",
     ],
+    # 18 flags plus the planned participant total. Raw keys here are
+    # lowercase and unspaced, unlike proposito's camelCase.
+    "studies.poblacion": [
+        "poblacion.voluntariossanos",
+        "poblacion.pacientes",
+        "poblacion.pobvulnerable",
+        "poblacion.mujerusa",
+        "poblacion.mujernousa",
+        "poblacion.embarazadas",
+        "poblacion.lactancia",
+        "poblacion.urgencia",
+        "poblacion.incapaces",
+        "poblacion.intrauteros",
+        "poblacion.prematuros",
+        "poblacion.reciennacido",
+        "poblacion.preescolar",
+        "poblacion.ninos",
+        "poblacion.adolescentes",
+        "poblacion.adultos",
+        "poblacion.ancianos",
+        "poblacion.menores",
+        "poblacion.total",
+    ],
 }
 
 # Tables whose report is rendered compactly.
-COMPACT_TABLES = {"studies.calendario"}
+COMPACT_TABLES = {"studies.calendario", "studies.poblacion"}
 
 ABSENT, NULL, BLANK, PRESENT = "absent", "null", "blank", "present"
 
@@ -147,8 +170,15 @@ class FieldProfile:
         self.containers[" > ".join(containers)] += 1
         if status == PRESENT:
             self.types[type(value).__name__] += 1
+            # Every scalar is counted, not only strings. An earlier version
+            # recorded strings alone, so the poblacion and proposito flags --
+            # JSON integers, not the "0"/"1" strings the manual implies --
+            # reported "never populated" while being present in every record,
+            # hiding their value distribution entirely.
+            if isinstance(value, (str, int, float, bool)):
+                cleaned = value.strip() if isinstance(value, str) else value
+                self.values[cleaned] += 1
             if isinstance(value, str):
-                self.values[value.strip()] += 1
                 self.lengths.append(len(value.strip()))
 
     @property
@@ -159,13 +189,15 @@ class FieldProfile:
     def distinct_normalised(self):
         merged = Counter()
         for value, count in self.values.items():
-            merged[normalise(value)] += count
+            merged[normalise(value) if isinstance(value, str) else value] += count
         return len(merged)
 
     def collapsing_groups(self, limit=8):
         """Values that differ only by case, accent, spacing or trailing marks."""
         groups = defaultdict(list)
         for value in self.values:
+            if not isinstance(value, str):
+                continue
             groups[normalise(value)].append(value)
         return sorted((v for v in groups.values() if len(v) > 1),
                       key=lambda v: -sum(self.values[x] for x in v))[:limit]
@@ -182,7 +214,8 @@ def date_summary(values):
     """
     if not values:
         return None
-    matching = {v: c for v, c in values.items() if DATE_RE.match(v)}
+    matching = {v: c for v, c in values.items()
+                if isinstance(v, str) and DATE_RE.match(v)}
     if len(matching) * 2 < len(values):
         return None
     def iso(value):
@@ -190,6 +223,23 @@ def date_summary(values):
         return "{}-{:0>2}-{:0>2}".format(year, month, day)
     ordered = sorted(iso(v) for v in matching)
     return sum(matching.values()), sum(values.values()), ordered[0], ordered[-1]
+
+
+def numeric_summary(values):
+    """(count, zeros, negatives, min, median, max) for a numeric field.
+
+    Returns None unless every value is a number, so a field of text is never
+    described with statistics that do not apply to it. Zeros and negatives are
+    called out separately because in this source a zero is usually "not
+    reported" rather than a measured nought.
+    """
+    if not values or not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                             for v in values):
+        return None
+    expanded = sorted(v for v, c in values.items() for _ in range(c))
+    middle = expanded[len(expanded) // 2]
+    return (len(expanded), values.get(0, 0), sum(c for v, c in values.items() if v < 0),
+            expanded[0], middle, expanded[-1])
 
 
 def profile_field(path, raw_dir=DEFAULT_RAW_DIR, years=None, records=None):
@@ -306,6 +356,12 @@ def print_compact(profile, stream=sys.stdout):
         out("  format    {}/{} match dd-MM-yyyy{}".format(
             matching, values_total, note))
         out("  range     {} .. {}".format(earliest, latest))
+    elif numeric_summary(profile.values):
+        count, zeros, negatives, low, mid, high = numeric_summary(profile.values)
+        out("  range     min {}  median {}  max {}".format(low, mid, high))
+        out("  zeros     {} ({:.1%}){}".format(
+            zeros, zeros / count,
+            "   NEGATIVES {}".format(negatives) if negatives else ""))
     elif profile.distinct <= LIST_ALL_BELOW:
         out("  values    " + "  |  ".join(
             "{!r} {}".format(v, c) for v, c in profile.values.most_common()))

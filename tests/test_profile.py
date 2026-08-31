@@ -25,6 +25,7 @@ count here becomes a wrong column later. Success criteria per function:
 
 import io
 import unittest
+from collections import Counter
 from unittest.mock import patch
 
 from db.profile import (
@@ -36,6 +37,7 @@ from db.profile import (
     TABLE_FIELDS,
     main,
     normalise,
+    numeric_summary,
     print_profile,
     profile_field,
     walk,
@@ -137,6 +139,27 @@ class TestFieldProfile(unittest.TestCase):
         self.assertEqual(profile.distinct, 4)
         self.assertEqual(profile.distinct_normalised, 2)
 
+    def test_counts_numeric_values_not_only_strings(self):
+        # Regression. An earlier version recorded strings alone, so the
+        # poblacion and proposito flags -- JSON integers, not the "0"/"1"
+        # strings the manual implies -- reported "never populated" while
+        # present in every record. That hid every -1 in the corpus.
+        profile = build(rows=[("2019", {"a": {"b": v}})
+                              for v in (0, 1, 1, -1)])
+        self.assertEqual(profile.distinct, 3)
+        self.assertEqual(profile.values[-1], 1)
+        self.assertEqual(profile.values[1], 2)
+
+    def test_a_numeric_field_is_never_reported_as_never_populated(self):
+        text = io.StringIO()
+        print_profile(build(rows=[("2019", {"a": {"b": 0}})]), stream=text)
+        self.assertNotIn("distinct values: 0", text.getvalue())
+
+    def test_mixed_types_are_flagged(self):
+        profile = build(rows=[("2019", {"a": {"b": 0}}),
+                              ("2019", {"a": {"b": "0"}})])
+        self.assertEqual(dict(profile.types), {"int": 1, "str": 1})
+
     def test_lengths_cover_present_strings_only(self):
         profile = build(rows=[("2019", {"a": {"b": "abc"}}),
                               ("2019", {"a": {"b": "  ab  "}}),
@@ -190,6 +213,17 @@ class TestPrintProfile(unittest.TestCase):
         text = self.render(build(rows=[("2019", {}), ("2020", {})]))
         self.assertIn("absent", text)
         self.assertIn("distinct values: 0", text)
+
+
+class TestNumericSummary(unittest.TestCase):
+    def test_reports_range_zeros_and_negatives(self):
+        count, zeros, negatives, low, mid, high = numeric_summary(
+            Counter({0: 3, 5: 1, -2: 1, 100: 1}))
+        self.assertEqual((count, zeros, negatives), (6, 3, 1))
+        self.assertEqual((low, high), (-2, 100))
+
+    def test_returns_none_for_text(self):
+        self.assertIsNone(numeric_summary(Counter({"a": 1, 2: 1})))
 
 
 class TestTableFields(unittest.TestCase):
