@@ -417,6 +417,47 @@ cache, so no information is lost by applying it.
     unexpected values, so either would surface it — re-check on refresh rather
     than assume it still holds.
 
+#### studies.proposito — 24 flags
+
+Report: `docs/profiles/studies-proposito.txt`. All 24 are integers, present in
+11,847/11,847, and **strictly 0/1** — no `-1`, so unlike `poblacion` this group
+needs no sentinel handling and stays `NOT NULL`.
+
+**Seven of the eight data-source flags are constant 0 in every record**:
+`atencionPrimaria`, `atencionPersonalizada`, `hospitalizacion`, `medico`,
+`farmaceutico`, `historialClinico`, `basesDatos`. A column that never varies
+carries no information. **Decision: drop all seven** — the same call as
+`fechaClasificacion`/`fechaFinPrevista`, on the same evidence.
+
+`otrasFuentes` is the sole survivor and is set in 1,801 studies. Kept, but its
+meaning is unclear precisely because its siblings are dead: "other" relative to
+seven categories nobody ever ticks. Do not present it as a data-source finding
+without that caveat.
+
+**The four phase flags stay four columns — an enum would mangle 12.1% of the
+corpus.**
+
+| phase flags set | studies | share |
+|---|---|---|
+| 1 | 10,408 | 87.9% |
+| 2 | 1,436 | 12.1% |
+| 3 | 3 | 0.03% |
+| 0 | **0** | — |
+
+Every study sets at least one, so a phase label is always derivable and a `0`
+here means "not this phase" rather than "not recorded". Commonest combinations:
+I+II (960), II+III (369), III+IV (88). A handful are non-adjacent — I+III (16),
+II+IV (2) — which may be data errors; too few to act on, recorded so they are
+not mistaken for a pattern later.
+
+**A `0` does not mean the same thing in every block.** For phase it is
+informative, because every study sets one. For purpose it is not: **6,125
+studies (51.7%) set none of `diagnostico`/`profilaxis`/`tratamiento`**, which
+reads as "purpose not recorded" rather than a trial with no purpose. The
+objective block sits between the two — only 3.4% are all-zero, and most studies
+set two to four of the nine. Any analysis counting "trials by purpose" must
+state which of these it is treating as a denominator.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of

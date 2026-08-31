@@ -205,6 +205,26 @@ class TestPrintProfile(unittest.TestCase):
         self.assertIn("most frequent values", text)
         self.assertIn("occur exactly once", text)
 
+    def test_flags_a_constant_field(self):
+        # Seven proposito data-source flags are 0 in every record. A column
+        # that never varies carries no information and should not reach the
+        # schema, so the report must say so rather than leave it to be noticed.
+        from db.profile import print_compact
+        stream = io.StringIO()
+        print_compact(build(rows=[("2019", {"a": {"b": 0}})] * 5), stream=stream)
+        self.assertIn("CONSTANT", stream.getvalue())
+
+    def test_low_cardinality_numbers_are_listed_not_summarised(self):
+        # min/median/max of a 0/1 flag says nothing; the value list is the
+        # whole point of the low-cardinality branch.
+        from db.profile import print_compact
+        stream = io.StringIO()
+        print_compact(build(rows=[("2019", {"a": {"b": v}})
+                                  for v in (0, 0, 1)]), stream=stream)
+        text = stream.getvalue()
+        self.assertIn("values", text)
+        self.assertNotIn("median", text)
+
     def test_reports_variant_groups(self):
         rows = [("2019", {"a": {"b": v}}) for v in ("Roche AG", "roche ag")]
         self.assertIn("case/accent/spacing", self.render(build(rows=rows)))

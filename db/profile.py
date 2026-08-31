@@ -86,10 +86,38 @@ TABLE_FIELDS = {
         "poblacion.menores",
         "poblacion.total",
     ],
+    # 24 flags: 4 phase, 3 purpose, 9 objective, 8 data-source. Raw keys are
+    # camelCase here, unlike poblacion's lowercase.
+    "studies.proposito": [
+        "proposito.faseUno",
+        "proposito.faseDos",
+        "proposito.faseTres",
+        "proposito.faseCuatro",
+        "proposito.diagnostico",
+        "proposito.profilaxis",
+        "proposito.tratamiento",
+        "proposito.seguridad",
+        "proposito.eficacia",
+        "proposito.farmacocinetica",
+        "proposito.farmacodinamica",
+        "proposito.bioequivalencia",
+        "proposito.dosis",
+        "proposito.farmacogenetica",
+        "proposito.farmacogenomica",
+        "proposito.farmacoeconomica",
+        "proposito.atencionPrimaria",
+        "proposito.atencionPersonalizada",
+        "proposito.hospitalizacion",
+        "proposito.medico",
+        "proposito.farmaceutico",
+        "proposito.historialClinico",
+        "proposito.basesDatos",
+        "proposito.otrasFuentes",
+    ],
 }
 
 # Tables whose report is rendered compactly.
-COMPACT_TABLES = {"studies.calendario", "studies.poblacion"}
+COMPACT_TABLES = {"studies.calendario", "studies.poblacion", "studies.proposito"}
 
 ABSENT, NULL, BLANK, PRESENT = "absent", "null", "blank", "present"
 
@@ -356,15 +384,20 @@ def print_compact(profile, stream=sys.stdout):
         out("  format    {}/{} match dd-MM-yyyy{}".format(
             matching, values_total, note))
         out("  range     {} .. {}".format(earliest, latest))
+    elif profile.distinct <= LIST_ALL_BELOW:
+        # Listing beats summarising here: min/median/max of a 0/1 flag says
+        # nothing, and the whole point of the low-cardinality branch is that a
+        # rogue value cannot hide.
+        out("  values    " + "  |  ".join(
+            "{!r} {}".format(v, c) for v, c in profile.values.most_common()))
+        if profile.distinct == 1:
+            out("  CONSTANT  one value in every record -- carries no information")
     elif numeric_summary(profile.values):
         count, zeros, negatives, low, mid, high = numeric_summary(profile.values)
         out("  range     min {}  median {}  max {}".format(low, mid, high))
         out("  zeros     {} ({:.1%}){}".format(
             zeros, zeros / count,
             "   NEGATIVES {}".format(negatives) if negatives else ""))
-    elif profile.distinct <= LIST_ALL_BELOW:
-        out("  values    " + "  |  ".join(
-            "{!r} {}".format(v, c) for v, c in profile.values.most_common()))
     else:
         out("  top       " + "  |  ".join(
             "{!r} {}".format(v, c) for v, c in profile.values.most_common(4)))
