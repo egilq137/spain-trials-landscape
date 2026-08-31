@@ -184,6 +184,72 @@ Blocks beyond what the list endpoints return (~23KB/study):
   `2024-`/`2025-`. Phase 2 should derive any year column from
   `fechaAutorizacionAEMPS`, not from the filename.
 
+### 3.2c Profiling findings and the decisions they settle
+
+Written from `db/profile.py` output over all 11,847 cached records, one table
+at a time, before that table's DDL. Reports are kept in `docs/profiles/` so
+each schema decision can be checked against the evidence behind it.
+
+#### sponsors — source field `organismo.promotor`
+
+**Structure and presence (settled, no judgement needed).** `organismo` is a
+dict in 11,847/11,847 records — never a list, never absent. `promotor` is
+present in 100%: never blank, null or absent, length 3–146. So `NOT NULL` is
+justified by the data, and one sponsor per study is a property of the source
+rather than a modelling shortcut. Real trials can have co-sponsors; REEC does
+not record them.
+
+**Deduplicating on the exact string is wrong — it splits real sponsors.**
+
+| Identity rule | Distinct sponsors |
+|---|---|
+| exact string | 3,763 |
+| + casefold / accents / whitespace / trailing punctuation | 3,345 |
+| + HTML entity decoding | 3,336 |
+
+**427 values across 315 groups are formatting variants of a sponsor already in
+the list — 12.8%.** `AstraZeneca AB` (300) and `Astrazeneca AB` (45) are two
+rows; Sanofi-Aventis Recherche & Développement splits nine ways. This directly
+damages two §3.3 questions: "top sponsors" mis-ranks a split sponsor, and the
+industry-vs-academic share inflates. Full list: `docs/profiles/sponsors-variants.txt`.
+
+**HTML entity encoding is present in the source and is a new finding.**
+`&amp;` in 519 records, `&#39;` in 35, mixed with raw `&` for the same company
+— `Merck Sharp &amp; Dohme LLC` (150) and `Merck Sharp & Dohme LLC` (55) are
+one sponsor split by markup alone. Case-folding cannot fix it; it needs
+decoding. Worth re-checking on every other free-text field.
+
+**Decision — normalise in the loader, enforce in the schema.** The rule, in
+order: HTML unescape; Unicode NFD and drop combining marks; casefold; collapse
+internal whitespace; strip surrounding whitespace and trailing `. , ; : -`.
+
+  - **Why the loader and not somewhere else.** Not ingestion: the raw cache is
+    the durable copy and must stay byte-faithful to what the registry sent.
+    Not analysis: `studies.sponsor_id` is a foreign key, so identity has to be
+    settled *before* ids are handed out — normalising later would mean merging
+    rows and repointing every reference. The loader is the only place where
+    identity is decided once, at the moment the id is assigned.
+  - **Why this is safe to automate.** The rule only removes case, accents,
+    spacing, punctuation and markup. For two genuinely different organisations
+    to collide, their names would have to be identical letter for letter,
+    which is not a realistic failure mode. Contrast the entity-resolution
+    question below, which is not safe to automate.
+
+**Decision — `sponsors` keeps two columns, not one.** `promotor_key` holds the
+normalised form and carries the `UNIQUE` constraint; `promotor` holds the most
+frequent raw spelling, for display. Storing only the normalised form would put
+`astrazeneca ab` on the dashboard; storing only the raw form cannot enforce
+identity. This is a change from the reverted DDL, which had a single
+`promotor TEXT NOT NULL UNIQUE`.
+
+**Explicitly out of scope — entity resolution.** `Novartis Farmacéutica, S.A.`
+(260) and `Novartis Pharma AG` (188) are distinct legal entities in one
+corporate group, as are the several Merck Sharp & Dohme entities. Grouping
+them changes what "top sponsor" means and is a judgement that should be
+visible and defensible, so it belongs in `analysis/` if it happens at all —
+never silently in the database. Normalisation is mechanical and reversible;
+entity resolution is neither.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of
@@ -387,16 +453,25 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
   came from a targeted check of a field already under suspicion, so what got
   examined depended on what happened to be guessed. Profiling every field
   systematically is the version of that which does not depend on guessing.
-- [ ] `db/profile.py` — one report per source field: present/blank/absent
+- [x] `db/profile.py` — one report per source field: present/blank/absent
       counts, distinct-value count, and the value distribution. Low-cardinality
       fields list every value with counts; high-cardinality fields list the
       most frequent, where a single dominant value in an otherwise free-text
-      field is the signature of a placeholder.
-- [ ] Fill rates broken down **by year, not corpus-wide**. Averaging across
+      field is the signature of a placeholder. Also reports how many values
+      would merge under case/accent/spacing normalisation, which is what
+      caught the sponsor-name splitting.
+- Scope: only the fields a table actually keeps. Reports are committed to
+  `docs/profiles/` — they summarise the 208MB cache, which is gitignored, so
+  nobody could regenerate them from a clone.
+- [x] `sponsors` — profiled, decisions recorded in §3.2c: normalise names in
+      the loader, key on the normalised form, keep the most frequent raw
+      spelling for display. Entity resolution stays out of the database.
+- [x] Fill rates broken down **by year, not corpus-wide**. Averaging across
       2017–2026 blends two regimes either side of the January 2023 CTIS
       transition and can hide a field that stopped being populated entirely.
-- [ ] Review the report and record what it shows in a new §3.2c before any DDL is
-      written from it.
+- [ ] `studies` — 51 source fields, the big one
+- [ ] `funders`, `therapeutic_areas`, `centers` and the bridge attributes
+- Each table's findings go into §3.2c before its DDL is written.
 
 **2.3 — DDL (after profiling)**
 - [ ] `db/schema.sql` — rebuilt from what the profile shows. The reverted

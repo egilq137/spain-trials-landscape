@@ -1,0 +1,1070 @@
+Sponsor name variants that collapse under the normalisation rule
+======================================================================
+rule: HTML unescape, strip accents, casefold, collapse whitespace,
+      strip leading/trailing whitespace and trailing . , ; : -
+
+distinct raw values           : 3763
+distinct after normalisation  : 3336
+groups with >1 spelling       : 315
+rows absorbed into an existing sponsor : 427
+
+Every group, largest first. The first line of each is the spelling the
+loader keeps as the display name (most frequent wins).
+======================================================================
+    300  'AstraZeneca AB'
+     45  'Astrazeneca AB'
+
+    260  'Novartis Farmacéutica, S.A.'
+     10  'Novartis Farmaceutica, S.A.'
+      9  'Novartis Farmacéutica, S.A'
+      1  'NOVARTIS FARMACEUTICA, S.A.'
+      1  'Novartis Farmaceutica, S.A'
+      1  'Novartis Farmacéutica, S.A.,'
+
+    118  'AbbVie Deutschland GmbH & Co. KG'
+     91  'AbbVie Deutschland GmbH &amp; Co. KG'
+     24  'Abbvie Deutschland GmbH & Co. KG'
+      6  'Abbvie Deutschland GmbH &amp; Co. KG'
+
+    150  'Merck Sharp &amp; Dohme LLC'
+     55  'Merck Sharp & Dohme LLC'
+
+    120  'Amgen Inc.'
+     28  'Amgen Inc'
+
+     78  'Sanofi-Aventis Recherche &amp; Developpement'
+     21  'Sanofi-Aventis Recherche & Développement'
+     14  'Sanofi-aventis recherche & développement'
+     11  'sanofi-aventis recherche & développement'
+     10  'Sanofi-aventis Recherche & Développement'
+      3  'Sanofi-aventis recherche & developpement'
+      3  'sanofi-aventis Recherche & Développement'
+      2  'Sanofi-Aventis Recherche & Developpement'
+      1  'SANOFI-AVENTIS RECHERCHE & DEVELOPPEMENT'
+
+    133  'Pfizer Inc.'
+      6  'Pfizer Inc'
+      1  'PFIZER INC'
+      1  'Pfizer Inc,'
+
+    121  'Bristol-Myers Squibb International Corporation'
+      1  'Bristol-Myers Squibb international Corporation'
+
+    104  'Bayer AG'
+      1  'BAYER AG'
+      1  'Bayer  AG'
+
+     83  'Glaxosmithkline Research &amp; Development Limited'
+     20  'GlaxoSmithKline Research & Development Limited'
+      2  'Glaxosmithkline Research & Development Limited'
+
+     90  'Merck Sharp & Dohme Corp., a subsidiary of Merck & Co., Inc.'
+     12  'Merck Sharp & Dohme Corp., a subsidiary of Merck & Co., Inc'
+
+     85  'Eli Lilly &amp; Co.'
+     11  'Eli Lilly & Co.'
+
+     87  'Lilly S.A.'
+      3  'Lilly S.A'
+
+     86  'Boehringer Ingelheim España, S.A.'
+      1  'Boehringer Ingelheim españa, S.A.'
+
+     39  'Laboratorios Normon, S.A'
+     38  'Laboratorios Normon, S.A.'
+
+     66  'Gilead Sciences, Inc.'
+      5  'Gilead Sciences, Inc'
+
+     50  'F. Hoffmann-La Roche Ltd'
+     12  'F. Hoffmann-La Roche Ltd.'
+
+     50  'Gilead Sciences Inc.'
+      8  'Gilead Sciences Inc'
+
+     52  'Biogen Idec Research Limited'
+      1  'Biogen Idec Research Limited.'
+
+     51  'Celgene Corporation'
+      1  'Celgene corporation'
+
+     30  'Fundació Clínic per a la Recerca Biomèdica'
+      6  'Fundació Clinic per a la Recerca Biomèdica'
+      3  'FUNDACIÓ CLÍNIC PER A LA RECERCA BIOMÈDICA'
+      3  'Fundació Clinic per a la Recerca Biomédica'
+      2  'Fundacio Clinic per a la Recerca Biomedica'
+      1  'Fundacio Clinic per a la Recerca Biomèdica'
+      1  'Fundacio Clinic per a la recerca biomedica'
+      1  'Fundació Clínic per  a la Recerca Biomèdica'
+      1  'Fundació Clínic per a la recerca Biomèdica'
+      1  'Fundació Clínic per a la recerca biomèdica'
+
+     44  'Janssen-Cilag International N.V.'
+      3  'Janssen-Cilag International N.V'
+
+     46  'Daiichi Sankyo Inc.'
+      1  'Daiichi Sankyo Inc'
+
+     36  'Novartis Farmacéutica S.A.'
+      6  'Novartis Farmacéutica S.A'
+      1  'Novartis Farmaceutica S.A'
+      1  'Novartis Farmaceutica S.A.'
+      1  'Novartis Farmaceútica S.A.'
+
+     32  'Laboratorios Alter S.A.'
+      6  'LABORATORIOS ALTER S.A.'
+      3  'Laboratorios ALTER S.A'
+      2  'Laboratorios Alter S.A'
+      1  'laboratorios Alter S.A.'
+
+     36  'Pfizer Inc., 235 East 42nd Street, New York, NY 10017'
+      2  'Pfizer Inc., 235 East 42nd Street, New York, ny 10017'
+      1  'Pfizer Inc., 235 East 42nd Street, New York,  NY 10017'
+
+     13  'Fundación PETHEMA'
+      9  'Fundacion PETHEMA'
+      4  'FUNDACIÓN PETHEMA'
+      4  'Fundación Pethema'
+      3  'Fundacion Pethema'
+      1  'FUNDACION PETHEMA'
+
+     31  'Roche Farma S. A. U. que realiza el ensayo en España y que actúa como representante F. Hoffmann-La Roche Ltd'
+      1  'Roche Farma S. A. U. que realiza el ensayo en España y que  actúa como representante F. Hoffmann-La Roche Ltd'
+
+     30  'Genentech Inc.'
+      1  'Genentech Inc'
+
+     27  'Fundacio De Recerca Clinic Barcelona-Institut D¿Investigacions Biomediques August Pi I Sunyer'
+      4  'Fundacio De Recerca Clinic Barcelona-Institut D¿investigacions Biomediques August Pi I Sunyer'
+
+     18  'Consorci Mar Parc de Salut de Barcelona (Parc de Salut Mar)'
+      9  'Consorci Mar Parc de Salut de Barcelona (Parc de Salut MAR)'
+      2  'Consorci MAr Parc de Salut de Barcelona (Parc de Salut Mar)'
+      1  'Consorci Mar Parc de Salut de Barcelona (Parc de Salut Mar).'
+
+     28  'Alexion Pharmaceuticals Inc.'
+      1  'Alexion Pharmaceuticals Inc'
+
+     25  'Regeneron Pharmaceuticals, Inc.'
+      2  'Regeneron Pharmaceuticals, Inc'
+
+     16  'European Organisation For Research And Treatment Of Cancer'
+      9  'European Organisation for Research and Treatment of Cancer'
+      1  'European organisation for research and treatment of Cancer'
+
+     19  'UCB Biopharma SPRL'
+      1  'UCB BIOPHARMA SPRL'
+      1  'UCB BioPharma SPRL'
+      1  'UCB Biopharma SPRL.'
+
+     15  'LEO Pharma A/S'
+      5  'Leo Pharma A/S'
+      2  'LEO PHARMA A/S'
+
+     13  'Genentech, Inc.'
+      8  'Genentech, Inc'
+
+     10  'Actelion Pharmaceuticals Ltd.'
+      6  'Actelion Pharmaceuticals Ltd'
+      4  'ACTELION Pharmaceuticals Ltd.'
+      1  'ACTELION Pharmaceuticals Ltd'
+
+     10  'Farmalider S.A.'
+      6  'FARMALIDER S.A.'
+      2  'FARMALIDER S.A'
+      2  'FARMALÍDER S.A.'
+      1  'Farmalíder S.A'
+
+     18  'Ultragenyx Pharmaceutical Inc.'
+      3  'Ultragenyx Pharmaceutical Inc'
+
+      8  'FAES FARMA S.A'
+      7  'FAES FARMA S.A.'
+      5  'Faes Farma S.A.'
+
+      9  'PIERRE FABRE MEDICAMENT'
+      8  'Pierre Fabre Medicament'
+      3  'Pierre Fabre Médicament'
+
+     19  'Galapagos NV'
+      1  'Galapagos Nv'
+
+     11  'AB SCIENCE'
+      5  'AB Science'
+      4  'Ab Science'
+
+     13  'Fundacion GECP'
+      5  'Fundación GECP'
+
+     15  'Alexion Pharmaceuticals, Inc.'
+      3  'Alexion Pharmaceuticals, Inc'
+
+     12  'Consorci Mar Parc De Salut De Barcelona'
+      5  'Consorci Mar Parc de Salut de Barcelona'
+      1  'Consorci MAr Parc de Salut de Barcelona'
+
+     17  'Taiho Oncology Inc.'
+      1  'Taiho Oncology Inc'
+
+     14  'Fundació Parc Taulí'
+      2  'Fundacio Parc Tauli'
+      1  'Fundacio Parc Taulí'
+
+     16  'Clínica Universidad de Navarra/Universidad de Navarra'
+      1  'Clinica Universidad de Navarra/Universidad de Navarra'
+
+      6  'INSTITUTO DE INVESTIGACION SANITARIA LA FE'
+      6  'INSTITUTO DE INVESTIGACIÓN SANITARIA LA FE'
+      4  'Instituto de Investigación Sanitaria La Fe'
+      1  'Instituto de Investigacion Sanitaria La Fe'
+
+     12  'Fundacion Publica Andaluza Para La Gestion De La Investigacion En Salud De Sevilla'
+      2  'Fundación Pública Andaluza para la Gestión de la Investigación en Salud de Sevilla'
+      1  'Fundacion Publica Andaluza para la Gestion de la Investigacion en Salud de Sevilla'
+      1  'Fundación Pública Andaluza para la Gestion de la Investigación en Salud de Sevilla'
+
+     14  'GlaxoSmithKline S.A.'
+      1  'GlaxoSmithKline S.A'
+      1  'GlaxoSmithKline S.A,'
+
+     13  'F. Hoffman-La Roche Ltd.'
+      3  'F. Hoffman-La Roche Ltd'
+
+     15  'Pfizer Inc, 235 East 42nd Street, New York, NY 10017'
+      1  'Pfizer Inc, 235 East 42nd Street, New York, NY  10017'
+
+     14  'Otsuka Pharmaceutical Development & Commercialization, Inc.'
+      2  'Otsuka Pharmaceutical Development & Commercialization, Inc'
+
+      9  'BioMarin Pharmaceutical Inc.'
+      7  'Biomarin Pharmaceutical Inc.'
+
+      9  'Fundacion Para La Investigacion Biomedica Del Hospital Universitario La Paz'
+      4  'Fundación para la Investigación Biomédica del Hospital Universitario La Paz'
+      1  'Fundación Para La Investigación Biomédica Del Hospital Universitario La Paz'
+      1  'Fundación para la Investigación Biomédica del hospital Universitario La Paz'
+      1  'Fundación para la investigación biomédica del Hospital Universitario La Paz'
+
+     10  'Viiv Healthcare UK Limited'
+      6  'ViiV Healthcare UK Limited'
+
+     15  'GlaxoSmithKline Biologicals'
+      1  'Glaxosmithkline Biologicals'
+
+     13  'Medica Scientia Innovation Research (MedSIR)'
+      2  'Medica Scientia Innovation Research (MEDSIR)'
+
+     12  'Roche Farma, S.A., que representa en España a F. Hoffmann-La Roche Ltd.'
+      1  'Roche Farma, S.A., que representa en España a F. Hoffmann-La Roche   Ltd.'
+      1  'Roche Farma, S.A., que representa en España a F. Hoffmann-La Roche LTD'
+      1  'Roche Farma, S.A., que representa en España a F. Hoffmann-La Roche Ltd'
+
+      8  'Fundación para la Investigación Biomédica de Córdoba'
+      4  'Fundacion Para La Investigacion Biomedica De Cordoba'
+      1  'FUNDACIÓN PARA LA INVESTIGACIÓN BIOMÉDICA DE CÓRDOBA'
+      1  'Fundación Para la Investigación Biomédica de Córdoba'
+      1  'Fundación para la investigación biomédica de Córdoba'
+
+     13  'Bayer HealthCare AG'
+      1  'Bayer Healthcare AG'
+
+      8  'Daiichi Sankyo, Inc.'
+      3  'Daiichi Sankyo, Inc'
+      2  'DAIICHI SANKYO, INC.'
+      1  'DAIICHI SANKYO, INC'
+
+      9  'Eisai Ltd.'
+      5  'Eisai Ltd'
+
+      8  'Fundació Lluita contra la SIDA'
+      4  'FUNDACIÓ LLUITA CONTRA LA SIDA'
+      1  'Fundacio Lluita contra la SIDA'
+      1  'Fundació Lluita contra la Sida'
+
+      6  'Fundacio Sant Joan De Deu'
+      6  'Fundació Sant Joan de Déu'
+      2  'FUNDACIÓ SANT JOAN DE DÉU'
+
+     13  'Merck Sharp & Dohme Corp.'
+      1  'Merck Sharp & Dohme Corp'
+
+     11  'Unicancer'
+      3  'UNICANCER'
+
+     12  'Shire Human Genetic Therapies, Inc.'
+      1  'Shire Human Genetic Therapies, Inc'
+
+      9  'Millennium Pharmaceuticals, Inc.'
+      4  'Millennium Pharmaceuticals, Inc'
+
+      7  'Acadia Pharmaceuticals Inc.'
+      5  'ACADIA Pharmaceuticals Inc.'
+
+      6  'ABIVAX'
+      6  'Abivax'
+
+      7  'Sanofi-aventis recherche et développement'
+      3  'SANOFI-AVENTIS RECHERCHE ET DEVELOPPEMENT'
+      1  'Sanofi-aventis Recherche et Développement'
+      1  'sanofi-aventis recherche et développement'
+
+      8  'Menarini Ricerche S.p.A.'
+      2  'Menarini Ricerche S.p.A'
+      1  'MENARINI RICERCHE S.p.A'
+      1  'MENARINI RICERCHE S.p.A.'
+
+     11  'Astellas Pharma Global Development, Inc.'
+      1  'Astellas Pharma Global development, Inc'
+
+      8  'GW Research Ltd'
+      4  'GW Research Ltd.'
+
+      9  'Beigene Ltd.'
+      2  'BeiGene Ltd.'
+      1  'BeiGene Ltd'
+
+      9  'European Organisation for Research and Treatment of Cancer (EORTC)'
+      1  'European Organisation For Research and Treatment of Cancer (EORTC)'
+      1  'European Organisation for research and Treatment of cancer (EORTC)'
+
+      7  'BioCryst Pharmaceuticals Inc'
+      2  'BioCryst Pharmaceuticals Inc.'
+      2  'Biocryst Pharmaceuticals Inc.'
+
+      8  'Clinica Universidad De Navarra'
+      3  'Clínica Universidad de Navarra'
+
+      6  'Instituto De Investigacion Sanitaria Fundacion Jimenez Diaz'
+      3  'Instituto de Investigación Sanitaria Fundación Jiménez Díaz'
+      1  'INSTITUTO DE INVESTIGACION SANITARIA FUNDACION JIMENEZ DIAZ'
+      1  'Instituto de Investigacion Sanitaria Fundación Jiménez Díaz'
+
+      8  'PTC Therapeutics, Inc.'
+      2  'PTC THERAPEUTICS, INC.'
+      1  'PTC Therapeutics, Inc'
+
+      9  "Fundació Hospital Universitari Vall d'Hebron - Institut de Recerca (VHIR)"
+      1  "Fundació Hospital Universitari Vall d'Hebron - Institut de Recerca  (VHIR)"
+      1  "Fundació Hospital Universitari Vall d'Hebron - Institut de Recerca (VHIR)."
+
+     10  'Clovis Oncology, Inc.'
+      1  'Clovis Oncology, Inc'
+
+     10  'Taiho Oncology, Inc.'
+      1  'Taiho Oncology, Inc'
+
+      9  'Alnylam Pharmaceuticals Inc.'
+      2  'Alnylam Pharmaceuticals Inc'
+
+      8  'Alnylam Pharmaceuticals, Inc.'
+      2  'Alnylam Pharmaceuticals, Inc'
+
+      8  'Pharma Mar, S.A.'
+      2  'PHARMA MAR, S.A'
+
+      4  'Celltrion, Inc'
+      3  'CELLTRION, Inc.'
+      2  'Celltrion, Inc.'
+      1  'CELLTRION, Inc'
+
+      9  'Ipsen Innovation'
+      1  'IPSEN INNOVATION'
+
+      9  'Ionis Pharmaceuticals, Inc.'
+      1  'Ionis Pharmaceuticals, Inc'
+
+      9  'Celgene International II Sàrl'
+      1  'Celgene International II SARL'
+
+      8  'Merck Sharp & Dohme Corp., a subsidiary of Merck & Co.,Inc'
+      1  'Merck Sharp & Dohme Corp., a subsidiary of Merck & Co.,Inc.'
+      1  'Merck Sharp & Dohme Corp., a subsidiary of Merck & Co.,Inc.,'
+
+      7  'Allergan Ltd.'
+      1  'Allergan LTD'
+      1  'Allergan Ltd'
+      1  'allergan LTD'
+
+      9  'Roche Farma, S.A. en nombre de F. Hoffmann-La Roche Ltd'
+      1  'Roche Farma, S.A. en nombre de F. Hoffmann-La Roche Ltd.'
+
+      6  'Fundacion Publica Andaluza Para La Investigacion De Malaga En Biomedicina Y Salud'
+      4  'Fundación Pública Andaluza para la Investigación de Málaga en Biomedicina y Salud'
+
+      4  'Laboratorios Farmalíder S.A.'
+      3  'Laboratorios Farmalider S.A.'
+      2  'LABORATORIOS FARMALIDER S.A.'
+      1  'LABORATORIOS FARMALIDER S.A'
+
+      7  'Idorsia Pharmaceuticals Ltd'
+      3  'Idorsia Pharmaceuticals Ltd.'
+
+      7  'GEISER PHARMA S.L.'
+      3  'Geiser Pharma S.L.'
+
+      8  'Laboratorios Servier S.L.'
+      1  'Laboratorios Servier S.L'
+
+      7  'Array BioPharma Inc.'
+      1  'Array Biopharma Inc'
+      1  'Array Biopharma Inc.'
+
+      7  'Fundación SEIMC-GESIDA'
+      2  'Fundacion SEIMC-GESIDA'
+
+      7  'Alkermes Inc.'
+      2  'Alkermes Inc'
+
+      8  'Novartis Pharma Services AG'
+      1  'Novartis Pharma services AG'
+
+      6  'Queen Mary University Of London'
+      3  'Queen Mary University of London'
+
+      8  'Banc de Sang i Teixits'
+      1  'Banc de Sang i teixits'
+
+      8  'FAES FARMA, S.A.'
+      1  'FAES FARMA, S.A'
+
+      8  'BeiGene, Ltd.'
+      1  'BeiGene, Ltd'
+
+      5  'Fundación Pública Andaluza Progreso y Salud'
+      3  'FUNDACIÓN PÚBLICA ANDALUZA PROGRESO Y SALUD'
+
+      3  'sanofi-aventis Groupe'
+      2  'Sanofi-Aventis Groupe'
+      2  'sanofi-aventis groupe'
+      1  'Sanofi-aventis Groupe'
+
+      5  'Fundacion Para La Investigacion Biomedica Del Hospital Universitario Ramon Y Cajal'
+      3  'Fundación para la Investigación Biomédica del Hospital Universitario Ramón y Cajal'
+
+      6  'Palobiofarma S.L.'
+      1  'PaloBiofarma S.L.'
+      1  'Palobiofarma S.L'
+
+      3  'Laboratoires Thea'
+      2  'Laboratoires THEA'
+      2  'Laboratoires Théa'
+      1  'Laboratoires THÉA'
+
+      6  'Tesaro Inc.'
+      2  'TESARO Inc.'
+
+      5  'Cytokinetics Inc.'
+      3  'Cytokinetics Inc'
+
+      6  'Lilly, S.A.'
+      1  'LIlly, S.A.'
+      1  'Lilly, S.A'
+
+      5  'Sanofi Pasteur Inc.'
+      3  'Sanofi Pasteur Inc'
+
+      7  'Sanofi aventis recherche & développement'
+      1  'Sanofi Aventis Recherche & Développement'
+
+      7  'Janssen Vaccines & Prevention B.V.'
+      1  'Janssen Vaccines &amp; Prevention B.V.'
+
+      4  'Sanofi-Aventis Research & Development'
+      4  'Sanofi-Aventis Research &amp; Development'
+
+      4  'Alfasigma S.p.A.'
+      2  'ALFASIGMA S.P.A.'
+      1  'Alfasigma S.p.a'
+
+      5  'Inmunotek, S.L.'
+      2  'INMUNOTEK, S.L.'
+
+      4  'Grupo Espanol Multidisciplinar De Melanoma'
+      3  'Grupo Español Multidisciplinar de Melanoma'
+
+      6  'Roche Farma S.A en nombre de F. Hoffmann-La Roche Ltd'
+      1  'Roche Farma S.A en nombre de F. Hoffmann-La Roche LTD'
+
+      5  'Instituto Bernabeu'
+      2  'INSTITUTO BERNABEU'
+
+      6  'Biotest AG'
+      1  'BIOTEST AG'
+
+      4  'Fundación Pública Andaluza para la Investigación de Málaga en Biomedicina y Salud (FIMABIS)'
+      2  'Fundación Pública Andaluza para la Investigación de Málaga en Biomedicina Y Salud (FIMABIS)'
+      1  'Fundación Pública Andaluza para la Investigación de Málaga en Biomedicina y Salud  (FIMABIS)'
+
+      6  'Grupo Espanol De Tumores Neuroendocrinos'
+      1  'Grupo Español de Tumores Neuroendocrinos'
+
+      6  'Kern Pharma, S.L.'
+      1  'Kern Pharma, S.L'
+
+      5  'Institut de Recerca HSCSP'
+      2  'INSTITUT DE RECERCA HSCSP'
+
+      6  'Fundacion Para La Investigacion Biomedica Del Hospital Gregorio Maranon'
+      1  'Fundacion para la investigación Biomédica del hospital Gregorio Marañón'
+
+      6  'Octapharma AG'
+      1  'OCTAPHARMA AG'
+
+      2  'Fundacion Oncosur'
+      2  'Fundación Oncosur'
+      1  'FUNDACIÓN ONCOSUR'
+      1  'Fundación ONCOSUR'
+      1  'Fundación OncoSur'
+
+      3  'Roche Farma S.A.(Soc. Unipersonal)que realiza el ensayo en España y que actua como representante F.Hoffmann-La Roche LTD'
+      3  'Roche Farma S.A.(Soc. Unipersonal)que realiza el ensayo en España y que actúa como representante F.Hoffmann-La Roche LTD'
+      1  'Roche Farma S.A.(Soc. Unipersonal)que realiza el ensayo en España y que actúa como representante F.Hoffmann-la Roche LTD'
+
+      6  'Debiopharm International S.A.'
+      1  'Debiopharm International S.A'
+
+      6  'Instituto De Investigacion Sanitaria Fundacion Para La Investigacion Del Hospital Clinico De Valencia-INCLIVA'
+      1  'Instituto de Investigacion Sanitaria Fundacion para la Investigacion del Hospital Clinico de Valencia-INCLIVA'
+
+      5  'Pfizer Inc. 235 East 42nd Street, New York, NY 10017'
+      1  'Pfizer Inc.  235 East 42nd Street, New York, NY 10017'
+
+      4  'Fundación CRIS de investigación para vencer el cáncer'
+      2  'Fundacion Cris De Investigacion Para Vencer El Cancer'
+
+      4  'Italfarmaco S.p.A.'
+      2  'ITALFARMACO S.p.A.'
+
+      5  'Fundación para la Formación e Investigación Sanitarias de la Región de Murcia'
+      1  'Fundación para la Formación e investigación sanitarias de la Región de Murcia.'
+
+      3  'Infinity Pharmaceuticals, Inc'
+      3  'Infinity Pharmaceuticals, Inc.'
+
+      3  'TECNIMEDE ? SOCIEDADE TÉCNICO MEDICINAL S.A.'
+      3  'Tecnimede ? Sociedade Técnico Medicinal S.A.'
+
+      5  'Sk Life Science Inc.'
+      1  'SK Life Science Inc'
+
+      5  'Sociedad Española de Cardiología'
+      1  'SOCIEDAD ESPAÑOLA DE CARDIOLOGÍA'
+
+      5  'Bial - Portela & Ca, S.A.'
+      1  'BIAL - Portela & Ca, S.A.'
+
+      3  'University Of Cologne'
+      3  'University of Cologne'
+
+      3  'Laboratorios Kern Pharma S.L.'
+      2  'Laboratorios KERN Pharma S.L.'
+      1  'Laboratorios Kern Pharma S.L'
+
+      4  'Fundacion Instituto De Investigacion Sanitaria Aragon'
+      2  'Fundación Instituto de Investigación Sanitaria Aragón'
+
+      5  'BioInvent International AB'
+      1  'Bioinvent International AB'
+
+      3  'Grupo Espanol De Investigacion En Cancer De Ovario'
+      1  'Grupo Español de Investigación en Cancer de Ovario'
+      1  'Grupo Español de Investigación en Cáncer de Ovario'
+
+      3  'Fundación Pública Andaluza para la Gestión de la Investigación en Salud de Sevilla (FISEVI)'
+      1  'Fundacion Publica Andaluza para la Gestion de la Investigacion en Salud de Sevilla (FISEVI)'
+      1  'Fundación pública andaluza para la gestión de la investigación en salud de Sevilla (FISEVI)'
+
+      4  'LYSARC'
+      1  'Lysarc'
+
+      3  'CytomX Therapeutics, Inc'
+      2  'CytomX Therapeutics, Inc.'
+
+      3  'Grupo Español de Tratamiento de Tumores de Cabeza y Cuello'
+      2  'Grupo Espanol De Tratamiento De Tumores De Cabeza Y Cuello'
+
+      4  'Kura Oncology Inc.'
+      1  'Kura Oncology Inc.,'
+
+      3  'argenx BVBA'
+      2  'Argenx BVBA'
+
+      4  'Laboratorio Reig Jofre S.A.'
+      1  'Laboratorio Reig Jofré S.A'
+
+      4  'Teva Pharmaceutical Industries Ltd.'
+      1  'Teva Pharmaceutical Industries Ltd'
+
+      3  'Polyphor Ltd.'
+      2  'Polyphor Ltd'
+
+      4  'Takeda Development Centre Europe Ltd.'
+      1  'TAKEDA DEVELOPMENT CENTRE EUROPE LTD'
+
+      3  'Fundacion Para La Investigacion Biomedica Del Hospital Clinico San Carlos'
+      1  'Fundación para la Investigación Biomédica del Hospital Clínico San Carlos'
+      1  'Fundación para la investigación biomédica del Hospital Clínico San Carlos'
+
+      3  'ITF Research Pharma S.L.U.'
+      1  'ITF RESEARCH PHARMA S.L.U.'
+      1  'ITF Research Pharma S.L.U'
+
+      3  'University Of Oxford'
+      2  'University of Oxford'
+
+      4  'Boehringer Ingelheim España S.A.'
+      1  'Boehringer Ingelheim España S.A'
+
+      4  'Verastem Inc.'
+      1  'Verastem Inc'
+
+      4  'Oryzon Genomics S. A.'
+      1  'Oryzon Genomics S. A'
+
+      4  'Zambon SpA'
+      1  'ZAMBON SpA'
+
+      4  'Merus N.V.'
+      1  'Merus N.V'
+
+      4  'Hospital Universitario Fundación Alcorcón'
+      1  'HOSPITAL UNIVERSITARIO FUNDACION ALCORCON'
+
+      3  'Fundación de investigación de HM Hospitales'
+      2  'Fundacion De investigacion De Hm Hospitales'
+
+      4  'Celltrion Inc.'
+      1  'CELLTRION Inc.'
+
+      4  'Qed Therapeutics Inc.'
+      1  'QED Therapeutics Inc.'
+
+      2  'SUNOVION PHARMACEUTICALS INC.'
+      2  'Sunovion Pharmaceuticals Inc.'
+
+      3  'Shionogi Ltd.'
+      1  'Shionogi Ltd'
+
+      3  'PsiOxus Therapeutics Ltd'
+      1  'Psioxus Therapeutics Ltd.'
+
+      3  'Chugai Pharmaceutical Co. Ltd.'
+      1  'Chugai Pharmaceutical Co. Ltd'
+
+      2  'Instituto Grifols, S.A'
+      2  'Instituto Grifols, S.A.'
+
+      3  'Fundació Clínic per la Recerca Biomèdica'
+      1  'Fundació Clínic per la recerca Biomédica'
+
+      3  'Puma Biotechnology, Inc.'
+      1  'Puma Biotechnology, Inc'
+
+      3  'Roxall Medicina España S.A.'
+      1  'ROXALL Medicina España S.A.'
+
+      3  'ANTHERA Pharmaceuticals, Inc.'
+      1  'Anthera pharmaceuticals, Inc'
+
+      2  'LABORATORIOS LETI S.L.U'
+      2  'Laboratorios LETI S.L.U'
+
+      3  'NeuroDerm Ltd.'
+      1  'Neuroderm Ltd.'
+
+      3  'Spherium Biomed'
+      1  'SPHERIUM BIOMED'
+
+      2  'Astellas Pharma Europe Ltd'
+      2  'Astellas Pharma Europe Ltd.'
+
+      2  'Fondazione PENTA ONLUS'
+      1  'Fondazione PENTA Onlus'
+      1  'Fondazione Penta ONLUS'
+
+      2  'Gedeon Richter Plc'
+      2  'Gedeon Richter Plc.'
+
+      3  'Roche Farma S.A.'
+      1  'Roche Farma S.A'
+
+      3  'Agenus Inc.'
+      1  'Agenus Inc.,'
+
+      2  'Io Biotech ApS'
+      1  'IO Biotech ApS'
+      1  'IO Biotech Aps'
+
+      2  'Dicerna Pharmaceuticals Inc'
+      2  'Dicerna Pharmaceuticals Inc.'
+
+      3  'Reneo Pharma Ltd.'
+      1  'Reneo Pharma Ltd'
+
+      2  'Roche Farma S. A. U. que realiza el ensayo en España y que actúa como representante F.Hoffmann-La Roche Ltd'
+      1  'Roche Farma S. A. U. que realiza el ensayo en España y que actua como representante F.Hoffmann-La Roche Ltd'
+      1  'Roche Farma S. A. U. que realiza el ensayo en España y que actúa como representante F.Hoffmann-La Roche Ltd.'
+
+      3  'HUTCHMED Limited'
+      1  'HUTCHMED  Limited'
+
+      2  'APTATARGETS S.L.'
+      1  'APTATARGETS S.L'
+      1  'aptaTargets S.L.'
+
+      3  'Biohorm S.L.'
+      1  'Biohorm S.L'
+
+      2  'AnaptysBio Inc.'
+      2  'Anaptysbio Inc.'
+
+      2  'Teva Pharmaceutical Industries, Ltd.'
+      1  'Teva Pharmaceutical Industries, Ltd'
+
+      2  'Hospital Universitario de Fuenlabrada'
+      1  'Hospital Universitario De Fuenlabrada'
+
+      2  'Universidad Autónoma de Madrid'
+      1  'Universidad Autonoma De Madrid'
+
+      2  'Roche Farma, S.A en nombre de F. Hoffmann-La Roche Ltd'
+      1  'Roche Farma, S.A  en nombre de F. Hoffmann-La Roche Ltd'
+
+      2  'Bcn Peptides S.A.'
+      1  'BCN Peptides S.A.'
+
+      2  'Alcon Research, Ltd.'
+      1  'Alcon Research, Ltd'
+
+      2  'Ferrer Internacional S.A.'
+      1  'Ferrer Internacional S.A'
+
+      2  'SUN Pharma Global FZE'
+      1  'Sun Pharma Global FZE'
+
+      2  'Cempra Pharmaceuticals, Inc.'
+      1  'Cempra Pharmaceuticals, Inc'
+
+      2  'Kura Oncology, Inc.'
+      1  'Kura Oncology, Inc'
+
+      2  'University of Birmingham'
+      1  'University Of Birmingham'
+
+      2  'Zambon S.p.A.'
+      1  'Zambon S.P.A.'
+
+      2  'Prokrea BCN S.L.'
+      1  'Prokrea Bcn S.L.'
+
+      2  'Principia Biopharma Inc.'
+      1  'Principia Biopharma Inc'
+
+      2  'Verastem, Inc.'
+      1  'Verastem, Inc'
+
+      2  'Fundación para la Investigación Biomédica del Hospital'
+      1  'Fundación para la Investigación biomédica del Hospital'
+
+      1  'FUNDACION PARA LA INVESTIGACION BIOMEDICA DEL HOSPITAL UNIVERSITARIO PRINCIPE DE ASTURIAS'
+      1  'FUNDACIÓN PARA LA INVESTIGACIÓN BIOMÉDICA DEL HOSPITAL UNIVERSITARIO PRÍNCIPE DE ASTURIAS'
+      1  'Fundación para la Investigación Biomédica del Hospital Universitario Príncipe de Asturias'
+
+      2  'Stealth BioTherapeutics Inc.'
+      1  'Stealth Biotherapeutics Inc.'
+
+      2  'FORUM Pharmaceuticals Inc.'
+      1  'Forum Pharmaceuticals Inc.'
+
+      2  'INSERM'
+      1  'Inserm'
+
+      2  'LABORATORIOS ALTER, S.A.'
+      1  'Laboratorios ALTER, S.A.'
+
+      2  'FIMABIS Fundación Pública Andaluza para la Investigación de Málaga en Biomedicina y Salud'
+      1  'FIMABIS Fundación Pública Andaluza para la Investigación de Málaga en Biomedicina Y Salud'
+
+      2  "Vall d'Hebron Institut de Recerca (VHIR)"
+      1  "Vall D'Hebron Institut de Recerca (VHIR)"
+
+      1  'Laboratorios CINFA S.A'
+      1  'Laboratorios CINFA S.A.'
+      1  'Laboratorios Cinfa S.A.'
+
+      2  'Ntc S.r.l.'
+      1  'NTC s.r.l.'
+
+      2  'Aelix Therapeutics'
+      1  'AELIX Therapeutics'
+
+      2  'Laboratorios CINFA'
+      1  'Laboratorios Cinfa'
+
+      2  'Vall D&#39;hebron Institut De Recerca'
+      1  "Vall d'Hebron Institut de Recerca"
+
+      2  'Guerbet'
+      1  'GUERBET'
+
+      2  'Fundacion Biomedica Galicia Sur'
+      1  'Fundación Biomédica Galicia Sur'
+
+      2  'Fundació Clínic Recerca Biomèdica'
+      1  'Fundacio Clinic Recerca Biomedica'
+
+      2  'Sanofi aventis recherche et developpement'
+      1  'Sanofi Aventis Recherche et Developpement'
+
+      2  'Concert Pharmaceuticals, Inc.'
+      1  'Concert Pharmaceuticals, Inc'
+
+      2  'Nerviano Medical Sciences S.r.l.'
+      1  'NERVIANO MEDICAL SCIENCES S.r.l.'
+
+      2  'Rhythm Pharmaceuticals Inc.'
+      1  'Rhythm Pharmaceuticals Inc'
+
+      2  'Spanish Society Of Cardiology'
+      1  'SPANISH SOCIETY OF CARDIOLOGY'
+
+      2  'Clinuvel Europe Limited'
+      1  'CLINUVEL EUROPE LIMITED'
+
+      2  'MaaT PHARMA'
+      1  'Maat Pharma'
+
+      2  'Complutense University Of Madrid'
+      1  'COMPLUTENSE UNIVERSITY OF MADRID'
+
+      1  'Clementia Pharmaceuticals Inc'
+      1  'Clementia Pharmaceuticals Inc.'
+
+      1  'AURORA PUJOL ONOFRE'
+      1  'Aurora Pujol Onofre'
+
+      1  'UCB BIOSCIENCES GmbH'
+      1  'UCB Biosciences GmbH'
+
+      1  'MOLOGEN AG'
+      1  'Mologen AG'
+
+      1  'Fundacion Para La Investigacion Biomédica Del Hospital Universitario 12 De Octubre'
+      1  'Fundación para la Investigación Biomédica del Hospital Universitario 12 de Octubre'
+
+      1  'DIATER, Laboratorio de Diagnóstico y Aplicaciones Terapéuticas, S.A.'
+      1  'Diater, Laboratorio de Diagnóstico y Aplicaciones Terapéuticas, S.A.'
+
+      1  'Fundaci? Cl?nic per a la Recerca Biom?dica'
+      1  'Fundaci? cl?nic per a la Recerca Biom?dica'
+
+      1  'TIGENIX, S.A.U.'
+      1  'TiGenix, S.A.U.'
+
+      1  'Exalenz BioScience Ltd.'
+      1  'Exalenz Bioscience Ltd.'
+
+      1  'Scioderm, INC'
+      1  'Scioderm, INC.'
+
+      1  'University Of Nottingham'
+      1  'University of Nottingham'
+
+      1  'GeiserPHARMA'
+      1  'GeiserPharma'
+
+      1  'GE Healthcare Ltd. and its Affiliates'
+      1  'GE Healthcare Ltd. and its affiliates'
+
+      1  'PRESURGY S.L.'
+      1  'Presurgy S.L.'
+
+      1  'AB-BIOTICS S.A.'
+      1  'AB-Biotics S.A.'
+
+      1  'King&#39;s College London'
+      1  "King's College London"
+
+      1  'SYLENTIS S.A.U'
+      1  'Sylentis S.A.U.'
+
+      1  'MYLAN GmbH'
+      1  'Mylan GmbH'
+
+      1  'Transition Therapeutics Ireland Ltd'
+      1  'Transition Therapeutics Ireland Ltd.'
+
+      1  'Merck Sharp & Dohme Corp., a subsidiary of Merck  Co., Inc'
+      1  'Merck Sharp & Dohme Corp., a subsidiary of Merck Co., Inc'
+
+      1  'GEISERPHARMA SL'
+      1  'GeiserPHARMA SL'
+
+      1  'Millennium Pharmaceuticals Inc'
+      1  'Millennium Pharmaceuticals Inc.'
+
+      1  'IVI BILBAO'
+      1  'IVI Bilbao'
+
+      1  'Novartis Vaccines and Diagnostics S.r.l.'
+      1  'Novartis Vaccines and Diagnostics s.r.l.'
+
+      1  'ANTONIO PEREZ MARTINEZ'
+      1  'Antonio Pérez Martínez'
+
+      1  'CONSORCIO HOSPITAL GENERAL UNIVERSITARIO DE VALENCIA'
+      1  'Consorcio Hospital General Universitario de Valencia'
+
+      1  'FONDAZIONE MICHELANGELO - AVANZAMENTO DELLO STUDIO E CURA DEI TUMORI'
+      1  'Fondazione Michelangelo - Avanzamento dello studio e cura dei tumori'
+
+      1  'F. Hoffmann-La Roche Ltd, realizado en España por Roche Farma S.A'
+      1  'F. Hoffmann-La Roche Ltd, realizado en España por Roche Farma S.A.'
+
+      1  'AVEO PHARMACEUTICALS, INC.'
+      1  'AVEO Pharmaceuticals, Inc.'
+
+      1  'Fundación para la Investigación Biomédica del Hospital Ramón y Cajal'
+      1  'Fundación para la investigación biomédica del Hospital Ramón y Cajal'
+
+      1  'Celldex Therapeutics, Inc'
+      1  'Celldex Therapeutics, Inc.'
+
+      1  'Coherus BioSciences, Inc.'
+      1  'Coherus Biosciences, Inc'
+
+      1  'Ipsen Bioscience, Inc'
+      1  'Ipsen Bioscience, Inc.'
+
+      1  'Melinta Therapeutics, Inc'
+      1  'Melinta Therapeutics, Inc.'
+
+      1  'Shire ViroPharma, Inc.'
+      1  'Shire Viropharma, Inc.'
+
+      1  'Mesoestetic Pharma Group S.L.'
+      1  'Mesoestetic Pharma group S.L.'
+
+      1  'HOSPITAL  UNIVERSITARI MÚTUA TERRASSA'
+      1  'Hospital Universitari Mutua Terrassa'
+
+      1  'PHARNEXT SA'
+      1  'Pharnext SA'
+
+      1  'BASQUE HEALTH SYSTEM'
+      1  'Basque Health System'
+
+      1  'HOSPITAL DE PALAMOS'
+      1  'HOSPITAL DE PALAMÓS'
+
+      1  'Esperion Therapeutics Inc.'
+      1  'Esperion Therapeutics Inc.,'
+
+      1  'Netherlands Cancer Institute- Antoni van Leeuwenhoek Hospital (NKI-AVL)'
+      1  'Netherlands Cancer Institute- Antoni van Leeuwenhoek hospital (NKI-AVL)'
+
+      1  'Althaia Xarxa Assistencial Universitària de Manresa. Fundació Privada'
+      1  'Althaia Xarxa Assistencial Universitària de Manresa. Fundació Privada.'
+
+      1  'Basilea Pharmaceutica International Ltd'
+      1  'Basilea Pharmaceutica International Ltd.'
+
+      1  'Fundación CRIS contra el Cáncer'
+      1  'Fundación CRIS contra el cancer'
+
+      1  'Fundación para la Investigación Biomédica Hospital Universitario La Paz'
+      1  'Fundación para la investigación Biomedica Hospital Universitario La Paz'
+
+      1  'INDUSTRIAL FARMACEUTICA CANTABRIA, S.A.'
+      1  'Industrial farmacéutica Cantabria, S.A'
+
+      1  'GRUPO ESPAÑOL DE INVESTIGACIÓN EN NEUROONCOLOGÍA (GEINO)'
+      1  'Grupo Español de Investigación en Neurooncología (GEINO)'
+
+      1  'LABORATORIOS INIBSA, S.A'
+      1  'LABORATORIOS INIBSA, S.A.'
+
+      1  'SYLENTIS SAU'
+      1  'Sylentis SAU'
+
+      1  'HC CLOVER PS S.L.'
+      1  'HC Clover PS S.L.'
+
+      1  'MONTREAL HEART INSTITUTE'
+      1  'Montreal Heart Institute'
+
+      1  'Roche Farma S.A.(Soc. Unipersonal) que realiza el ensayo en España y actua como representante de F.Hoffmann-La Roche LTD'
+      1  'Roche Farma S.A.(Soc. Unipersonal) que realiza el ensayo en España y actúa como representante de F.Hoffmann-La Roche LTD'
+
+      1  'FIDIA FARMACEUTICI S.P.A.'
+      1  'Fidia Farmaceutici S.p.A.'
+
+      1  'Kite Pharma, Inc'
+      1  'Kite Pharma, Inc.'
+
+      1  'Corbus Pharmaceuticals Inc.'
+      1  'Corbus pharmaceuticals Inc.'
+
+      1  'HOSPITAL DR JOSEP TRUETA'
+      1  'Hospital Dr Josep Trueta'
+
+      1  'Galenicum Health S.L.U'
+      1  'Galenicum Health S.L.U.'
+
+      1  'Cara Therapeutics INC'
+      1  'Cara Therapeutics Inc.'
+
+      1  'IVIRMA MADRID'
+      1  'IVIRMA Madrid'
+
+      1  'Rafael Pharmaceuticals, Inc'
+      1  'Rafael Pharmaceuticals, Inc.'
+
+      1  'ACTICOR BIOTECH'
+      1  'Acticor Biotech'
+
+      1  'SANTEN SAS'
+      1  'Santen SAS'
+
+      1  'Universidad de Barcelona'
+      1  'universidad de Barcelona'
+
+      1  'HOSPITAL UNIVERSITARIO TORRECÁRDENAS'
+      1  'Hospital Universitario Torrecárdenas'
+
+      1  'Fundacion Santiago Dexeus Font'
+      1  'Fundación Santiago Dexeus Font'
+
+      1  'Ribon Therapeutics, Inc'
+      1  'Ribon Therapeutics, Inc.'
+
+      1  'Felix Gutierrez Rodero'
+      1  'Félix Gutiérrez Rodero'
+
+      1  'Astellas Pharma Inc'
+      1  'Astellas Pharma Inc.'
+
+      1  'TOLREMO therapeutics AG'
+      1  'Tolremo Therapeutics AG'
+
+      1  'Fundacio Institut Guttmann'
+      1  'Fundació Institut Guttmann'
+
+      1  'BiomX Ltd.'
+      1  'Biomx Ltd.'
+
+      1  'Silence Therapeutics PLC'
+      1  'Silence Therapeutics plc'
+
+      1  'Hospital Clinico Universitario De Valencia'
+      1  'Hospital Clínico Universitario de Valencia'
+
+      1  'IFOM Istituto Fondazione Di Oncologia Molecolare Ets In Breve Ifom Ets'
+      1  'Ifom Istituto Fondazione Di Oncologia Molecolare Ets In Breve Ifom Ets'
+
+      1  'OncoVerity Inc.'
+      1  'Oncoverity Inc.'
+
+      1  'Stichting Het Nederlands Kanker Instituut-Antoni Van Leeuwenhoek Ziekenhuis'
+      1  'Stichting Het Nederlands Kanker Instituut-Antoni van Leeuwenhoek Ziekenhuis'
+
