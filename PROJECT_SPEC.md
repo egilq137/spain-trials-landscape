@@ -446,6 +446,22 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       field name, `departamento` on the wrong table, a too-narrow composite
       key, four un-normalized pipe-delimited fields, and a wrong sponsor
       field name.
+- [ ] **`docs/phase2-schema-erd.html` is now stale and must be revised once
+      profiling is done.** It is the 2.1 deliverable and still the global map
+      the slices are cut against, so it is kept rather than deleted — but it
+      currently asserts things profiling has already contradicted or has yet
+      to confirm, and it is published as an artifact, so a reader has no way
+      to tell which parts still hold.
+  - Confirmed wrong already: `sponsors` is drawn with a single
+    `promotor text` column. Per §3.2c it needs `promotor_key` carrying the
+    UNIQUE plus `promotor` for display, because deduplicating on the exact
+    string splits 427 values across 315 sponsors.
+  - Every other claim in it is provisional until the corresponding table is
+    profiled — including the ones it presents as evidence-backed, since that
+    evidence came from the 2019–2020 sample rather than the full corpus.
+  - Revise it **after** profiling completes, not per table: editing it
+    piecemeal would leave it inconsistent with itself midway, and the
+    published artifact would show a design nobody had reviewed as a whole.
 
 **2.2 — Data profiling (moved ahead of the DDL)**
 - Rationale for the reorder: a first pass at the DDL was written and reverted
