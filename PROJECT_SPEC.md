@@ -1,7 +1,7 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.1 (schema design/ERD) done; 2.2 (DDL) next
-last updated: 2026-08-28
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.1 (schema design/ERD) done; 2.2 (DDL) in progress — slice 1 (sponsors + studies) written and verified
+last updated: 2026-08-31
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
 
@@ -208,6 +208,40 @@ co-sponsors; the source simply doesn't capture it, and modelling a
 relationship the data can't populate would be wrong. Field name is
 `organismo.promotor`, not `nombre`.
 
+**`organismo.financiador` collapses to empty after the CTIS transition — a
+serious limitation on any funder analysis.** Measured across the full corpus
+when writing the slice-2 DDL, not sampled:
+
+| Year | Studies with no funder recorded |
+|---|---|
+| 2017–2021 | 0% (fully populated, n=6,396) |
+| 2022 | 31.5% (164/521) |
+| 2023 | 92.4% (1,075/1,164) |
+| 2024–2026 | 100% (3,766/3,766) |
+
+Overall 5,004/11,847 (42%) carry no funder at all. The cutover matches the
+January 2023 CTIS transition, so this is almost certainly a registry-practice
+change rather than genuinely unfunded trials — the same break the volume
+question is looking for. Consequences: **funder-based analysis is confined to
+2017–2021**, and any funder count trended over time would show a fake
+collapse. `sponsor` is unaffected (100% present in all 11,847). Note the
+`study_funders` bridge represents this correctly with no special handling —
+a study with no funder simply has no rows, which is the honest encoding, but
+absence there must be read as "not recorded", never "not funded".
+
+**Funder names are deduplicated on the exact string.** 2,563 distinct names,
+of which 129 differ from another only by capitalisation. Case-folding or
+fuzzy-matching organisation names is a data-cleaning decision that needs its
+own evidence and review, so it is deliberately not done silently in the DDL —
+same posture as leaving `departamento` un-normalized.
+
+**`areasTerapeuticas.area` is a list in 11,847/11,847 records** (type, not
+sample, settles it); 363 studies carry more than one area, so the bridge is
+load-bearing rather than defensive. Only **55 distinct `eutct` codes** exist
+across the whole corpus, none blank, none with conflicting `nombre_es`/
+`nombre_en`, and none repeated within a single study — so `eutct_code` is
+safe as a natural primary key and `therapeutic_areas` needs no surrogate id.
+
 **`departamento` belongs on the `study_centers` bridge, not on `centers`.**
 Of 361 distinct centre `referencia`s across 2019–2020, **245 (68%)** appear
 with different departments across different studies — it's an attribute of the
@@ -254,6 +288,50 @@ a sample, is what settles cardinality.
 (= `fechaAutorizacionAEMPS`) and `survival_end` (= `fechaFinRealEspana`, or
 the extraction date when censored), so Phase 4 doesn't re-derive censoring
 logic per analysis.
+
+### 3.2d Corrections found while writing the DDL (Phase 2.2)
+
+Writing DDL against the full corpus, rather than the 2019–2020 samples §3.2c
+was designed on, surfaced three errors in the reviewed ERD. Recorded here
+because "the design was reviewed as a diagram and *still* had these" is the
+argument for building the schema in slices with tests.
+
+**The `study_centers` three-column key was too narrow — it would have rejected
+1,265 rows.** §3.2c justified `(study_id, center_id, departamento)` on the
+finding that 245 of 361 centres showed more than one `(departamento,
+investigador)` pair. But `investigador` is excluded as named-individual data,
+so the field doing the distinguishing is the one not stored. Measured on all
+11,847 studies: 1,265 rows collapse to an exact duplicate under that key.
+
+**Geography is an attribute of the pairing, not of the centre.** Same
+reasoning as `departamento`, missed for `provincia`/`ccaa`/`codPostal`. 56 of
+1,597 referencias report more than one CCAA — mostly stray blanks, but
+`ORG-100007650` (Clínica Universidad de Navarra) reports **1,400 rows in
+Navarra and 545 in Madrid**, a real second campus under one registry
+reference. Resolving each centre to a single region would have silently
+reassigned those 545 trials out of Madrid — the one region this project is
+most about. So the three columns moved onto `study_centers`, making the key
+six columns: `(study_id, center_id, departamento, provincia, ccaa,
+cod_postal)`. 495 rows still duplicate under it, differing only in
+`domicilio`/`localidad`/`investigador`/`situacion` — none stored — so the
+loader collapses them losslessly.
+
+**`centros.tipo` is not CAP/CHN.** §3.2c took the AEMPS manual §4.7 at its
+word. Live values across all 85,410 centre entries are `'0'` (80,516), `'1'`
+(4,055), `'2'` (409) and `''` (430). Meaning undecoded; the column is stored
+unconstrained and must not be presented as site type until decoded. Another
+manual-vs-live discrepancy, like the date-format one in §3.1.
+
+**Centre identity is conditional, so it needs two partial unique indexes.**
+Dedup is on `referencia`, not name: 179 of 1,597 referencias appear under
+several spellings of one hospital (`HOSPITAL UNIVERSITARI VALL D'HEBRON` /
+`Hospital Universitari Vall D Hebron` / `Hospital Universitari Vall
+d'Hebron`), so deduplicating by name would split single hospitals into
+several. But 2,695 of 85,410 entries have no `referencia` at all, so it cannot
+be the primary key. Hence `UNIQUE(referencia) WHERE referencia IS NOT NULL`
+plus `UNIQUE(nombre) WHERE referencia IS NULL`. Also worth noting for the
+geography question: `nombre` is free text with inconsistent casing and
+accents, so any hospital-level grouping must go through `center_id`.
 
 ### 3.3 Analysis questions / insights to extract
 
@@ -453,9 +531,42 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       field name.
 
 **2.2 — DDL**
-- [ ] `db/schema.sql` — hand-written `CREATE TABLE` statements built from the
-      ERD; PK/FK constraints, `NOT NULL` only where fill rates justify it
-      (e.g. `fechaAutorizacionAEMPS` is 100% filled in both cohorts sampled)
+- Built in slices rather than all 15 tables at once, so the conventions are
+  validated against real constraint behaviour before being repeated 13 more
+  times.
+- [x] Slice 1 — `sponsors` + `studies` (59 columns, the hub). `STRICT` tables
+      so declared types are enforced instead of SQLite's default dynamic
+      typing; dates as ISO-8601 `TEXT` with a `GLOB` check (the source ships
+      `DD-MM-YYYY`, so an unconverted value would otherwise load silently and
+      break every date comparison); booleans as `INTEGER` + `CHECK (x IN
+      (0,1))`. `NOT NULL` set from full-corpus counts, not the 2019 sample:
+      0/11,847 blank `promotor` and 0/11,847 non-numeric `poblacion.total`
+      justify `NOT NULL` on `sponsor_id` and `poblacion_total`, both of which
+      the ERD had annotated more conservatively. Verified by executing the DDL
+      against `:memory:` and asserting each constraint rejects its bad value.
+- [x] Tests — `tests/test_schema.py`, asserting each constraint rejects its
+      bad value rather than merely that the script runs. Written before
+      slice 2 so the conventions were pinned before being repeated. It
+      immediately caught a wrong belief: `PRAGMA foreign_keys` in
+      `schema.sql` *does* apply to the connection running the script (it is
+      only later connections that revert to off), so the loader and app must
+      set it per-connect but the build script itself is already covered.
+- [x] Slice 2 — `funders` + `study_funders`, `therapeutic_areas` +
+      `study_therapeutic_areas`. Introduces the many-to-many bridge on its
+      two simplest instances: composite PK on the pairing, `ON DELETE
+      CASCADE` (a pairing belongs to its parents, unlike `studies.sponsor_id`
+      which is a reference to one and so uses `RESTRICT`), and a second index
+      on the non-leading key column, since a composite PK's index cannot
+      serve a lookup by its second column alone. `therapeutic_areas` uses the
+      natural key `eutct_code`; evidence in §3.2c.
+- [x] Slice 3 — `centers` + `study_centers`. **The ERD's three-column key was
+      wrong and this slice corrected it** — see §3.2d. Also introduced partial
+      unique indexes for `centers`' conditional identity (referencia when
+      present, otherwise nombre), which a plain `UNIQUE` cannot express
+      because SQL treats every `NULL` as distinct.
+- [ ] Slice 4 — `interventions` (one-to-many from studies) plus `substances`,
+      `atc_codes`, `administration_routes` and their 3 bridges — slice 2's
+      pattern repeated one level down.
 
 **2.3 — Loader**
 - [ ] `db/loader.py` — raw JSON/JSONL → rows → `INSERT`s. Takes the DB
