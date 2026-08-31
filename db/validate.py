@@ -28,10 +28,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "detalle"
 DEFAULT_SCHEMA = REPO_ROOT / "db" / "schema.sql"
 
-# Stand-in "today" for censored trials. Passed explicitly so a report is
-# reproducible rather than depending on the day it was run.
-EXTRACTION_DATE = "2026-08-31"
-
 # Set by the caller, never derived from the record itself.
 SKIP_PROBE_COLUMNS = ("identificador", "sponsor_id")
 
@@ -98,8 +94,7 @@ def _probe(con, row, template):
     return bad
 
 
-def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None,
-             extraction_date=EXTRACTION_DATE):
+def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
     """Push every cached record through the schema and report what it rejects."""
     paths = sorted(Path(raw_dir).glob("*.jsonl"))
     if years:
@@ -133,7 +128,7 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None,
                         report.rejected += 1
                         continue
 
-                row = study_row(record, sponsors[promotor], extraction_date)
+                row = study_row(record, sponsors[promotor])
                 for column, value in row.items():
                     if value is None:
                         report.nulls[column][year] += 1

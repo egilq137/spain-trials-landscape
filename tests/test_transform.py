@@ -11,8 +11,9 @@ Success criteria per function:
     NOT NULL catches it rather than a '' row being created
   study_row: every calendario/poblacion/proposito field lands in its column
     under the snake_case name; sponsor_id is the one passed in, never looked
-    up; censored is 1 exactly when fechaFinRealEspana is absent, and
-    survival_end is then the extraction date rather than NULL
+    up; and NOTHING is derived from the calendario dates -- censoring and
+    duration are analysis/'s job, because the estimand is contested (see
+    PROJECT_SPEC 3.2c), so this must not quietly reintroduce them
 """
 
 import unittest
@@ -27,9 +28,6 @@ from db.transform import (
     sponsor_name,
     study_row,
 )
-
-EXTRACTION = "2026-08-31"
-
 
 def raw_record(**overrides):
     """A REEC detail record shaped like the real ones."""
@@ -107,7 +105,7 @@ class TestSponsorName(unittest.TestCase):
 
 class TestStudyRow(unittest.TestCase):
     def row(self, **overrides):
-        return study_row(raw_record(**overrides), 7, EXTRACTION)
+        return study_row(raw_record(**overrides), 7)
 
     def test_maps_every_source_field_to_its_column(self):
         row = self.row()
@@ -133,16 +131,18 @@ class TestStudyRow(unittest.TestCase):
         self.assertIsNone(self.row(acronimo="   ")["acronimo"])
         self.assertEqual(self.row(acronimo="SPRINT")["acronimo"], "SPRINT")
 
-    def test_censored_when_spain_has_no_end_date(self):
-        row = self.row()
-        self.assertEqual(row["censored"], 1)
-        self.assertEqual(row["survival_start"], "2019-12-18")
-        self.assertEqual(row["survival_end"], EXTRACTION)
-
-    def test_not_censored_when_an_end_date_exists(self):
+    def test_derives_nothing_from_the_dates(self):
+        # Guards the 3.2c decision. Reintroducing a survival_start here would
+        # bake one estimand into the database, where it cannot be varied or
+        # explained -- and would silently pick a start date that is not the
+        # trial's start.
         row = self.row(calendario={"fechaFinRealEspana": "31-03-2022"})
-        self.assertEqual(row["censored"], 0)
-        self.assertEqual(row["survival_end"], "2022-03-31")
+        for derived in ("censored", "survival_start", "survival_end"):
+            self.assertNotIn(derived, row)
+
+    def test_stores_the_end_date_as_recorded(self):
+        row = self.row(calendario={"fechaFinRealEspana": "31-03-2022"})
+        self.assertEqual(row["fecha_fin_real_espana"], "2022-03-31")
 
     def test_does_not_repair_a_minus_one_flag(self):
         self.assertEqual(self.row(poblacion={"urgencia": "-1"})["urgencia"], "-1")

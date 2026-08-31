@@ -117,11 +117,23 @@ def sponsor_name(record):
     return ((record.get("organismo") or {}).get("promotor") or "").strip() or None
 
 
-def study_row(record, sponsor_id, extraction_date):
+def study_row(record, sponsor_id):
     """One studies row. sponsor_id is passed in, not looked up.
 
-    Derives censored/survival_start/survival_end here so no notebook re-derives
-    censoring later (PROJECT_SPEC 3.2c).
+    Stores the calendario dates as recorded and derives nothing from them. An
+    earlier version computed censored/survival_start/survival_end here; that
+    is now `analysis/`'s job, because there is no single right answer:
+
+      * authorization to end measures regulatory green light to completion,
+        and includes the 445 trials cancelled before enrolling anyone
+      * actual start to end measures how long a trial ran, and excludes them
+      * authorization to actual start measures site-activation speed
+
+    All three are legitimate and answer different questions, and early
+    termination is a competing risk rather than another kind of completion.
+    Choosing one here would hide a contested analytical decision in the layer
+    least able to explain it. The database stores facts; the analysis layer
+    defines what is being measured (PROJECT_SPEC 3.2c).
     """
     calendario = record.get("calendario") or {}
     poblacion = record.get("poblacion") or {}
@@ -140,11 +152,4 @@ def study_row(record, sponsor_id, extraction_date):
     row["poblacion_total"] = integer(poblacion.get("total"))
     for raw_key, column in PROPOSITO_FLAGS.items():
         row[column] = flag(proposito.get(raw_key))
-
-    # A trial is censored when Spain has recorded no real end date: its true
-    # duration is only known to run at least to the extraction date.
-    ended = row["fecha_fin_real_espana"]
-    row["censored"] = 0 if ended else 1
-    row["survival_start"] = row["fecha_autorizacion_aemps"]
-    row["survival_end"] = ended or extraction_date
     return row

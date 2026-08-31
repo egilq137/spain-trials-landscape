@@ -29,7 +29,6 @@ from pathlib import Path
 from db.validate import DEFAULT_SCHEMA, validate
 from tests.test_transform import raw_record
 
-EXTRACTION = "2026-08-31"
 
 # db/schema.sql was reverted so the source could be profiled before a schema is
 # designed from it (PROJECT_SPEC 2.2). These tests validate records *against*
@@ -57,7 +56,7 @@ class ValidateTestCase(unittest.TestCase):
 
     def run_validate(self, **kwargs):
         return validate(raw_dir=self.raw_dir, schema_path=DEFAULT_SCHEMA,
-                        extraction_date=EXTRACTION, **kwargs)
+                        **kwargs)
 
     def study(self, study_id, **overrides):
         return raw_record(identificador=study_id, **overrides)
@@ -174,8 +173,7 @@ class TestSchemaCoupling(ValidateTestCase):
         loosened.write_text(ddl, encoding="utf-8")
         self.assertNotEqual(ddl, DEFAULT_SCHEMA.read_text(encoding="utf-8"))
 
-        report = validate(raw_dir=self.raw_dir, schema_path=loosened,
-                          extraction_date=EXTRACTION)
+        report = validate(raw_dir=self.raw_dir, schema_path=loosened)
         self.assertEqual(report.rejected, 0)
 
 

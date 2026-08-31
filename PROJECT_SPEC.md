@@ -145,7 +145,8 @@ quality problem — confirmed by the mature 2019 cohort showing strong fill rate
 - Drop `fechaFinPrevista` and `fechaClasificacion` entirely — genuinely unused
   regardless of cohort age.
 - Do not rely on `fechaInicioPrevista` for recent years — inconsistent over time.
-- Primary survival window: `fechaAutorizacionAEMPS` → `fechaFinRealEspana`.
+- Candidate survival window: `fechaAutorizacionAEMPS` → `fechaFinRealEspana`,
+  but see §3.2c — the estimand is chosen in `analysis/`, not fixed here.
   Right-censor at data-extraction date for any study without a real end date.
 - `fechaFinPrematuro` (~26% of mature cohort) is a genuine bonus signal — model
   as a distinct event type or covariate rather than discarding it.
@@ -263,8 +264,8 @@ always present, so blank means empty string and never a missing key.
 reverted DDL dropped them on the strength of two sampled cohorts; that call was
 right, and is now evidenced rather than inferred.
 
-**`fechaAutorizacionAEMPS` is 100% present** — so it is safe as `NOT NULL` and
-as the survival-analysis start date.
+**`fechaAutorizacionAEMPS` is 100% present** — safe as `NOT NULL`. It is *not*
+the trial's start date; see the estimand decision below.
 
 **The corpus is not a 2017-2026 corpus.** Authorization dates run from 2009 to
 2026, and **3,079 studies (26%) were authorized before 2017**:
@@ -300,11 +301,43 @@ survival analysis if kept.**
 | 2014-001255-23 | 2014-06-30 | 2014-06-20 |
 | 2020-005614-18 | 2021-03-04 | 2020-06-24 |
 
-These produce negative durations, which Kaplan-Meier cannot accept. This
-settles the constraint deliberately left out of the reverted DDL: a
-`CHECK (survival_end >= survival_start)` is justified, and would reject exactly
-these four. Decision still needed on whether the loader drops them, nulls the
-end date and treats them as censored, or fails loudly.
+These produce negative durations, which Kaplan-Meier cannot accept.
+**Decision: the loader drops them** — four records out of 11,847, with no way
+to tell which of the two dates is wrong.
+
+**Decision — no survival columns in the database. The estimand is defined in
+`analysis/`.** The reverted DDL derived `censored`, `survival_start` and
+`survival_end` at load, with `survival_start = fechaAutorizacionAEMPS`. That is
+wrong twice over. Authorization is a regulatory green light, not a start, so
+the name asserted something the column did not contain. And there is no single
+correct interval — there are at least three, measuring different things:
+
+| interval | studies with it | ends before it starts | measures |
+|---|---|---|---|
+| authorization → end | 6,437 | 4 | green light to completion |
+| actual start → end | 5,719 | 15 | how long the trial ran |
+| authorization → actual start | 10,127 | 43 | site-activation speed (§3.3) |
+
+The gap between the first two is not noise. **718 studies have an end date but
+no start date, and 445 of those have an early-termination date** — trials
+authorized and then cancelled before enrolling anyone. Authorization→end counts
+them with a real duration; start→end excludes them entirely. Neither is more
+correct; they answer different questions, and a cancelled-before-enrolment
+trial is a **competing risk**, not another kind of completion.
+
+Choosing one at load would hide a contested analytical decision in the layer
+least able to explain it. The raw dates are all stored, so `analysis/` defines
+the estimand where it can be stated, varied and defended. The database stores
+facts; the analysis layer decides what is being measured.
+
+  - **Consequence for the DDL:** no `survival_*` or `censored` columns, and no
+    `CHECK (survival_end >= survival_start)` — there is no such pair to
+    constrain. The impossible-date check moves to the loader, which drops the
+    four rows above.
+  - **`fechaInicioReal` is missing for ~10% of studies in every year from 2017
+    to 2024**, rising to 45% in 2026 (genuinely not yet started) and 14–21% in
+    2013–2016 (retro-registration gaps). So a start→end estimand silently
+    conditions on having started, which is its own selection.
 
 **Two smaller inconsistencies, recorded but not yet decided.** 43 studies have
 an actual start before their authorization date; 11 have a `fechaReinicio` with
@@ -582,8 +615,9 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       `sqlite3.connect(":memory:")`). Handles: the two date formats,
       `"0"`/`"1"` strings → booleans, the `.centro[]`/`.intervencion[]`
       nesting, pipe-splitting the four multi-valued fields, blank
-      `departamento` → `''` not `NULL`, and deriving `censored` /
-      `survival_start` / `survival_end`
+      `departamento` → `''` not `NULL`, and dropping the four records whose
+      end date precedes their authorization date. Derives no survival or
+      censoring columns — see §3.2c
 - [ ] Wire into `run_pipeline.py` as the composition root, so the whole DB
       rebuilds from `data/raw/` in one command
 
