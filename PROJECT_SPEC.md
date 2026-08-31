@@ -517,10 +517,10 @@ Report: `docs/profiles/centers.txt`. Counts here are per **centre entry**
 7.2, maximum 93.
 
 **Identity is conditional, and must be.** `referencia` is present in 96.8% of
-entries with **1,597 distinct values**, but **2,695 entries have none**, so it
-cannot be the primary key. The 2,695 cover **1,460 distinct names**. Hence a
-surrogate `center_id`, with `UNIQUE(referencia) WHERE referencia IS NOT NULL`
-plus `UNIQUE(nombre) WHERE referencia IS NULL`.
+entries with 1,597 distinct values, but 2,695 entries have none, covering 1,460
+distinct names. So a surrogate `center_id` is needed — but see the resolution
+below: `referencia` alone is *not* sufficient identity, because it carries
+placeholders and spans multiple physical sites.
 
 **Deduplicate on `referencia`, never on `nombre`.** The name field's two most
 frequent values are the same hospital: `HOSPITAL UNIVERSITARI VALL D'HEBRON`
@@ -558,40 +558,59 @@ distinct values** across 64,047 entries, mixing languages and casing —
 `Hematology` (2,336). No lookup table would group these reliably without a
 mapping exercise that is its own project. Plain `TEXT` on the bridge.
 
-**PROVISIONAL — drop `tipo`, `situacion` and `departamento` from the centre
-tables.** Recorded as leaning, not settled.
+**RESOLVED — a centre is a physical site, not a registry reference.** This
+replaces the earlier TODO about the `study_centers` key, and it turned out the
+key was the wrong thing to fix.
 
-  - **`tipo` and `situacion`: low cost.** Both are undocumented codes that the
-    manual describes wrongly, so nothing currently readable is lost, and both
-    remain in the gitignored raw cache if either is ever decoded. Neither
-    appears in any §3.3 question.
-  - **`departamento`: real cost, real simplification.** Dropping it loses the
-    "which hospital service runs trials" angle entirely — 8,268 distinct values
-    over 64,047 entries — and that angle is not recoverable without a mapping
-    exercise, so losing it is arguably losing little that was usable. What it
-    buys is a smaller, more honest grain: one row per trial-at-a-site rather
-    than one per trial-at-a-service.
-  - **But it re-opens the key, which `departamento` was propping up:**
+**First, `referencia` is not clean.** `'NR'` appears in 119 entries covering
+**103 distinct hospitals** — Barcelona Beta Brain Research Center, CITA
+Alzheimer, CLINICA MON SALUT and a hundred others. Deduplicating on
+`referencia` would merge them into one centre with one region. Placeholder
+references must be treated as absent, falling through to the name. (It also
+carries at least three coding schemes: `ORG-#########`, `ORL-#########` and
+bare 6-digit codes.)
 
-| candidate key | rows |
-|---|---|
-| raw centre entries | 85,410 |
-| study + centre + geography + departamento | 85,070 |
-| study + centre + geography | 83,429 |
-| study + centre | 81,111 |
+**Second, one reference can cover several physical sites.** Clínica
+Universidad de Navarra reports Pamplona and Madrid under `ORG-100007650`;
+Institut Català d'Oncologia reports Badalona, Hospitalet and Girona under
+`ORG-100030394`. Both are real. That is why 1,616 (study, centre) pairs
+disagreed about geography — not per-trial variation, but a centre grain too
+coarse to describe where the trial actually ran.
 
-  - The gap between the last two is the problem to settle: **2,071 (study,
-    centre) pairs report more than one geography *within a single study*.** So
-    `(study_id, center_id)` alone is not yet a key.
-  - **TODO before the `study_centers` DDL — inspect those 2,071 pairs.** If
-    they are mostly the multi-campus case (one trial genuinely running at both
-    CUN Pamplona and CUN Madrid), the geography is real information and belongs
-    in the key. If they are mostly inconsistent entry for one physical site,
-    resolve per pair instead and take the clean one-row-per-site grain. The
-    answer decides between:
-    `PRIMARY KEY (study_id, center_id, provincia, ccaa, localidad, cod_postal)`
-    — faithful, but counting a trial's sites needs `DISTINCT` — and
-    `PRIMARY KEY (study_id, center_id)` with a documented resolution rule.
+Measuring identity schemes over the whole corpus:
+
+| identity | distinct sites | (study, centre) pairs with >1 geography |
+|---|---|---|
+| referencia only | 2,849 | 1,616 |
+| referencia + postcode | 3,114 | 488 |
+| referencia + locality | 3,228 | 661 |
+| **referencia + locality + postcode** | **3,361** | **11** |
+
+**Decision: `centers` is keyed on (reference-or-name, `localidad`,
+`cod_postal`)** — 3,361 sites, 512 more rows than the coarse version, and the
+conflict all but disappears. Consequences, all of them simplifications:
+
+  - **Geography moves back onto `centers`**, where it is now stable by
+    construction. It does not repeat across 85,410 bridge rows.
+  - **`study_centers` becomes a plain two-column bridge**, `PRIMARY KEY
+    (study_id, center_id)`. No six-column key, and no `DISTINCT` needed to
+    count a trial's sites.
+  - **The Madrid problem solves itself.** CUN Madrid and CUN Pamplona are two
+    centres, so the 545 Madrid trials stay in Madrid without geography having
+    to live on the pairing.
+  - **149 sites still disagree on `provincia`/`ccaa`; resolve by most frequent
+    non-blank value.** 132 differ only because one variant is blank. The other
+    17 are single-occurrence typos — `ORG-100028551` is Salamanca 1,122 times
+    and Madrid once — which lose to the majority by construction.
+
+**PROVISIONAL — drop `tipo`, `situacion` and `departamento`.** Recorded as
+leaning, not settled. `tipo` and `situacion` are cheap: undocumented codes the
+manual describes wrongly, absent from every §3.3 question, still in the raw
+cache if decoded later. `departamento` costs the "which hospital service runs
+trials" angle, though 8,268 values mixing languages and casing were never
+groupable without a mapping exercise. With the key resolved above,
+`departamento` is no longer propping anything up — dropping it is now purely a
+question of whether the field is worth keeping, not a structural change.
 
 **`tipo` and `situacion` are strings, not integers**, unlike every flag in
 `studies`. `tipo` is `'0'` (80,516), `'1'` (4,055), `'2'` (409), blank (430) —
@@ -941,9 +960,9 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       2017–2026 blends two regimes either side of the January 2023 CTIS
       transition and can hide a field that stopped being populated entirely.
 - [ ] `studies` — 51 source fields, the big one
-- [x] `centers` — profiled. **TODO before its DDL:** inspect the 2,071
-      (study, centre) pairs whose geography varies within one study, to decide
-      the `study_centers` key (§3.2c).
+- [x] `centers` — profiled, and the key question resolved (§3.2c): a centre is
+      a physical site, keyed on reference-or-name + locality + postcode, which
+      turns `study_centers` into a plain two-column bridge.
 - [x] `funders`, `therapeutic_areas`
 - [x] `interventions` + substances / atc_codes / administration_routes
 - **Profiling complete.** Revise `docs/phase2-schema-erd.html` next (2.1),
