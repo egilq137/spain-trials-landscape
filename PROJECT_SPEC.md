@@ -507,6 +507,64 @@ where all 42 poblacion and proposito flags are integers. Present in
 11,847/11,847, strictly 0/1, no sentinel — so `NOT NULL` with `CHECK (x IN
 (0,1))` after conversion. 2,444 studies (20.6%) are flagged rare-disease.
 
+#### centers and the study_centers bridge
+
+Report: `docs/profiles/centers.txt`. Counts here are per **centre entry**
+(85,410) rather than per study, except where stated.
+
+**Array shape confirmed.** `centros.centro` is a list in 11,847/11,847 records
+— never a bare object. **147 studies list no centre at all**; the rest average
+7.2, maximum 93.
+
+**Identity is conditional, and must be.** `referencia` is present in 96.8% of
+entries with **1,597 distinct values**, but **2,695 entries have none**, so it
+cannot be the primary key. The 2,695 cover **1,460 distinct names**. Hence a
+surrogate `center_id`, with `UNIQUE(referencia) WHERE referencia IS NOT NULL`
+plus `UNIQUE(nombre) WHERE referencia IS NULL`.
+
+**Deduplicate on `referencia`, never on `nombre`.** The name field's two most
+frequent values are the same hospital: `HOSPITAL UNIVERSITARI VALL D'HEBRON`
+(2,667) and `Hospital Universitari Vall D Hebron` (1,553). 3,305 distinct names
+against 1,597 referencias.
+
+**Geography belongs on the bridge, not on `centers`.** Only **28 of 1,597
+referencias (1.8%)** ever report more than one CCAA, so resolving each centre
+to a single region is *nearly* right — and the exception is the one that
+matters. `ORG-100007650`, Clínica Universidad de Navarra, reports **1,400
+entries in Navarra and 545 in Madrid**: a real second campus under one registry
+reference. Resolving it would reassign 545 trials out of the region this
+project is about. The remaining 27 conflicts are small (3, 1, 59 entries).
+Cost of the choice: `ccaa`/`provincia`/`localidad`/`cod_postal` repeat across
+85,410 bridge rows instead of 1,597 centre rows.
+
+**`ccaa` and `provincia` are clean coded vocabularies**, which is unusual in
+this source and good news for the choropleth. `ccaa` has exactly **19 distinct
+values** — the 17 autonomous communities plus Ceuta and Melilla — at 99.5%
+present. `provincia` has exactly **52** — the 50 provinces plus both autonomous
+cities — at 97.3%. Madrid is 22,148 entries, second to Cataluña's 23,317.
+
+**`codPostal` has lost leading zeros — 290 entries are 4 digits.** Spanish
+postcodes are always 5, the first two being the province, so `'3010'` is
+Alicante's `'03010'` with the zero stripped somewhere upstream. **Decision:
+zero-pad 4-digit numeric values to 5 at load**, which is an enumerable
+correction rather than a guess. 11 further entries are malformed in other ways
+(`'08006.'`, 6-10 characters); left raw, too few and too varied for a rule.
+This settles the column type independently of the earlier leading-zero
+argument: `TEXT`, never `INTEGER`.
+
+**`departamento` is free text and must stay that way.** 75% present, **8,268
+distinct values** across 64,047 entries, mixing languages and casing —
+`Oncology` (5,714), `Medical Oncology` (2,682), `Oncología` (2,657),
+`Hematology` (2,336). No lookup table would group these reliably without a
+mapping exercise that is its own project. Plain `TEXT` on the bridge.
+
+**`tipo` and `situacion` are strings, not integers**, unlike every flag in
+`studies`. `tipo` is `'0'` (80,516), `'1'` (4,055), `'2'` (409), blank (430) —
+**not** the `CAP`/`CHN` the AEMPS manual §4.7 documents. `situacion` is 100%
+present and well spread: `'2'` (40,950), `'0'` (24,231), `'1'` (20,229). Both
+are undocumented codes; stored raw, and neither may be presented as site type
+or status until decoded.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of

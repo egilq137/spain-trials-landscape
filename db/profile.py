@@ -114,6 +114,20 @@ TABLE_FIELDS = {
         "proposito.basesDatos",
         "proposito.otrasFuentes",
     ],
+    # Candidate fields for centers + the study_centers bridge. Excluded and
+    # not profiled: investigador (named individuals, PROJECT_SPEC 3.2b) and
+    # domicilio (street address, unused by any analysis question).
+    "centers": [
+        "centros.centro[].referencia",
+        "centros.centro[].nombre",
+        "centros.centro[].tipo",
+        "centros.centro[].situacion",
+        "centros.centro[].ccaa",
+        "centros.centro[].provincia",
+        "centros.centro[].localidad",
+        "centros.centro[].codPostal",
+        "centros.centro[].departamento",
+    ],
     # The two top-level fields studies keeps. enfermedadRara sits here too: it
     # is the one flag in the record that is a string, not an integer.
     "studies.identity": [
@@ -124,7 +138,8 @@ TABLE_FIELDS = {
 }
 
 # Tables whose report is rendered compactly.
-COMPACT_TABLES = {"studies.calendario", "studies.poblacion", "studies.proposito"}
+COMPACT_TABLES = {"studies.calendario", "studies.poblacion",
+                  "studies.proposito", "centers"}
 
 ABSENT, NULL, BLANK, PRESENT = "absent", "null", "blank", "present"
 
@@ -167,6 +182,53 @@ def walk(record, path):
     return PRESENT, value, containers
 
 
+def walk_all(record, path):
+    """walk(), but for a path crossing an array: 'centros.centro[].nombre'.
+
+    Yields one result per array element, so counts are per centre rather than
+    per study. Returns () when the array is missing or empty -- a study with no
+    centres is a record-level fact, reported separately by list_shape(), not an
+    absent value for every field.
+
+    A block that is a bare object where an array is expected yields its one
+    element. REEC does this for single-valued fields elsewhere, so the shape
+    has to be tolerated and counted rather than assumed.
+    """
+    before, _, after = path.partition("[].")
+    if not after:
+        return [walk(record, path)]
+    status, value, containers = walk(record, before)
+    if status != PRESENT:
+        return []
+    items = value if isinstance(value, list) else [value]
+    return [walk(item, after) for item in items if isinstance(item, dict)]
+
+
+def list_shape(records, path):
+    """Per-record facts about an array: how many studies have it, and how long.
+
+    Kept apart from the per-element profile because they answer different
+    questions -- 'how many studies list no centre at all' is not the same as
+    'how many centre records have no name'.
+    """
+    before = path.partition("[].")[0]
+    empty = 0
+    types = Counter()
+    lengths = Counter()
+    for _, record in records:
+        status, value, _ = walk(record, before)
+        if status != PRESENT:
+            empty += 1
+            types["missing"] += 1
+            continue
+        types[type(value).__name__] += 1
+        items = value if isinstance(value, list) else [value]
+        lengths[len(items)] += 1
+        if not items:
+            empty += 1
+    return empty, types, lengths
+
+
 def normalise(text):
     """The identity rule from PROJECT_SPEC 3.2c, applied in that order.
 
@@ -197,6 +259,9 @@ class FieldProfile:
         self.by_year = defaultdict(Counter)
         self.lengths = []
         self.types = Counter()
+        # Rows in the source. Differs from .records for an array field, where
+        # one study contributes many centres.
+        self.source_records = 0
 
     def add(self, year, status, value, containers):
         self.records += 1
@@ -281,7 +346,9 @@ def profile_field(path, raw_dir=DEFAULT_RAW_DIR, years=None, records=None):
     profile = FieldProfile(path)
     source = records if records is not None else iter_records(raw_dir, years)
     for year, record in source:
-        profile.add(year, *walk(record, path))
+        profile.source_records += 1
+        for result in walk_all(record, path):
+            profile.add(year, *result)
     return profile
 
 
@@ -424,6 +491,17 @@ def main(argv=None):
             table, ", ".join(sorted(TABLE_FIELDS))), file=sys.stderr)
         return 1
     records = list(iter_records())
+    paths = TABLE_FIELDS[table]
+    if "[]." in paths[0]:
+        empty, types, lengths = list_shape(records, paths[0])
+        total_elements = sum(n * c for n, c in lengths.items())
+        print("array {}  --  {} studies, {} elements".format(
+            paths[0].partition("[].")[0], len(records), total_elements))
+        print("  container types : {}".format(dict(types)))
+        print("  studies with none: {}".format(empty))
+        print("  elements per study: min {}  max {}  mean {:.1f}".format(
+            min(lengths), max(lengths), total_elements / max(sum(lengths.values()), 1)))
+        print()
     render = print_compact if table in COMPACT_TABLES else print_profile
     if render is print_compact:
         print("{}  --  {} fields over {} studies".format(

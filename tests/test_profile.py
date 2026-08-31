@@ -39,8 +39,10 @@ from db.profile import (
     normalise,
     numeric_summary,
     print_profile,
+    list_shape,
     profile_field,
     walk,
+    walk_all,
 )
 
 
@@ -74,6 +76,42 @@ class TestWalk(unittest.TestCase):
 
     def test_non_string_value_is_present(self):
         self.assertEqual(walk({"a": {"b": 0}}, "a.b"), (PRESENT, 0, ["dict", "dict"]))
+
+
+class TestWalkAll(unittest.TestCase):
+    def test_yields_one_result_per_array_element(self):
+        record = {"centros": {"centro": [{"nombre": "A"}, {"nombre": "B"}]}}
+        self.assertEqual([v for _, v, _ in walk_all(record, "centros.centro[].nombre")],
+                         ["A", "B"])
+
+    def test_a_bare_object_is_treated_as_one_element(self):
+        # REEC uses a bare object for single-valued blocks elsewhere, so the
+        # shape has to be tolerated rather than assumed to be a list.
+        record = {"centros": {"centro": {"nombre": "solo"}}}
+        self.assertEqual([v for _, v, _ in walk_all(record, "centros.centro[].nombre")],
+                         ["solo"])
+
+    def test_a_missing_array_yields_nothing(self):
+        # A study with no centres is a record-level fact for list_shape, not an
+        # absent value for every centre field.
+        self.assertEqual(walk_all({}, "centros.centro[].nombre"), [])
+
+    def test_a_path_without_an_array_still_works(self):
+        self.assertEqual(walk_all({"a": {"b": 1}}, "a.b"),
+                         [(PRESENT, 1, ["dict", "dict"])])
+
+
+class TestListShape(unittest.TestCase):
+    def test_counts_studies_without_the_array_and_element_spread(self):
+        records = [
+            ("2019", {"centros": {"centro": [{"n": 1}, {"n": 2}]}}),
+            ("2019", {"centros": {"centro": []}}),
+            ("2019", {}),
+        ]
+        empty, types, lengths = list_shape(records, "centros.centro[].n")
+        self.assertEqual(empty, 2)
+        self.assertEqual(types["missing"], 1)
+        self.assertEqual(lengths[2], 1)
 
 
 class TestNormalise(unittest.TestCase):
