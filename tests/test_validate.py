@@ -31,7 +31,18 @@ from tests.test_transform import raw_record
 
 EXTRACTION = "2026-08-31"
 
+# db/schema.sql was reverted so the source could be profiled before a schema is
+# designed from it (PROJECT_SPEC 2.2). These tests validate records *against*
+# that schema, so they cannot run until it is rebuilt in 2.3. Skipped rather
+# than deleted: the behaviour they pin -- especially reporting every broken
+# constraint in a row, not just the first -- is what the rebuilt validator must
+# still do.
+requires_schema = unittest.skipUnless(
+    DEFAULT_SCHEMA.exists(),
+    "db/schema.sql not present: awaiting the profiling-first rebuild (2.3)")
 
+
+@requires_schema
 class ValidateTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
