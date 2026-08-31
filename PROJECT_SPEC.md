@@ -558,6 +558,35 @@ distinct values** across 64,047 entries, mixing languages and casing —
 `Hematology` (2,336). No lookup table would group these reliably without a
 mapping exercise that is its own project. Plain `TEXT` on the bridge.
 
+**PROVISIONAL — drop `tipo`, `situacion` and `departamento` from the centre
+tables.** Recorded as leaning, not settled.
+
+  - **`tipo` and `situacion`: low cost.** Both are undocumented codes that the
+    manual describes wrongly, so nothing currently readable is lost, and both
+    remain in the gitignored raw cache if either is ever decoded. Neither
+    appears in any §3.3 question.
+  - **`departamento`: real cost, real simplification.** Dropping it loses the
+    "which hospital service runs trials" angle entirely — 8,268 distinct values
+    over 64,047 entries — and that angle is not recoverable without a mapping
+    exercise, so losing it is arguably losing little that was usable. What it
+    buys is a smaller, more honest grain: one row per trial-at-a-site rather
+    than one per trial-at-a-service.
+  - **But it re-opens the key, which `departamento` was propping up:**
+
+| candidate key | rows |
+|---|---|
+| raw centre entries | 85,410 |
+| study + centre + geography + departamento | 85,070 |
+| study + centre + geography | 83,429 |
+| study + centre | 81,111 |
+
+  - The gap between the last two is the problem to settle: **2,071 (study,
+    centre) pairs report more than one geography *within a single study*.** So
+    `(study_id, center_id)` alone is not yet a key — either geography stays in
+    the key, leaving one trial-hospital pair on several rows and forcing
+    `DISTINCT` when counting sites, or it is resolved per pair, which needs a
+    rule for those 2,071. Decide before the DDL.
+
 **`tipo` and `situacion` are strings, not integers**, unlike every flag in
 `studies`. `tipo` is `'0'` (80,516), `'1'` (4,055), `'2'` (409), blank (430) —
 **not** the `CAP`/`CHN` the AEMPS manual §4.7 documents. `situacion` is 100%
