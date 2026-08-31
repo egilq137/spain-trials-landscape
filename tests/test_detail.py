@@ -13,6 +13,10 @@ Success criteria per function:
   coverage: listed/fetched/failed/pending per year
   run: newest year first, skips complete years, stops at the year boundary
     unless continue_past_year
+  print_coverage: a header plus one aligned row per year, newest first,
+    with the numbers a partial ingestion would be spotted by
+  progress output: announces the pending count, then one line per 100
+    records -- and never a '0/n' line before the first success
   retryable_ids: failed ids minus confirmed absences (not in registry)
   retry_year_failures: retryable ids only; success moves the record to the
     data file and drops it from the sidecar; a repeat failure refreshes its
@@ -50,6 +54,7 @@ from ingestion.detail import (
     fetch_detail,
     fetch_year_details,
     pending_ids,
+    print_coverage,
     retry_failures,
     retry_year_failures,
     retryable_ids,
@@ -323,8 +328,9 @@ class FetchDetailTests(unittest.TestCase):
             fetch_detail("x", session)
 
 
-class FetchYearDetailsTests(unittest.TestCase):
+class FetchYearDetailsTests(CapturedOutput):
     def setUp(self):
+        super().setUp()
         self._tmp = tempfile.TemporaryDirectory()
         self.raw_dir = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
@@ -511,6 +517,45 @@ class FetchYearDetailsTests(unittest.TestCase):
         self.assertEqual(requested, ["b", "c"])
 
 
+class CoverageTests(unittest.TestCase):
+    def test_counts_listed_fetched_failed_and_pending_per_year(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            write_list_cache(raw_dir, 2019, ["a", "b", "c"])
+            write_list_cache(raw_dir, 2020, ["d"])
+            path = detail_path(2019, raw_dir)
+            path.parent.mkdir(parents=True)
+            path.write_text('{"identificador": "a"}\n', encoding="utf-8")
+            failures_path(2019, raw_dir).write_text(
+                '{"identificador": "b"}\n', encoding="utf-8"
+            )
+
+            rows = {row["year"]: row for row in coverage(raw_dir)}
+
+            self.assertEqual(
+                (rows[2019]["listed"], rows[2019]["fetched"], rows[2019]["failed"],
+                 rows[2019]["pending"]),
+                (3, 1, 1, 1),
+            )
+            self.assertEqual(rows[2020]["pending"], 1)
+
+    def test_no_cached_years_yields_no_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(coverage(Path(tmp)), [])
+
+    def test_complete_year_reports_zero_pending(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            write_list_cache(raw_dir, 2019, ["a", "b"])
+            path = detail_path(2019, raw_dir)
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '{"identificador": "a"}\n{"identificador": "b"}\n', encoding="utf-8"
+            )
+
+            self.assertEqual(coverage(raw_dir)[0]["pending"], 0)
+
+
 def write_failures(raw_dir, year, records):
     path = failures_path(year, raw_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -690,47 +735,89 @@ class RetryFailuresTests(CapturedOutput):
         self.assertIn("no retryable failures", self.output())
 
 
-class CoverageTests(unittest.TestCase):
-    def test_counts_listed_fetched_failed_and_pending_per_year(self):
+class PrintCoverageTests(CapturedOutput):
+    """The coverage table is how a partial ingestion is spotted, so its numbers
+    matter as much as any return value -- assert on them, don't eyeball them."""
+
+    def test_prints_a_header_and_one_row_per_year_newest_first(self):
         with tempfile.TemporaryDirectory() as tmp:
             raw_dir = Path(tmp)
-            write_list_cache(raw_dir, 2019, ["a", "b", "c"])
-            write_list_cache(raw_dir, 2020, ["d"])
-            path = detail_path(2019, raw_dir)
+            write_list_cache(raw_dir, 2019, ["a"])
+            write_list_cache(raw_dir, 2026, ["b"])
+
+            print_coverage(raw_dir)
+
+            lines = self.output().splitlines()
+            self.assertIn("year", lines[0])
+            self.assertIn("pending", lines[0])
+            self.assertEqual(lines[1].split(), ["2026", "1", "0", "0", "1"])
+            self.assertEqual(lines[2].split(), ["2019", "1", "0", "0", "1"])
+
+    def test_row_reports_a_partially_fetched_year(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp)
+            write_list_cache(raw_dir, 2026, ["a", "b", "c"])
+            path = detail_path(2026, raw_dir)
             path.parent.mkdir(parents=True)
             path.write_text('{"identificador": "a"}\n', encoding="utf-8")
-            failures_path(2019, raw_dir).write_text(
-                '{"identificador": "b"}\n', encoding="utf-8"
-            )
 
-            rows = {row["year"]: row for row in coverage(raw_dir)}
+            print_coverage(raw_dir)
 
             self.assertEqual(
-                (rows[2019]["listed"], rows[2019]["fetched"], rows[2019]["failed"],
-                 rows[2019]["pending"]),
-                (3, 1, 1, 1),
+                self.output().splitlines()[1].split(), ["2026", "3", "1", "0", "2"]
             )
-            self.assertEqual(rows[2020]["pending"], 1)
 
-    def test_no_cached_years_yields_no_rows(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(coverage(Path(tmp)), [])
-
-    def test_complete_year_reports_zero_pending(self):
+    def test_columns_stay_aligned_across_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             raw_dir = Path(tmp)
-            write_list_cache(raw_dir, 2019, ["a", "b"])
-            path = detail_path(2019, raw_dir)
-            path.parent.mkdir(parents=True)
-            path.write_text(
-                '{"identificador": "a"}\n{"identificador": "b"}\n', encoding="utf-8"
-            )
+            write_list_cache(raw_dir, 2026, ["a"])
+            write_list_cache(raw_dir, 2019, [str(n) for n in range(1000)])
 
-            self.assertEqual(coverage(raw_dir)[0]["pending"], 0)
+            print_coverage(raw_dir)
+
+            lines = self.output().splitlines()
+            self.assertEqual(len({len(line) for line in lines}), 1)
 
 
-class RunTests(unittest.TestCase):
+class ProgressOutputTests(CapturedOutput):
     def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.raw_dir = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def run_n_studies(self, n):
+        write_list_cache(self.raw_dir, 2019, [str(i) for i in range(n)])
+        session = Mock()
+        session.get.side_effect = lambda url, timeout: make_response(
+            json.dumps({"identificador": url.rsplit("/", 1)[-1]})
+        )
+        fetch_year_details(2019, session, self.raw_dir, delay=0)
+
+    def test_announces_how_many_are_pending_before_starting(self):
+        self.run_n_studies(3)
+
+        self.assertIn("2019: 3 to fetch", self.output())
+
+    def test_prints_progress_every_hundred_records(self):
+        self.run_n_studies(250)
+
+        progress = [
+            line.strip() for line in self.output().splitlines() if "/250" in line
+        ]
+        self.assertEqual(progress, ["100/250", "200/250"])
+
+    def test_short_run_prints_no_progress_line_at_zero(self):
+        """0 % 100 == 0, so without the truthiness guard every iteration before
+        the first success would print '0/...'."""
+        self.run_n_studies(3)
+
+        self.assertNotIn("0/3", self.output())
+
+
+class RunTests(CapturedOutput):
+    def setUp(self):
+        super().setUp()
         self._tmp = tempfile.TemporaryDirectory()
         self.raw_dir = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
