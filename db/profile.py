@@ -114,6 +114,13 @@ TABLE_FIELDS = {
         "proposito.basesDatos",
         "proposito.otrasFuentes",
     ],
+    # The two top-level fields studies keeps. enfermedadRara sits here too: it
+    # is the one flag in the record that is a string, not an integer.
+    "studies.identity": [
+        "identificador",
+        "acronimo",
+        "enfermedadRara",
+    ],
 }
 
 # Tables whose report is rendered compactly.

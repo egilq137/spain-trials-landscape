@@ -458,6 +458,55 @@ objective block sits between the two — only 3.4% are all-zero, and most studie
 set two to four of the nine. Any analysis counting "trials by purpose" must
 state which of these it is treating as a denominator.
 
+#### studies identity — identificador, acronimo, enfermedadRara
+
+Report: `docs/profiles/studies-identity.txt`.
+
+**`identificador` is a clean primary key.** Present in 11,847/11,847, and
+**11,847 distinct** — no duplicate anywhere in the corpus, so `TEXT NOT NULL
+PRIMARY KEY` is justified rather than assumed.
+
+**The identifier format is an exact CTIS marker, and a better one than dates.**
+Every id matches one of two patterns, with nothing unrecognised:
+
+| format | example | count | share |
+|---|---|---|---|
+| EudraCT (14 chars) | `2019-000302-29` | 6,843 | 57.8% |
+| CTIS (17 chars) | `2023-506669-70-00` | 5,004 | 42.2% |
+
+This is worth a derived column. The pre/post-CTIS split is a headline question
+(§3.3), and the id gives it exactly, where a date threshold only approximates
+it — trials authorised before the transition were still registered afterwards.
+
+**Correction to the `financiador` finding above.** §3.2c reports funder
+coverage collapsing across 2022-2024. The real pattern is cleaner and is not
+about calendar time at all: **funder is recorded for 6,843/6,843 EudraCT-era
+studies and 0/5,004 CTIS-era ones.** Not a decline — a clean switch tied to
+the registration system. The earlier by-year table was showing file windows
+that blend the two regimes, which is exactly the artefact that makes per-year
+fill rates misleading when a regime change is the real variable.
+
+**`acronimo` is mostly absent or a placeholder, and dies entirely at CTIS.**
+55.5% present, but **4,762 of those 6,574 values are placeholders** — `'NA'`
+alone is 4,744, 72.2% of everything non-blank, plus `N/A`, `N.A.`, `No aplica`,
+`No aplicable` and casing variants. **Real acronyms: 1,812 studies, 15.3% of
+the corpus, 1,802 distinct.** By id year the real rate holds around 25% through
+2021, falls to 5.7% in 2022 and is **0% from 2023 onward**.
+
+  - **Decision: placeholders load as `NULL`, joining the 5,273 blanks.** Note
+    this is *not* the reversible mapping used for the poblacion sentinels —
+    blanks already become `NULL`, so afterwards `NULL` cannot distinguish
+    "empty" from `'NA'`. It is justified on different grounds: both mean the
+    trial has no acronym, so the distinction has no analytical use, and the
+    raw cache retains it. The placeholder list is enumerated, not fuzzy-matched.
+  - With 15.3% coverage and nothing after 2022, `acronimo` is display-only.
+    It cannot support any analysis over time.
+
+**`enfermedadRara` is the one string flag in the record.** `'0'`/`'1'` as text,
+where all 42 poblacion and proposito flags are integers. Present in
+11,847/11,847, strictly 0/1, no sentinel — so `NOT NULL` with `CHECK (x IN
+(0,1))` after conversion. 2,444 studies (20.6%) are flagged rare-disease.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of

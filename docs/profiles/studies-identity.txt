@@ -1,0 +1,141 @@
+========================================================================
+identificador
+========================================================================
+structure (types of each level, outermost first)
+  dict                                      11847  100.0%
+
+presence
+  present     11847  100.0%
+  blank           0    0.0%
+  null            0    0.0%
+  absent          0    0.0%
+
+length  min 14  max 17  mean 15
+
+distinct values: 11847 exact
+                 11847 after casefold/accent/space normalisation (0 would merge)
+                 most frequent value is 0.0% of non-blank
+
+most frequent values
+       1  '2017-002808-28'
+       1  '2017-000206-38'
+       1  '2017-003083-13'
+       1  '2017-002906-10'
+       1  '2017-001469-26'
+       1  '2017-003182-94'
+       1  '2017-003019-21'
+       1  '2017-002799-18'
+       1  '2017-004028-31'
+       1  '2016-003827-45'
+       1  '2017-002669-23'
+       1  '2017-003254-17'
+  ... 11847 values occur exactly once
+
+presence by year
+  year   present   blank    null  absent
+  2017      3304       0       0       0
+  2018      1119       0       0       0
+  2019       629       0       0       0
+  2020       775       0       0       0
+  2021       569       0       0       0
+  2022       521       0       0       0
+  2023      1164       0       0       0
+  2024      2348       0       0       0
+  2025      1059       0       0       0
+  2026       359       0       0       0
+========================================================================
+acronimo
+========================================================================
+structure (types of each level, outermost first)
+  dict                                      11847  100.0%
+
+presence
+  present      6574   55.5%
+  blank        5273   44.5%
+  null            0    0.0%
+  absent          0    0.0%
+
+length  min 1  max 199  mean 10
+
+distinct values: 1809 exact
+                 1804 after casefold/accent/space normalisation (5 would merge)
+                 most frequent value is 72.2% of non-blank
+
+most frequent values
+    4744  'NA'
+       5  'No aplica'
+       3  'N.A.'
+       3  'N/A'
+       3  'no aplica'
+       3  'No aplicable'
+       2  'ENVISION'
+       2  'SUNRISE'
+       2  'PACIFIC'
+       2  'STATIN'
+       2  'HERCULES'
+       2  'ATLANTIC'
+  ... 1793 values occur exactly once
+
+values that differ only by case/accent/spacing/punctuation
+       5  'No aplica'
+       3  'no aplica'
+  --
+       3  'No aplicable'
+       1  'no aplicable'
+  --
+       1  'Alps'
+       1  'ALPS'
+  --
+       1  'Yosemite'
+       1  'YOSEMITE'
+  --
+       1  'PROpel'
+       1  'PROPEL'
+  --
+
+presence by year
+  year   present   blank    null  absent
+  2017      3174     130       0       0
+  2018      1032      87       0       0
+  2019       590      39       0       0
+  2020       761      14       0       0
+  2021       569       0       0       0
+  2022       357     164       0       0
+  2023        89    1075       0       0
+  2024         2    2346       0       0
+  2025         0    1059       0       0
+  2026         0     359       0       0
+========================================================================
+enfermedadRara
+========================================================================
+structure (types of each level, outermost first)
+  dict                                      11847  100.0%
+
+presence
+  present     11847  100.0%
+  blank           0    0.0%
+  null            0    0.0%
+  absent          0    0.0%
+
+length  min 1  max 1  mean 1
+
+distinct values: 2 exact
+                 2 after casefold/accent/space normalisation (0 would merge)
+                 most frequent value is 79.4% of non-blank
+
+all values
+    9403  '0'
+    2444  '1'
+
+presence by year
+  year   present   blank    null  absent
+  2017      3304       0       0       0
+  2018      1119       0       0       0
+  2019       629       0       0       0
+  2020       775       0       0       0
+  2021       569       0       0       0
+  2022       521       0       0       0
+  2023      1164       0       0       0
+  2024      2348       0       0       0
+  2025      1059       0       0       0
+  2026       359       0       0       0
