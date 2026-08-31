@@ -25,6 +25,7 @@ Usage:
 
 import html
 import json
+import re
 import sys
 import unicodedata
 from collections import Counter, defaultdict
@@ -37,10 +38,35 @@ DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "detalle"
 LIST_ALL_BELOW = 30
 TOP_N = 12
 
+# The source's own date format, dd-MM-yyyy.
+DATE_RE = re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$")
+
 # Fields each table keeps, addressed as a dotted path into the record.
+# Groups are profiled and reviewed one at a time: 51 fields of full report is
+# long enough to be skimmed, which defeats the point of reading it.
 TABLE_FIELDS = {
     "sponsors": ["organismo.promotor"],
+    # All 11 calendario fields, not the 9 the reverted DDL kept. The decision
+    # to drop fechaClasificacion and fechaFinPrevista came from two sampled
+    # cohorts (§3.2); profiling re-checks it against the whole corpus rather
+    # than inheriting it.
+    "studies.calendario": [
+        "calendario.fechaAutorizacionAEMPS",
+        "calendario.fechaRegistro",
+        "calendario.fechaClasificacion",
+        "calendario.fechaInicioPrevista",
+        "calendario.fechaFinPrevista",
+        "calendario.fechaInicioReal",
+        "calendario.fechaFinRealEspana",
+        "calendario.fechaFinRealGlobal",
+        "calendario.fechaInterrupcion",
+        "calendario.fechaReinicio",
+        "calendario.fechaFinPrematuro",
+    ],
 }
+
+# Tables whose report is rendered compactly.
+COMPACT_TABLES = {"studies.calendario"}
 
 ABSENT, NULL, BLANK, PRESENT = "absent", "null", "blank", "present"
 
@@ -145,6 +171,27 @@ class FieldProfile:
                       key=lambda v: -sum(self.values[x] for x in v))[:limit]
 
 
+def date_summary(values):
+    """(matching, total, earliest, latest) if a field looks like dates.
+
+    Returns None when fewer than half the distinct values match the source's
+    dd-MM-yyyy, so a field of ordinary text is not described as dates. Sorting
+    is done on a rearranged ISO form: sorting dd-MM-yyyy as text would order by
+    day of month, which is the same trap that makes the format unusable in the
+    database.
+    """
+    if not values:
+        return None
+    matching = {v: c for v, c in values.items() if DATE_RE.match(v)}
+    if len(matching) * 2 < len(values):
+        return None
+    def iso(value):
+        day, month, year = value.split("-")
+        return "{}-{:0>2}-{:0>2}".format(year, month, day)
+    ordered = sorted(iso(v) for v in matching)
+    return sum(matching.values()), sum(values.values()), ordered[0], ordered[-1]
+
+
 def profile_field(path, raw_dir=DEFAULT_RAW_DIR, years=None, records=None):
     profile = FieldProfile(path)
     source = records if records is not None else iter_records(raw_dir, years)
@@ -221,6 +268,58 @@ def print_profile(profile, stream=sys.stdout):
             year, counts[PRESENT], counts[BLANK], counts[NULL], counts[ABSENT]))
 
 
+def print_compact(profile, stream=sys.stdout):
+    """A few lines per field, for groups too large to read in full.
+
+    Keeps the parts that carry a decision -- presence, the full value list when
+    cardinality is low, and fill rate per year -- and drops the rest.
+    """
+    def out(text=""):
+        print(text, file=stream)
+
+    total = profile.records
+    present = profile.status[PRESENT]
+    out(profile.path)
+    out("  presence  present {} ({:.1%})   blank {}   null {}   absent {}".format(
+        present, present / total, profile.status[BLANK],
+        profile.status[NULL], profile.status[ABSENT]))
+
+    shapes = [s for s in profile.containers if not s.endswith("dict")]
+    if shapes:
+        out("  STRUCTURE unexpected container types: {}".format(
+            {s: profile.containers[s] for s in shapes}))
+    if len(profile.types) > 1:
+        out("  TYPES     mixed value types: {}".format(dict(profile.types)))
+
+    if not profile.distinct:
+        out("  distinct  0 -- never populated")
+        out()
+        return
+
+    out("  distinct  {} exact".format(profile.distinct))
+
+    dates = date_summary(profile.values)
+    if dates:
+        matching, values_total, earliest, latest = dates
+        note = "" if matching == values_total else "   <-- {} DO NOT".format(
+            values_total - matching)
+        out("  format    {}/{} match dd-MM-yyyy{}".format(
+            matching, values_total, note))
+        out("  range     {} .. {}".format(earliest, latest))
+    elif profile.distinct <= LIST_ALL_BELOW:
+        out("  values    " + "  |  ".join(
+            "{!r} {}".format(v, c) for v, c in profile.values.most_common()))
+    else:
+        out("  top       " + "  |  ".join(
+            "{!r} {}".format(v, c) for v, c in profile.values.most_common(4)))
+
+    years = sorted(profile.by_year)
+    out("  by year   " + "  ".join(
+        "{} {:.0%}".format(y, profile.by_year[y][PRESENT] / sum(
+            profile.by_year[y].values())) for y in years))
+    out()
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     table = argv[0] if argv else "sponsors"
@@ -229,8 +328,13 @@ def main(argv=None):
             table, ", ".join(sorted(TABLE_FIELDS))), file=sys.stderr)
         return 1
     records = list(iter_records())
+    render = print_compact if table in COMPACT_TABLES else print_profile
+    if render is print_compact:
+        print("{}  --  {} fields over {} studies".format(
+            table, len(TABLE_FIELDS[table]), len(records)))
+        print()
     for path in TABLE_FIELDS[table]:
-        print_profile(profile_field(path, records=records))
+        render(profile_field(path, records=records))
     return 0
 
 

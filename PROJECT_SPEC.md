@@ -250,6 +250,74 @@ visible and defensible, so it belongs in `analysis/` if it happens at all —
 never silently in the database. Normalisation is mechanical and reversible;
 entity resolution is neither.
 
+#### studies.calendario — 11 date fields
+
+Report: `docs/profiles/studies-calendario.txt`.
+
+**Format is uniform.** All 11 fields match `dd-MM-yyyy` in 100% of populated
+values across all 11,847 records — no malformed dates anywhere, and the key is
+always present, so blank means empty string and never a missing key.
+
+**Two fields are dead, now confirmed on the full corpus.**
+`fechaClasificacion` and `fechaFinPrevista` are blank in 11,847/11,847. The
+reverted DDL dropped them on the strength of two sampled cohorts; that call was
+right, and is now evidenced rather than inferred.
+
+**`fechaAutorizacionAEMPS` is 100% present** — so it is safe as `NOT NULL` and
+as the survival-analysis start date.
+
+**The corpus is not a 2017-2026 corpus.** Authorization dates run from 2009 to
+2026, and **3,079 studies (26%) were authorized before 2017**:
+
+| 2009-2012 | 2013 | 2014 | 2015 | 2016 | 2017 |
+|---|---|---|---|---|---|
+| 9 total | 759 | 715 | 805 | 791 | 780 |
+
+This is not a contradiction of §4's "registry data starts at 2017" — it
+resolves it. `fechaRegistro` runs from **2017-11-02**, so REEC began recording
+in November 2017; trials authorized earlier were entered retrospectively. That
+also explains 2017's outsized 3,304-record file: a registration backlog, as
+suspected.
+
+  - **The bias this creates is the important part.** A trial authorized in 2013
+    is in this data only if it was still live enough to be retro-registered in
+    late 2017. Short trials that had already finished are absent. So pre-2017
+    years are **not** a sample of trials authorized then — they are a sample of
+    trials authorized then *and still running four or more years later*, which
+    is selection on the outcome the survival analysis measures.
+  - **Consequence:** volume-per-year and any duration estimate must either
+    start at 2017, or state the pre-2017 years as incomplete and biased long.
+    Silently including them would overstate median duration for those years.
+    This is left truncation, and it is worth reading up on before Phase 4.
+
+**Four studies end before they are authorized — impossible, and fatal to
+survival analysis if kept.**
+
+| study | authorized | ends |
+|---|---|---|
+| 2016-003980-21 | 2017-03-17 | 2003-05-02 |
+| 2012-004854-27 | 2015-10-19 | 2015-10-15 |
+| 2014-001255-23 | 2014-06-30 | 2014-06-20 |
+| 2020-005614-18 | 2021-03-04 | 2020-06-24 |
+
+These produce negative durations, which Kaplan-Meier cannot accept. This
+settles the constraint deliberately left out of the reverted DDL: a
+`CHECK (survival_end >= survival_start)` is justified, and would reject exactly
+these four. Decision still needed on whether the loader drops them, nulls the
+end date and treats them as censored, or fails loudly.
+
+**Two smaller inconsistencies, recorded but not yet decided.** 43 studies have
+an actual start before their authorization date; 11 have a `fechaReinicio` with
+no `fechaInterrupcion` — a restart from an interruption that was never
+recorded.
+
+**More fields die at the CTIS transition.** `fechaInicioPrevista` falls from
+~87% (2017-2021) to 32% in 2023 and 2% in 2025. `fechaFinRealEspana` falls from
+88% to 1%, though that one confounds two causes -- recent trials genuinely have
+not ended yet, and the field may also have stopped being populated. Those are
+not separable from this data alone, which matters because that field is the
+survival endpoint and therefore decides who is censored.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of
