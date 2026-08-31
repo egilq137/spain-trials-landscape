@@ -128,6 +128,14 @@ TABLE_FIELDS = {
         "centros.centro[].codPostal",
         "centros.centro[].departamento",
     ],
+    # organismo.financiador is pipe-delimited, so it is profiled as the raw
+    # string here; the split is measured separately.
+    "funders": ["organismo.financiador"],
+    "therapeutic_areas": [
+        "areasTerapeuticas.area[].eutct",
+        "areasTerapeuticas.area[].nombre_es",
+        "areasTerapeuticas.area[].nombre_en",
+    ],
     # The two top-level fields studies keeps. enfermedadRara sits here too: it
     # is the one flag in the record that is a string, not an integer.
     "studies.identity": [
@@ -139,7 +147,8 @@ TABLE_FIELDS = {
 
 # Tables whose report is rendered compactly.
 COMPACT_TABLES = {"studies.calendario", "studies.poblacion",
-                  "studies.proposito", "centers"}
+                  "studies.proposito", "centers",
+                  "therapeutic_areas"}
 
 ABSENT, NULL, BLANK, PRESENT = "absent", "null", "blank", "present"
 

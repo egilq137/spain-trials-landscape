@@ -582,10 +582,16 @@ tables.** Recorded as leaning, not settled.
 
   - The gap between the last two is the problem to settle: **2,071 (study,
     centre) pairs report more than one geography *within a single study*.** So
-    `(study_id, center_id)` alone is not yet a key — either geography stays in
-    the key, leaving one trial-hospital pair on several rows and forcing
-    `DISTINCT` when counting sites, or it is resolved per pair, which needs a
-    rule for those 2,071. Decide before the DDL.
+    `(study_id, center_id)` alone is not yet a key.
+  - **TODO before the `study_centers` DDL — inspect those 2,071 pairs.** If
+    they are mostly the multi-campus case (one trial genuinely running at both
+    CUN Pamplona and CUN Madrid), the geography is real information and belongs
+    in the key. If they are mostly inconsistent entry for one physical site,
+    resolve per pair instead and take the clean one-row-per-site grain. The
+    answer decides between:
+    `PRIMARY KEY (study_id, center_id, provincia, ccaa, localidad, cod_postal)`
+    — faithful, but counting a trial's sites needs `DISTINCT` — and
+    `PRIMARY KEY (study_id, center_id)` with a documented resolution rule.
 
 **`tipo` and `situacion` are strings, not integers**, unlike every flag in
 `studies`. `tipo` is `'0'` (80,516), `'1'` (4,055), `'2'` (409), blank (430) —
@@ -593,6 +599,54 @@ tables.** Recorded as leaning, not settled.
 present and well spread: `'2'` (40,950), `'0'` (24,231), `'1'` (20,229). Both
 are undocumented codes; stored raw, and neither may be presented as site type
 or status until decoded.
+
+#### therapeutic_areas — a coded vocabulary, and the cleanest field in the source
+
+Report: `docs/profiles/therapeutic-areas.txt`.
+
+`areasTerapeuticas.area` is a list in 11,847/11,847 records, **every study has
+at least one** (max 8, mean 1.04), and all three fields are present in
+12,289/12,289 elements with no blanks.
+
+**`eutct` is a safe natural primary key.** 55 distinct codes, and **0 of the 55
+carry more than one name pair** — `nombre_es` and `nombre_en` are functionally
+dependent on the code, so they belong in the lookup table and never on the
+bridge. No surrogate id is needed.
+
+**The bridge is load-bearing, not defensive.** 12,289 elements over 11,847
+studies, so 442 extra memberships across 363 studies. A column on `studies`
+would lose them.
+
+Names embed a category code — `Diseases [C] - Cancer [C04]`, 53 distinct
+bracket codes. Not extracted: `eutct` already keys the table, so a second
+identifier would be redundant.
+
+#### funders — same identity problem as sponsors, plus a placeholder
+
+Report: `docs/profiles/funders.txt`. `organismo.financiador` is pipe-delimited
+and the delimiter is inconsistent — 5,280 values end with a trailing `|`, 1,563
+do not. Splitting on `|` and discarding empties handles both.
+
+**Co-funding is real but uncommon:** 271 studies list more than one funder, up
+to 12. That is what makes this many-to-many rather than a column.
+
+**The same normalisation rule as sponsors applies, and is needed:** 2,724
+distinct names collapse to **2,404** — **320 merge**, 11.7%, the same
+case/accent/spacing/entity variants. `funders` therefore gets the same
+`nombre_key` + `nombre` pair as `sponsors`.
+
+**`'NA'` is the single most frequent funder name — 572 occurrences.** The same
+placeholder as `acronimo`, in a lookup table where it would appear as an
+organisation that funded 572 trials. **Decision: placeholder values create no
+funder and no bridge row**, using the enumerated list from the `acronimo`
+decision. Absence of a bridge row already means "no funder recorded", so this
+needs no new representation.
+
+**Half the funder rows only repeat the sponsor.** In **3,702 of 6,843 studies
+with a funder (54.1%)**, the sole funder is the sponsor under a different
+spelling. Combined with the CTIS-era absence, `financiador` carries information
+beyond `promotor` for roughly **26% of the corpus** — 3,141 of 11,847. Worth
+stating before any "who funds Spanish trials" claim.
 
 ### 3.3 Analysis questions / insights to extract
 
@@ -830,7 +884,11 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       2017–2026 blends two regimes either side of the January 2023 CTIS
       transition and can hide a field that stopped being populated entirely.
 - [ ] `studies` — 51 source fields, the big one
-- [ ] `funders`, `therapeutic_areas`, `centers` and the bridge attributes
+- [x] `centers` — profiled. **TODO before its DDL:** inspect the 2,071
+      (study, centre) pairs whose geography varies within one study, to decide
+      the `study_centers` key (§3.2c).
+- [x] `funders`, `therapeutic_areas`
+- [ ] `interventions` + substances / atc_codes / administration_routes
 - Each table's findings go into §3.2c before its DDL is written.
 
 **2.3 — DDL (after profiling)**

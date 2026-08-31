@@ -1,0 +1,25 @@
+array areasTerapeuticas.area  --  11847 studies, 12289 elements
+  container types : {'list': 11847}
+  studies with none: 0
+  elements per study: min 1  max 8  mean 1.0
+
+therapeutic_areas  --  3 fields over 11847 studies
+
+areasTerapeuticas.area[].eutct
+  presence  present 12289 (100.0%)   blank 0   null 0   absent 0
+  distinct  55 exact
+  top       '999999000425' 4245  |  '999999000431' 937  |  '999999000441' 813  |  '999999000423' 634
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+areasTerapeuticas.area[].nombre_es
+  presence  present 12289 (100.0%)   blank 0   null 0   absent 0
+  distinct  55 exact
+  top       'Enfermedades [C] - Cáncer [C04]' 4245  |  'Enfermedades [C] - Sistema Nervioso [C10]' 937  |  'Enfermedades [C] - Patologías del sistema inmunitario [C20]' 813  |  'Enfermedades [C] - Enfermedades víricas [C02]' 634
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+areasTerapeuticas.area[].nombre_en
+  presence  present 12289 (100.0%)   blank 0   null 0   absent 0
+  distinct  55 exact
+  top       'Diseases [C] - Cancer [C04]' 4245  |  'Diseases [C] - Nervous System Diseases [C10]' 937  |  'Diseases [C] - Immune System Diseases [C20]' 813  |  'Diseases [C] - Virus Diseases [C02]' 634
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
