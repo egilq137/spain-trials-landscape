@@ -920,8 +920,15 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
       field name, `departamento` on the wrong table, a too-narrow composite
       key, four un-normalized pipe-delimited fields, and a wrong sponsor
       field name.
-- [ ] **`docs/phase2-schema-erd.html` is now stale and must be revised once
-      profiling is done.** It is the 2.1 deliverable and still the global map
+- [x] **`docs/phase2-schema-erd.html` revised after profiling** — 12 tables and
+      4 bridges, down from 15 and 6. Republished to the same artifact URL.
+      Profiling found a fifth ERD error the earlier review missed:
+      `intervenciones[].tipo` was documented with meanings from manual §4.8,
+      and the endpoint returns no such field on any of the 30,946 elements.
+      The manual has now been wrong about a date format, a site-type
+      vocabulary, and a field's existence.
+- Superseded note (kept for the record): **the ERD was stale and had to be
+      revised once profiling was done.** It is the 2.1 deliverable and still the global map
       the slices are cut against, so it is kept rather than deleted — but it
       currently asserts things profiling has already contradicted or has yet
       to confirm, and it is published as an artifact, so a reader has no way
