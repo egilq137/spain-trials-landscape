@@ -387,13 +387,35 @@ reported" rather than a trial planning nobody — and the maximum is **999999**,
 a single obvious placeholder, with one further 99999. Excluding zeros and both
 sentinels: n=9,644, min 1, median 180, max 99,999. No negatives.
 
-**Open decision — how sentinels reach the database.** `-1` and `total = 0` are
-the same problem: a value the source uses to mean "unknown", which SQL already
-has a word for. Storing them raw makes every `AVG` and `SUM` silently wrong;
-mapping them to `NULL` makes aggregates correct and forces analysis to handle
-absence explicitly. Either way the rule must be enumerated per field with
-counts, the way the sponsor normalisation is — the principle is no
-*undocumented* judgement, not no judgement.
+**Decision — sentinels load as `NULL`, and here the mapping loses nothing.**
+`-1` and `total = 0` both mean "unknown", which SQL already has a word for.
+Stored raw they make every `AVG` and `SUM` silently wrong: `mujerusa` would
+average in a `-1`, and mean planned participants would include 2,201 zeros.
+
+The reason this is safe rather than merely convenient: **there are no existing
+NULLs to collide with.** Every one of the 18 poblacion fields, all 24 proposito
+fields and `total` is present in 11,847/11,847 records — never blank, never
+null, never absent — and `-1` is the only non-0/1 value that occurs anywhere.
+So a `NULL` in a flag column means "the source sent `-1`" and can mean nothing
+else. The mapping is reversible by inspection, without consulting the raw
+cache, so no information is lost by applying it.
+
+  - **Flags:** `-1` → `NULL` in the 12 fields that carry it. Columns stay
+    nullable; a `CHECK (x IN (0,1))` still applies, since a CHECK passes when
+    it evaluates to NULL.
+  - **`poblacion.total`:** `0` → `NULL` (2,201 records). Unambiguous for the
+    same reason.
+  - **`total` = 999999 / 99999 / 114011 are left raw.** One record each, so
+    they are outliers rather than a sentinel convention, and a schema rule for
+    a single row is not worth its cost. Recorded here as known outliers for
+    analysis to exclude; 999999 and 99999 are almost certainly placeholders.
+  - **`proposito` needs none of this.** All 24 flags are strictly 0/1 across
+    the corpus, so they stay `NOT NULL` with `CHECK (x IN (0,1))`.
+  - **This invariant is a property of the current corpus, not a guarantee.** A
+    refresh that sends a genuinely absent field would make `NULL` ambiguous.
+    The profiler counts blank/null/absent separately and the validator reports
+    unexpected values, so either would surface it — re-check on refresh rather
+    than assume it still holds.
 
 ### 3.3 Analysis questions / insights to extract
 
