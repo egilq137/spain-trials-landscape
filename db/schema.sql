@@ -1,7 +1,7 @@
 -- Spain clinical trials landscape - relational schema (SQLite)
 --
--- Slice 1: sponsors + studies. Later slices append funders,
--- therapeutic_areas, centers and interventions.
+-- Slices 1-2: sponsors, studies, funders, therapeutic areas. Later slices
+-- append centers and interventions.
 --
 -- Written from db/profile.py's reports over all 11,847 cached records. The
 -- evidence behind every decision is in PROJECT_SPEC.md 3.2c and
@@ -30,6 +30,10 @@ PRAGMA foreign_keys = ON;
 
 -- Dropped children-first, so no statement removes a table another still
 -- references.
+DROP TABLE IF EXISTS study_therapeutic_areas;
+DROP TABLE IF EXISTS study_funders;
+DROP TABLE IF EXISTS therapeutic_areas;
+DROP TABLE IF EXISTS funders;
 DROP TABLE IF EXISTS studies;
 DROP TABLE IF EXISTS sponsors;
 
@@ -168,3 +172,95 @@ CREATE INDEX idx_studies_sponsor_id ON studies(sponsor_id);
 
 -- Range scans for the commonest filter: trials per year.
 CREATE INDEX idx_studies_fecha_autorizacion ON studies(fecha_autorizacion_aemps);
+
+
+-- ---------------------------------------------------------------------------
+-- funders - from organismo.financiador, pipe-split
+-- ---------------------------------------------------------------------------
+-- Many-to-many, unlike sponsor: 271 studies list more than one funder, up to
+-- 12. The delimiter is inconsistent - 5,280 values end with a trailing '|' and
+-- 1,563 do not - so the loader splits on '|' and discards empties.
+--
+-- Same two-column shape as sponsors, on the same evidence: 2,724 distinct
+-- names collapse to 2,404, so 320 (11.7%) are case/accent/spacing/markup
+-- variants of a name already present.
+--
+-- Deliberately NOT merged with sponsors into one organisations table, even
+-- though the two overlap heavily. Sharing an id space would mean deciding
+-- which sponsor rows and which funder rows are the same organisation, which
+-- is entity resolution - a judgement, made at load, that every foreign key
+-- would then depend on. Two tables assert only what the two source fields
+-- said; analysis/ can relate them where the rule can be shown.
+--
+-- WHAT THIS TABLE IS FOR, AND IS NOT. financiador is recorded for
+-- 6,843/6,843 EudraCT-era studies and 0/5,004 CTIS-era ones, and in 3,702 of
+-- those 6,843 (54.1%) the sole funder is the sponsor respelled. So it carries
+-- information beyond promotor for 3,141 studies - 26% of the corpus, all of
+-- it pre-2023. It supports a pre-CTIS subgroup analysis (industry money
+-- behind academically sponsored trials) and a sensitivity check on the
+-- sponsor-based split. It is NOT a corpus-wide funder census, and any
+-- "who funds Spanish trials" claim built on it is answering a question about
+-- one era with a denominator of a quarter.
+CREATE TABLE funders (
+    funder_id  INTEGER PRIMARY KEY,
+    -- rules.match_key output: identity, same rule as sponsors.promotor_key.
+    nombre_key TEXT NOT NULL UNIQUE CHECK (nombre_key <> ''),
+    -- rules.clean_text output, for display.
+    nombre     TEXT NOT NULL        CHECK (nombre     <> '')
+) STRICT;
+
+-- Bridge: one row per (study, funder) pairing, the pair itself the key, so one
+-- funder cannot be recorded twice for one study.
+-- NOT NULL is explicit again - a composite PRIMARY KEY does not imply it.
+-- ON DELETE CASCADE, not RESTRICT: a pairing is part of its parents rather
+-- than a reference to them, so it has no meaning once either side is gone.
+--
+-- 'NA' is the most frequent funder name in the source (572 occurrences), and
+-- placeholders create neither a funder nor a bridge row - a missing bridge row
+-- already means "no funder recorded", so this needs no representation here.
+-- Enforced in the loader against rules.PLACEHOLDERS rather than by a CHECK:
+-- restating the list in SQL would be a second copy that can drift from the one
+-- the loader actually applies.
+CREATE TABLE study_funders (
+    study_id  TEXT    NOT NULL REFERENCES studies(identificador) ON DELETE CASCADE,
+    funder_id INTEGER NOT NULL REFERENCES funders(funder_id)     ON DELETE CASCADE,
+    PRIMARY KEY (study_id, funder_id)
+) STRICT;
+
+-- The composite PK indexes (study_id, funder_id), which answers "funders of
+-- this study". The reverse question needs its own index, because the PK's
+-- index cannot be searched by its second column alone.
+CREATE INDEX idx_study_funders_funder_id ON study_funders(funder_id);
+
+
+-- ---------------------------------------------------------------------------
+-- therapeutic_areas - coded disease/indication lookup (EU CT vocabulary)
+-- ---------------------------------------------------------------------------
+-- The cleanest field in the source: areasTerapeuticas.area is a list in
+-- 11,847/11,847 records, every study has at least one, and all three fields
+-- are present in 12,289/12,289 elements with no blanks.
+--
+-- eutct is a safe natural primary key - 55 distinct codes, and none carries
+-- more than one name pair. The names are functionally dependent on the code,
+-- so they belong here and never on the bridge, and no surrogate id is needed.
+--
+-- Names embed a category code ('Diseases [C] - Cancer [C04]'). Not extracted:
+-- eutct already keys the table, so a second identifier would be redundant.
+CREATE TABLE therapeutic_areas (
+    eutct_code TEXT NOT NULL PRIMARY KEY CHECK (eutct_code <> ''),
+    nombre_es  TEXT NOT NULL             CHECK (nombre_es  <> ''),
+    nombre_en  TEXT NOT NULL             CHECK (nombre_en  <> '')
+) STRICT;
+
+-- Bridge, and load-bearing rather than defensive: 12,289 elements over 11,847
+-- studies, so 442 extra memberships across 363 studies that a column on
+-- studies would lose.
+CREATE TABLE study_therapeutic_areas (
+    study_id   TEXT NOT NULL REFERENCES studies(identificador)        ON DELETE CASCADE,
+    eutct_code TEXT NOT NULL REFERENCES therapeutic_areas(eutct_code) ON DELETE CASCADE,
+    PRIMARY KEY (study_id, eutct_code)
+) STRICT;
+
+-- Same reasoning as above: the PK covers "areas of this study", this covers
+-- "studies in this area" - which is the therapeutic-landscape question.
+CREATE INDEX idx_study_therapeutic_areas_eutct ON study_therapeutic_areas(eutct_code);

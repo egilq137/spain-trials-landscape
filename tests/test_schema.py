@@ -1,4 +1,4 @@
-"""Tests for db/schema.sql -- slice 1, sponsors and studies.
+"""Tests for db/schema.sql -- slices 1-2.
 
 Every constraint is asserted to REJECT its bad value. A test that only runs
 the script proves the SQL parses, which is not what the constraints are for:
@@ -30,6 +30,19 @@ Success criteria:
     so the block cannot creep back in unnoticed
   STRICT: declared types are enforced -- text that is not a number cannot
     land in an integer column
+
+Slice 2 -- funders and therapeutic_areas, and their bridges:
+  funders: the same identity rule as sponsors, in its own id space. Merging
+    the two tables would decide which sponsor and which funder are the same
+    organisation, which is entity resolution and stays out of the database
+  therapeutic_areas: eutct_code is a natural key, and the names hang off it.
+    None of the 55 codes carries a second name pair, so a code cannot be
+    inserted twice under a different name
+  bridges: a pairing cannot name a study or a lookup that does not exist,
+    cannot be recorded twice, and disappears when either parent does. Both
+    are many-to-many for a measured reason -- 271 studies list more than one
+    funder, 363 more than one therapeutic area -- so the multi-valued case is
+    tested, not assumed
 """
 
 import sqlite3
@@ -304,6 +317,187 @@ class StrictTypingTestCase(SchemaTestCase):
             "SELECT name FROM sqlite_master WHERE type = 'index'")}
         self.assertIn("idx_studies_sponsor_id", names)
         self.assertIn("idx_studies_fecha_autorizacion", names)
+
+
+class FundersTestCase(SchemaTestCase):
+    def add_funder(self, key="isciii", name="Instituto de Salud Carlos III"):
+        return self.con.execute(
+            "INSERT INTO funders (nombre_key, nombre) VALUES (?, ?)",
+            (key, name)).lastrowid
+
+    def test_a_valid_funder_loads_and_is_given_an_id(self):
+        funder_id = self.add_funder()
+        self.assertEqual(
+            self.con.execute("SELECT nombre FROM funders WHERE funder_id = ?",
+                             (funder_id,)).fetchone()[0],
+            "Instituto de Salud Carlos III")
+
+    def test_two_spellings_of_one_identity_cannot_both_load(self):
+        # 320 of 2,724 distinct funder names are variants of one already there.
+        self.add_funder()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_funder("isciii", "Instituto de Salud Carlos-III")
+
+    def test_a_funder_gets_its_own_id_space_not_the_sponsors_one(self):
+        # Same organisation in both roles is two rows, deliberately: relating
+        # them is entity resolution and belongs in analysis/.
+        self.add_funder("astrazeneca ab", "AstraZeneca AB")
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM funders").fetchone()[0], 1)
+
+    def test_neither_name_may_be_null_or_blank(self):
+        for column in ("nombre_key", "nombre"):
+            with self.subTest(column=column), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.con.execute(
+                    "INSERT INTO funders ({}) VALUES (?)".format(column),
+                    ("something",))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_funder("", "ISCIII")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_funder("isciii", "")
+
+
+class TherapeuticAreasTestCase(SchemaTestCase):
+    def add_area(self, code="C14", es="Enfermedades cardiovasculares",
+                 en="Cardiovascular Diseases"):
+        self.con.execute(
+            "INSERT INTO therapeutic_areas (eutct_code, nombre_es, nombre_en) "
+            "VALUES (?, ?, ?)", (code, es, en))
+
+    def test_a_valid_area_loads_under_its_own_code(self):
+        self.add_area()
+        self.assertEqual(
+            self.con.execute("SELECT nombre_en FROM therapeutic_areas "
+                             "WHERE eutct_code = 'C14'").fetchone()[0],
+            "Cardiovascular Diseases")
+
+    def test_a_code_cannot_carry_a_second_name_pair(self):
+        # The names are functionally dependent on the code -- 0 of the 55
+        # codes carries more than one pair, which is what makes the natural
+        # key safe and keeps the names off the bridge.
+        self.add_area()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_area(es="Cardiologia", en="Cardiology")
+
+    def test_the_code_is_required_and_never_blank(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_area(code=None)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_area(code="")
+
+    def test_both_names_are_required_and_never_blank(self):
+        for kwargs in ({"es": None}, {"en": None}, {"es": ""}, {"en": ""}):
+            with self.subTest(**kwargs), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.add_area(**kwargs)
+
+
+class BridgeTestCase(SchemaTestCase):
+    """Both bridges have the same shape, so both get the same tests.
+
+    Each case is (table, study column, parent column, insert a parent, a
+    second parent). Parametrised rather than duplicated: a rule that holds
+    for one bridge and not the other would be a bug, not a design.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.insert_study(identificador="2019-000302-29")
+        self.insert_study(identificador="2023-506669-70-00")
+        self.con.execute(
+            "INSERT INTO funders (funder_id, nombre_key, nombre) "
+            "VALUES (1, 'isciii', 'ISCIII'), (2, 'pfizer', 'Pfizer')")
+        self.con.execute(
+            "INSERT INTO therapeutic_areas VALUES "
+            "('C14', 'Cardiovasculares', 'Cardiovascular Diseases'), "
+            "('C04', 'Cancer', 'Cancer')")
+
+    BRIDGES = (
+        ("study_funders", "funder_id", 1, 2, 999),
+        ("study_therapeutic_areas", "eutct_code", "C14", "C04", "C99"),
+    )
+
+    def link(self, table, column, study, parent):
+        self.con.execute(
+            "INSERT INTO {} (study_id, {}) VALUES (?, ?)".format(table, column),
+            (study, parent))
+
+    def test_a_study_may_have_several(self):
+        # 271 studies list more than one funder (up to 12); 363 list more than
+        # one therapeutic area. This is why neither is a column on studies.
+        for table, column, first, second, _ in self.BRIDGES:
+            with self.subTest(table=table):
+                self.link(table, column, "2019-000302-29", first)
+                self.link(table, column, "2019-000302-29", second)
+                self.assertEqual(
+                    self.con.execute(
+                        "SELECT COUNT(*) FROM {} WHERE study_id = ?".format(
+                            table), ("2019-000302-29",)).fetchone()[0], 2)
+
+    def test_the_same_pairing_cannot_be_recorded_twice(self):
+        for table, column, first, _, _ in self.BRIDGES:
+            with self.subTest(table=table):
+                self.link(table, column, "2019-000302-29", first)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.link(table, column, "2019-000302-29", first)
+
+    def test_a_pairing_cannot_name_a_study_that_does_not_exist(self):
+        for table, column, first, _, _ in self.BRIDGES:
+            with self.subTest(table=table), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.link(table, column, "2019-000999-11", first)
+
+    def test_a_pairing_cannot_name_a_parent_that_does_not_exist(self):
+        for table, column, _, _, missing in self.BRIDGES:
+            with self.subTest(table=table), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.link(table, column, "2019-000302-29", missing)
+
+    def test_neither_column_may_be_null(self):
+        for table, column, first, _, _ in self.BRIDGES:
+            for study, parent in (("2019-000302-29", None),
+                                  (None, first)):
+                with self.subTest(table=table, study=study), \
+                        self.assertRaises(sqlite3.IntegrityError):
+                    self.link(table, column, study, parent)
+
+    def test_deleting_a_study_takes_its_pairings_with_it(self):
+        # CASCADE, not RESTRICT: a pairing is part of its parents rather than
+        # a reference to them, so it means nothing once either side is gone.
+        for table, column, first, _, _ in self.BRIDGES:
+            with self.subTest(table=table):
+                self.link(table, column, "2023-506669-70-00", first)
+        self.con.execute("DELETE FROM studies WHERE identificador = ?",
+                         ("2023-506669-70-00",))
+        for table, _, _, _, _ in self.BRIDGES:
+            with self.subTest(table=table):
+                self.assertEqual(
+                    self.con.execute(
+                        "SELECT COUNT(*) FROM {}".format(table)).fetchone()[0],
+                    0)
+
+    def test_deleting_a_parent_takes_its_pairings_with_it(self):
+        self.link("study_funders", "funder_id", "2019-000302-29", 1)
+        self.con.execute("DELETE FROM funders WHERE funder_id = 1")
+        self.link("study_therapeutic_areas", "eutct_code", "2019-000302-29",
+                  "C14")
+        self.con.execute(
+            "DELETE FROM therapeutic_areas WHERE eutct_code = 'C14'")
+        for table, _, _, _, _ in self.BRIDGES:
+            with self.subTest(table=table):
+                self.assertEqual(
+                    self.con.execute(
+                        "SELECT COUNT(*) FROM {}".format(table)).fetchone()[0],
+                    0)
+
+    def test_the_reverse_lookup_indexes_exist(self):
+        # The composite PK answers "parents of this study"; the questions the
+        # dashboard asks run the other way and need their own index.
+        names = {row[0] for row in self.con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'")}
+        self.assertIn("idx_study_funders_funder_id", names)
+        self.assertIn("idx_study_therapeutic_areas_eutct", names)
 
 
 if __name__ == "__main__":
