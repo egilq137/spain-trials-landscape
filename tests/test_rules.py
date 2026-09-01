@@ -1,4 +1,4 @@
-"""Tests for db.rules (step 1: placeholders and sentinels).
+"""Tests for db.rules (steps 1-2: placeholders, sentinels, routes).
 
 Two layers, deliberately. The unit tests are pure and always run. The
 corpus-backed tests re-measure each rule against all 11,847 cached studies and
@@ -18,11 +18,11 @@ Success criteria:
     what the study is (a phase I trial) rather than by the number being big
   routes: every one of the 129 raw values is covered by exactly one of the two
     maps, with no fallthrough and no dead entries -- an unmapped value must be
-    a visible failure, never a silent drop into `other`; the misspellings
-    still merge; a value naming several routes becomes `multiple routes`
-    rather than whichever is written first; and group membership is
-    allow-listed, so a route added later lands in `other` until someone
-    classifies it
+    a visible failure, never a silent drop; the misspellings and the undecoded
+    HTML entity still merge; distinct routes stay distinct; a dosage form is
+    not guessed into a route; and a value naming several routes becomes
+    `multiple routes` rather than whichever is written first. There is no
+    coarse grouping to test -- the canonical routes are the grouping
   corpus: the placeholder set still covers the acronimo, funder and centre
     reference counts it was built from; -1 still appears in exactly the 12
     flags listed and no others; total is still 0 in 2,201 records; the four
@@ -36,16 +36,11 @@ from pathlib import Path
 
 from db.rules import (
     FLAG_UNKNOWN,
-    ROUTE_CANONICAL,
-    ROUTE_GROUP_IV,
-    ROUTE_GROUP_ORAL,
-    ROUTE_GROUP_OTHER,
-    ROUTE_GROUP_SC,
-    ROUTE_GROUPS,
-    ROUTE_NOT_A_ROUTE,
     FLAGS_WITH_UNKNOWN,
     IMPOSSIBLE_DATE_STUDIES,
     PLACEHOLDERS,
+    ROUTE_CANONICAL,
+    ROUTE_NOT_A_ROUTE,
     TOTAL_NOT_A_COUNT,
     TOTAL_UNKNOWN,
     fold,
@@ -105,6 +100,57 @@ class TestIsPlaceholder(unittest.TestCase):
                 self.assertEqual(fold(entry), entry)
 
 
+class TestRouteMaps(unittest.TestCase):
+    def test_keys_are_stored_folded(self):
+        # Lookups happen on folded text, so an unfolded key could never match.
+        for key in list(ROUTE_CANONICAL) + list(ROUTE_NOT_A_ROUTE):
+            with self.subTest(key=key):
+                self.assertEqual(fold(key), key)
+
+    def test_the_two_maps_do_not_overlap(self):
+        self.assertEqual(set(ROUTE_CANONICAL) & set(ROUTE_NOT_A_ROUTE), set())
+
+    def test_misspellings_merge_into_intravenous(self):
+        # 517 rows. A naive match on "intravenous" misses both.
+        for typo in ("intravenious infusion", "intravenus use"):
+            with self.subTest(typo=typo):
+                self.assertEqual(ROUTE_CANONICAL[typo], "intravenous")
+
+    def test_an_undecoded_html_entity_still_merges(self):
+        self.assertEqual(ROUTE_CANONICAL["infusi&oacute;n intravenosa"],
+                         "intravenous")
+
+    def test_phrasing_variants_merge(self):
+        self.assertEqual(ROUTE_CANONICAL["oral"], ROUTE_CANONICAL["oral use"])
+        self.assertEqual(ROUTE_CANONICAL["subcutaneous"],
+                         ROUTE_CANONICAL["subcutaneous injection"])
+
+    def test_compound_values_are_not_forced_into_one_route(self):
+        for compound in ("oral and iv", "intravenous (iv) or subcutaneous (sc)",
+                         "intravenous/subcutaneous/intramuscular"):
+            with self.subTest(compound=compound):
+                self.assertEqual(ROUTE_CANONICAL[compound], "multiple routes")
+
+    def test_a_route_written_twice_is_not_compound(self):
+        self.assertEqual(ROUTE_CANONICAL["iv injection, iv infusion"],
+                         "intravenous")
+
+    def test_a_dosage_form_is_not_guessed_into_a_route(self):
+        # 'solution for injection' names a form. It could be IV, IM or SC, so
+        # it says so rather than picking one.
+        self.assertEqual(ROUTE_CANONICAL["solution for injection"],
+                         "injection, route unspecified")
+
+    def test_distinct_routes_are_not_merged(self):
+        for a, b in (("oral", "intravenous"),
+                     ("subcutaneous", "intramuscular"),
+                     ("intrathecal", "intravitreal")):
+            with self.subTest(pair=(a, b)):
+                self.assertNotEqual(ROUTE_CANONICAL[a + " use"],
+                                    ROUTE_CANONICAL[b + " use"])
+
+
+@requires_corpus
 class TestAgainstCorpus(unittest.TestCase):
     """Re-measures the counts the rules were written from."""
 

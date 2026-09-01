@@ -903,13 +903,12 @@
       </div>
 
       <div class="entity-card">
-        <div class="entity-head"><span class="name">administration_routes</span><span class="purpose">129 rows · lookup, not a bridge</span></div>
+        <div class="entity-head"><span class="name">administration_routes</span><span class="purpose">53 routes · lookup, not a bridge</span></div>
         <table>
           <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
           <tbody>
             <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>route_id</td><td class="col-type">int</td><td class="col-note">&nbsp;</td></tr>
-            <tr><td class="col-name">nombre</td><td class="col-type">text · unique</td><td class="col-note">the canonical route, after the loader merges phrasing and misspellings — <code>oral</code> / <code>oral use</code> are one route, and <code>intravenious infusion</code> (466) and <code>intravenus use</code> (51) are typos a naive match would miss</td></tr>
-            <tr class="caveat-row"><td class="col-name"><span class="tag caveat">todo</span>grupo</td><td class="col-type">text</td><td class="col-note">clinical grouping, filled from an enumerated map. 129 hand-reviewable rows, so it belongs here rather than in analysis — and <code>nombre</code> is kept, so a later question can regroup. <b>Buckets not yet settled:</b> oral 42.5% and intravenous 36.4% leave out subcutaneous at 10.3%, which is clinically distinct from both</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text · unique</td><td class="col-note">the canonical route. 129 raw values reduce to <b>53</b>: <code>oral</code> and <code>oral use</code> are one route, <code>intravenious infusion</code> (466) and <code>intravenus use</code> (51) are misspellings a naive match would miss, and one value still carries an undecoded <code>&amp;oacute;</code>. No coarser grouping is stored — deciding that intramuscular counts as "other" is a judgement, and judgements live in <code>analysis/</code></td></tr>
           </tbody>
         </table>
         <p class="cluster-note">

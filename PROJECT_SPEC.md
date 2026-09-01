@@ -716,36 +716,26 @@ Two separable problems, which belong in different places:
     mapping lives in one place, and `nombre` is kept so any later question can
     regroup from the original.
 
-**Settled — four groups, and the mapping is in `db/rules.py`.** Two would not
-fit: oral and intravenous cover only 78.9%, and subcutaneous is a further
-10.3% that is clinically distinct from both.
+**Settled — harmonise, but do not bucket.** `db/rules.py` reduces the 129 raw
+values to **53 canonical routes** via `ROUTE_CANONICAL`, plus a small
+`ROUTE_NOT_A_ROUTE` set for the 299 rows (1.7%) that name no route at all —
+`unknown use`, `other use`, `route of administration not applicable`.
 
-| bucket | rows | share |
-|---|---|---|
-| oral | 7,342 | 42.5% |
-| intravenous | 6,279 | 36.4% |
-| **subcutaneous** | **1,786** | **10.3%** |
-| intramuscular | 356 | 2.1% |
-| topical / ocular | 308 | 1.8% |
-| inhalation | 249 | 1.4% |
-| unclassified | 948 | 5.5% |
+**No coarse grouping is stored.** An earlier draft added an
+oral/intravenous/subcutaneous/other bucket column; it is gone. Merging
+`oral use` into `oral` is mechanical, but deciding that intramuscular counts
+as "other" is a judgement about what a question is asking — the same line
+already drawn for sponsor entity resolution. The canonical routes are the
+grouping; anything coarser belongs in `analysis/`, where it can be stated and
+varied per question rather than frozen in a column.
 
-Measured after canonicalisation the groups come out at **oral 42.2%,
-intravenous 35.8%, subcutaneous 10.3%, other 10.0%**, with a further 1.7%
-naming no route at all (`unknown use`, `other use`, `route of administration
-not applicable`).
-
-`ROUTE_CANONICAL` reduces the 129 raw values to **53 canonical routes**, and
-`ROUTE_GROUPS` maps those into the four buckets. Two properties of the design
-are worth stating, both enforced by tests:
+Two properties of the maps, both enforced by tests:
 
   - **No fallthrough.** Every one of the 129 values must appear in exactly one
-    of the two maps. An unmapped value fails the test rather than dropping
-    silently into `other`, which is how a rogue value stays invisible.
-  - **Groups are allow-listed, not defaulted.** Only oral, intravenous and
-    subcutaneous members are listed; anything else is `other` by definition.
-    So a route added by a future refresh lands in `other` until someone
-    classifies it, rather than being quietly absorbed into a named group.
+    of the two maps. An unmapped value fails a test rather than being silently
+    absorbed — which is how `-1` stayed invisible for so long.
+  - **No dead entries.** A key matching nothing is a typo, or a rule for data
+    that no longer exists. Either way it should not sit there unnoticed.
 
 Four entries are marked INFERRED because the source does not literally say the
 route: bare `infusion`, `solution for infusion` and `concentrate for solution

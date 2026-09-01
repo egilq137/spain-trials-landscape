@@ -350,28 +350,11 @@ ROUTE_CANONICAL = {
     "infiltration, perineural use": "multiple routes",
 }
 
-# Canonical route -> analysis group.
-#
-# Four buckets, not two. Oral and intravenous cover 78.9% of rows, and
-# subcutaneous is a further 10.3% that is clinically distinct from both --
-# folding it into either would be wrong, and dropping it would discard a tenth
-# of the field. Everything else is `other`, which is honest about being a
-# mixture rather than pretending to be a category.
-#
-# Only the three named groups are listed. A canonical route absent from this
-# map is `other` by definition, so adding a route later cannot silently land
-# in the wrong bucket -- it lands in `other` until someone says otherwise.
-ROUTE_GROUP_ORAL = "oral"
-ROUTE_GROUP_IV = "intravenous"
-ROUTE_GROUP_SC = "subcutaneous"
-ROUTE_GROUP_OTHER = "other"
-
-ROUTE_GROUPS = {
-    "oral": ROUTE_GROUP_ORAL,
-    "sublingual": ROUTE_GROUP_ORAL,
-    "buccal": ROUTE_GROUP_ORAL,
-    "oromucosal": ROUTE_GROUP_ORAL,
-    "enteral": ROUTE_GROUP_ORAL,
-    "intravenous": ROUTE_GROUP_IV,
-    "subcutaneous": ROUTE_GROUP_SC,
-}
+# No coarse grouping here. An earlier draft added a four-bucket
+# oral/intravenous/subcutaneous/other map plus a `grupo` column; it is gone.
+# The 53 canonical routes above ARE the grouping, and they are as far as this
+# module can go without judgement: merging `oral use` into `oral` is
+# mechanical, but deciding that intramuscular counts as "other" is a choice
+# about what a question is asking. Same line as sponsor entity resolution --
+# normalisation here, classification in `analysis/`, where it can be stated
+# and varied per question rather than frozen in a column.
