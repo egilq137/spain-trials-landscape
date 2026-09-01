@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules being written as data in db/rules.py, steps 1-3 of 6 done (placeholders and sentinels, administration routes, name normalisation, postcode repair by triangulation, and the load manifest) and applied in db/transform.py. Next: wire the manifest into db/validate.py as a dry run, then the DDL
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules written as data in db/rules.py, steps 1-4 of 6 done (placeholders and sentinels, administration routes, name normalisation, postcode repair by triangulation, and the load manifest) and applied in db/transform.py. Next: db/schema.sql (2.3), which steps 5-6 are blocked on
 last updated: 2026-09-01
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
