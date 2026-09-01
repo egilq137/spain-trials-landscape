@@ -15,11 +15,15 @@ Counts in comments are measured over all 11,847 cached studies. The
 corpus-backed tests in tests/test_rules.py re-check them when the cache is
 present.
 
-Steps 1-2 of 6: placeholders, sentinels, and administration routes. Name
-normalisation and postcode padding follow; the functions that apply these
-rules arrive in step 3 with the code that calls them.
+Steps 1-3 of 6: placeholders, sentinels, administration routes, and name
+normalisation. Postcode repair is here too, but it is step 6 work arriving
+early: it is the one rule that cannot be a pure function of a single value,
+because it has to consult the rest of the corpus. The load manifest that counts
+each rule's applications follows in step 4.
 """
 
+import collections
+import html
 import unicodedata
 
 # ---------------------------------------------------------------------------
@@ -171,10 +175,118 @@ def is_placeholder(text):
     # Folded away to nothing while not blank to begin with: punctuation only.
     return True if not folded else folded in PLACEHOLDERS
 
-# No clean_text / clean_flag / clean_total helpers here yet. They would be the
-# obvious wrappers, but nothing calls them until db/transform.py is wired up in
-# step 3, and a tested-but-uncalled function is still an uncalled function.
-# They arrive with their caller.
+def clean_flag(value):
+    """-1 -> None. Everything else through unchanged.
+
+    Applied after db.transform.flag has done the structural conversion, so an
+    unexpected value is still passed to the schema rather than nulled here.
+    """
+    return None if value == FLAG_UNKNOWN else value
+
+
+def clean_total(value):
+    """0 and 999999 -> None. Everything else through unchanged.
+
+    Two different reasons, one result: 0 is the registry's "not reported"
+    (2,201 records) and 999999 is a placeholder in a phase I study that cannot
+    have enrolled it. 99999 is deliberately NOT here -- see TOTAL_NOT_A_COUNT.
+    """
+    if value == TOTAL_UNKNOWN or value in TOTAL_NOT_A_COUNT:
+        return None
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Names — markup, invisible characters, spacing, and the identity key
+# ---------------------------------------------------------------------------
+# Two functions, because a name is used for two different things and the two
+# rules are not the same one applied twice.
+#
+#   clean_text  the form that is STORED and shown. Reverses damage only:
+#               markup that was never meant to be read, characters that cannot
+#               be seen, spacing nobody chose. Case, accents and punctuation
+#               are content and survive.
+#   match_key   the form that decides IDENTITY. Destroys information on
+#               purpose -- case, accents, edge punctuation, apostrophe style --
+#               so two spellings of one organisation land on one row.
+#
+# Storing only the key would put `astrazeneca ab` on the dashboard; storing
+# only the cleaned text cannot enforce identity. `sponsors` therefore keeps
+# both columns (PROJECT_SPEC 3.2c).
+
+# Entity encoding is present across the corpus and is not cosmetic:
+#
+#   sponsors.nombre      554 occurrences,  25 distinct values
+#   centers.nombre     1,130 occurrences, 179 distinct values
+#   centers.localidad    103 occurrences,  44 distinct values
+#   centers.cod_postal     1 occurrence  (a byte-order mark, see pad_postcode)
+#
+# It changes what the display column must be. PROJECT_SPEC originally said
+# `promotor` holds "the most frequent raw spelling" -- but the most frequent
+# raw spelling of the largest sponsor is `Merck Sharp &amp; Dohme LLC` (150),
+# ahead of the correct `Merck Sharp & Dohme LLC` (55). Taking the raw mode
+# would ship markup to the dashboard, so display means most frequent *cleaned*
+# spelling.
+#
+# Ten centre names are escaped TWICE -- `Institut Catala D&amp;#39;oncologia`
+# needs one pass to reach `D&#39;oncologia` and a second to reach `D'oncologia`
+# -- so decoding repeats to a fixed point. The cap exists because
+# `html.unescape` is not guaranteed to terminate on adversarial input and a
+# loader should not hang on one bad row; three passes is one more than the
+# corpus needs.
+UNESCAPE_PASSES = 3
+
+# Apostrophe styles, unified for matching only. Catalan and Valencian centre
+# names are full of elisions -- `Vall d'Hebron`, `L'Hospitalet`, `Institut
+# Català d'Oncologia` -- and the registry writes them with three different
+# characters. U+00B4 ACUTE ACCENT is the awkward one: it is a standalone
+# character, not a combining mark, so NFD leaves it in place and case-folding
+# cannot merge `d'hebron` with `d´hebron`. Merges 5 further centre names and 3
+# localities on top of what fold already does. Not applied to clean_text: which
+# apostrophe the registry typed is not damage.
+APOSTROPHES = "'‘’´`ʼ"
+
+
+def clean_text(text):
+    """Decode markup, drop invisible characters, collapse spacing.
+
+    Blank becomes None so a NOT NULL constraint catches it rather than an
+    empty-string row being created. Placeholders are NOT handled here: whether
+    'NA' should become NULL is is_placeholder's decision, and keeping the two
+    apart lets the manifest count them separately.
+    """
+    if text is None:
+        return None
+    decoded = str(text)
+    for _ in range(UNESCAPE_PASSES):
+        nxt = html.unescape(decoded)
+        if nxt == decoded:
+            break
+        decoded = nxt
+    # Category Cf is "format": zero-width joiners, direction marks, and the
+    # byte-order mark that arrived inside one postcode. Invisible, but they
+    # split otherwise identical values into two rows.
+    visible = "".join(c for c in decoded if unicodedata.category(c) != "Cf")
+    return " ".join(visible.split()) or None
+
+
+def match_key(text):
+    """The identity form: clean_text, apostrophes unified, then folded.
+
+    Over the corpus this collapses 3,742 distinct cleaned sponsor spellings to
+    3,336 keys, 3,245 centre names to 2,580, and 2,717 funder names to 2,401.
+
+    Safe to automate because it only removes case, accents, spacing, markup and
+    punctuation style. Two genuinely different organisations would have to be
+    identical letter for letter to collide. This is emphatically NOT entity
+    resolution -- `Novartis Farmacéutica, S.A.` and `Novartis Pharma AG` are
+    different legal entities and stay different rows (PROJECT_SPEC 3.2c).
+    """
+    cleaned = clean_text(text)
+    if cleaned is None:
+        return None
+    unified = "".join("'" if c in APOSTROPHES else c for c in cleaned)
+    return fold(unified) or None
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +470,145 @@ ROUTE_CANONICAL = {
 # about what a question is asking. Same line as sponsor entity resolution --
 # normalisation here, classification in `analysis/`, where it can be stated
 # and varied per question rather than frozen in a column.
+
+
+# ---------------------------------------------------------------------------
+# Postcodes
+# ---------------------------------------------------------------------------
+# Spanish postcodes are always 5 digits, the first two being the province. 290
+# of 85,163 non-blank entries are 4 digits, so one digit is missing.
+#
+# WHICH digit is missing is the whole question, and an earlier version of this
+# module got it wrong. It assumed the leading zero, zero-padded, and defended
+# that with "every padded value lands in provinces 01-09, exactly the ones
+# whose postcodes start with a zero" -- which is no evidence at all, because
+# zero-padding always produces a 0X prefix whatever digit was really lost.
+# Deleting any digit of Madrid's 28046 also yields a four-digit value.
+#
+# So the value is triangulated from the rest of the row instead of assumed,
+# using evidence in descending order of strength. A candidate is any 5-digit
+# code that becomes the observed value when one digit is deleted -- 46 of them
+# for a typical value, before any filtering.
+#
+#   tier 1  the SAME CENTRE reports a candidate elsewhere in the corpus    226
+#   tier 2  the same LOCALITY reports a candidate                           47
+#   tier 3  no candidate seen, but the zero-padded value's province is one   10
+#           the locality uses -- confirms the province, not the full code
+#   --      no evidence, or the province is contradicted: left raw            7
+#
+# Triangulation agrees with blind zero-padding on 282 of the 283 it resolves,
+# so the old rule was mostly right -- but it was right by luck, and the one
+# disagreement is the proof: '1108' in Cádiz is not '01108' (Álava) but
+# '11008', which is a code that locality actually uses. Zero-padding would
+# have moved a Cádiz clinic to Álava.
+#
+# This also deletes a hand-maintained exception list. The previous version
+# enumerated ('1108','cadiz') and ('3016','murcia') as "not lost zeros" after
+# I found them by eye; both now fall out of the evidence -- the first resolved
+# to the right answer, the second left raw because Murcia uses 30xxx and
+# padding would have claimed Alicante.
+#
+# Malformed in other ways and deliberately left raw, 11 entries: '08006.',
+# '28.223', '46014,', '3584 AE' (a Dutch postcode), '48993 Vizc', 'Madrid',
+# 'Coruña, A'. Too few and too varied for a rule; the schema's CHECK names
+# them. One more, '&#65279;09', is a byte-order mark glued to two digits;
+# clean_text removes the mark and what is left is still not a postcode.
+#
+# ARCHITECTURE: unlike every other rule in this file, this one cannot be a
+# pure function of one value -- it needs to have read the whole corpus first.
+# That is why the evidence is built by a separate pass and PASSED IN rather
+# than imported from a module global: `resolve_postcode` stays pure given its
+# arguments, so it can be tested on a handful of hand-written rows instead of
+# on 85,410 real ones. It is also why postcode repair belongs with the other
+# corpus-wide resolutions in the loader (step 6), not with the pure rules.
+POSTCODE_LENGTH = 5
+
+PostcodeEvidence = collections.namedtuple(
+    "PostcodeEvidence", "by_centre by_locality prefixes")
+
+Resolution = collections.namedtuple("Resolution", "postcode basis")
+
+
+def postcode_candidates(four):
+    """Every 5-digit code that becomes `four` when one digit is deleted."""
+    out = set()
+    for position in range(POSTCODE_LENGTH):
+        for digit in "0123456789":
+            candidate = four[:position] + digit + four[position:]
+            if candidate[:position] + candidate[position + 1:] == four:
+                out.add(candidate)
+    return out
+
+
+def build_postcode_evidence(entries):
+    """Index the valid postcodes in the corpus, for resolving the broken ones.
+
+    `entries` is an iterable of (postcode, centre_key, locality). Only 5-digit
+    numeric postcodes contribute -- the broken ones are what we are resolving,
+    so they cannot vote on the answer.
+
+    `centre_key` must NOT include the postcode, and MUST include the locality.
+    The centre key defined in PROJECT_SPEC 3.2c is (reference-or-name,
+    locality, postcode), and both halves of that matter here: keeping the
+    postcode would put a centre's broken row in a different group from its good
+    ones and hide the best evidence there is, while dropping the locality would
+    let Clínica Universidad de Navarra's Pamplona and Madrid campuses vote on
+    each other's postcodes -- the same merge the site-level key exists to
+    prevent. Getting this wrong is not a crash: it silently moves 16 rows from
+    one tier to another.
+    """
+    evidence = PostcodeEvidence(
+        collections.defaultdict(collections.Counter),
+        collections.defaultdict(collections.Counter),
+        collections.defaultdict(collections.Counter))
+    for postcode, centre_key, locality in entries:
+        text = clean_text(postcode)
+        if not (text and text.isdigit() and len(text) == POSTCODE_LENGTH):
+            continue
+        evidence.by_centre[centre_key][text] += 1
+        evidence.by_locality[fold(locality)][text] += 1
+        evidence.prefixes[fold(locality)][text[:2]] += 1
+    return evidence
+
+
+def resolve_postcode(raw, centre_key, locality, evidence):
+    """Recover a 4-digit postcode from the rest of the corpus.
+
+    Returns a Resolution: the postcode, and which tier of evidence produced it,
+    so the load manifest can report how each row was settled rather than only
+    that something changed. `basis` is None when nothing was changed.
+
+    Anything that is not exactly four digits passes through unchanged -- the
+    11 otherwise-malformed entries are left for the schema to reject.
+    """
+    text = clean_text(raw)
+    if text is None:
+        return Resolution(None, None)
+    if not (text.isdigit() and len(text) == POSTCODE_LENGTH - 1):
+        return Resolution(text, None)
+
+    candidates = postcode_candidates(text)
+    key = fold(locality)
+
+    for basis, counts in (("same centre", evidence.by_centre.get(centre_key)),
+                          ("same locality", evidence.by_locality.get(key))):
+        seen = {code: n for code, n in (counts or {}).items()
+                if code in candidates}
+        if not seen:
+            continue
+        # Ties are not resolved. '1108' in Cádiz sees 11008 seven times and
+        # 11408 five, and the majority is taken -- but a genuine tie is two
+        # equally good answers, and picking one would be the same mistake as
+        # assuming the leading zero.
+        ranked = sorted(seen.items(), key=lambda item: -item[1])
+        if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+            return Resolution(text, None)
+        return Resolution(ranked[0][0], basis)
+
+    # Tier 3: no candidate observed anywhere. Fall back to the leading zero,
+    # but only where the locality's own postcodes agree it is that province.
+    padded = text.zfill(POSTCODE_LENGTH)
+    prefixes = evidence.prefixes.get(key)
+    if prefixes and padded[:2] in prefixes:
+        return Resolution(padded, "province agrees")
+    return Resolution(text, None)

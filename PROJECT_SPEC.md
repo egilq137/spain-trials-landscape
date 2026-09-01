@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules being written as data in db/rules.py, step 1 of 6 done. Next: route rules, then the DDL
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules being written as data in db/rules.py, steps 1-3 of 6 done (placeholders and sentinels, administration routes, name normalisation, and postcode repair by triangulation) and applied in db/transform.py. Next: the load manifest, then the DDL
 last updated: 2026-09-01
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
@@ -220,9 +220,36 @@ industry-vs-academic share inflates. Full list: `docs/profiles/sponsors-variants
 one sponsor split by markup alone. Case-folding cannot fix it; it needs
 decoding. Worth re-checking on every other free-text field.
 
-**Decision — normalise in the loader, enforce in the schema.** The rule, in
-order: HTML unescape; Unicode NFD and drop combining marks; casefold; collapse
-internal whitespace; strip surrounding whitespace and trailing `. , ; : -`.
+**Decision — normalise in the loader, enforce in the schema.** Implemented as
+two functions in `db/rules.py`, because a name is used for two things and the
+two rules are not the same one applied twice:
+
+  - `clean_text` — the form that is **stored and shown**. Reverses damage and
+    only damage: markup decoded, invisible characters dropped, spacing
+    collapsed. Case, accents and punctuation are content and survive.
+  - `match_key` — the form that decides **identity**. `clean_text`, then
+    apostrophe styles unified, then Unicode NFD with combining marks dropped,
+    casefolded, and edge punctuation stripped.
+
+Over the corpus this takes 3,742 distinct cleaned sponsor spellings to 3,336
+identities, 3,245 centre names to 2,580, and 2,717 funder names to 2,401.
+
+**Three refinements the implementation forced, each found by measuring:**
+
+  - **Escaping is sometimes doubled.** Ten centre names carry
+    `D&amp;#39;oncologia`, which needs one pass to reach `D&#39;oncologia` and
+    a second to reach `D'oncologia`. Decoding therefore repeats to a fixed
+    point, capped at three passes so a bad row cannot hang the loader.
+  - **Invisible characters split values.** A byte-order mark arrived glued to
+    a postcode (`&#65279;09`). Unicode category `Cf` is dropped after decoding
+    — it cannot be seen, so it can only ever create a spurious second row.
+  - **Apostrophe style is not accent noise.** Catalan and Valencian names are
+    full of elisions — `Vall d'Hebron`, `L'Hospitalet`, `Institut Català
+    d'Oncologia` — written with three different characters. U+00B4 ACUTE
+    ACCENT is a standalone character, not a combining mark, so NFD leaves it
+    and case-folding cannot merge `d'hebron` with `d´hebron`. Unified in
+    `match_key` only: which apostrophe the registry typed is not damage.
+    Merges 5 further centre names and 3 localities.
 
   - **Why the loader and not somewhere else.** Not ingestion: the raw cache is
     the durable copy and must stay byte-faithful to what the registry sent.
@@ -238,10 +265,18 @@ internal whitespace; strip surrounding whitespace and trailing `. , ; : -`.
 
 **Decision — `sponsors` keeps two columns, not one.** `promotor_key` holds the
 normalised form and carries the `UNIQUE` constraint; `promotor` holds the most
-frequent raw spelling, for display. Storing only the normalised form would put
-`astrazeneca ab` on the dashboard; storing only the raw form cannot enforce
-identity. This is a change from the reverted DDL, which had a single
+frequent **cleaned** spelling, for display. Storing only the normalised form
+would put `astrazeneca ab` on the dashboard; storing only the raw form cannot
+enforce identity. This is a change from the reverted DDL, which had a single
 `promotor TEXT NOT NULL UNIQUE`.
+
+**Correction — display is the cleaned mode, not the raw mode.** An earlier
+draft of this section said `promotor` holds "the most frequent raw spelling".
+That is wrong, and the largest sponsor is the counterexample: the most frequent
+raw spelling is `Merck Sharp &amp; Dohme LLC` (150), ahead of the correct
+`Merck Sharp & Dohme LLC` (55). Taking the raw mode would ship markup to the
+dashboard. Cleaned, the two merge into one sponsor with 205 trials, which also
+moves it up the ranking — decoding is not cosmetic, it changes the answer.
 
 **Explicitly out of scope — entity resolution.** `Novartis Farmacéutica, S.A.`
 (260) and `Novartis Pharma AG` (188) are distinct legal entities in one
@@ -555,14 +590,85 @@ values** — the 17 autonomous communities plus Ceuta and Melilla — at 99.5%
 present. `provincia` has exactly **52** — the 50 provinces plus both autonomous
 cities — at 97.3%. Madrid is 22,148 entries, second to Cataluña's 23,317.
 
-**`codPostal` has lost leading zeros — 290 entries are 4 digits.** Spanish
-postcodes are always 5, the first two being the province, so `'3010'` is
-Alicante's `'03010'` with the zero stripped somewhere upstream. **Decision:
-zero-pad 4-digit numeric values to 5 at load**, which is an enumerable
-correction rather than a guess. 11 further entries are malformed in other ways
-(`'08006.'`, 6-10 characters); left raw, too few and too varied for a rule.
-This settles the column type independently of the earlier leading-zero
-argument: `TEXT`, never `INTEGER`.
+**`codPostal` is missing a digit in 290 entries — but not necessarily the
+leading zero.** Spanish postcodes are always 5 digits, the first two being the
+province. 290 of 85,163 non-blank entries are 4 digits, so one digit is gone.
+
+**Superseded decision, kept because the mistake is instructive.** The first
+version of this rule zero-padded — `'3010'` → `'03010'` — and justified it with
+"every padded value lands in provinces 01–09, exactly the ones whose postcodes
+begin with a zero." **That is not evidence.** Zero-padding always produces a
+`0X` prefix, whatever digit was really lost; deleting any digit of Madrid's
+`28046` also yields a 4-digit value. The check confirmed the function, not the
+hypothesis.
+
+**Decision — triangulate the missing digit from the rest of the row.** A
+*candidate* is any 5-digit code that becomes the observed value when one digit
+is deleted (46 of them for a typical value). Candidates are then filtered
+against what the corpus already knows, strongest evidence first:
+
+| tier | evidence | rows |
+|---|---|---|
+| 1 | the **same centre** reports a candidate elsewhere in the corpus | 226 |
+| 2 | the **same locality** reports a candidate | 47 |
+| 3 | no candidate seen, but the zero-padded value's province is one the locality uses — confirms the province, not the code | 10 |
+| — | no evidence, a tie, or a contradicted province: **left raw** | 7 |
+
+Triangulation agrees with zero-padding on 282 of the 283 rows it resolves, so
+the old rule was mostly right — but right by luck, and the one disagreement is
+the proof: **`'1108'` in Cádiz is `'11008'`, not `'01108'`**, which is Álava.
+Blind padding moved a clinic 700 km.
+
+Two further properties, both tested: a recovered postcode is always exactly one
+deletion from what the registry sent, so the rule can only ever restore a
+dropped digit and never substitute a commoner code; and a 4-digit postcode
+never votes on another, so one broken value cannot confirm the next.
+
+**It also deleted a hand-maintained exception list.** The zero-padding version
+needed `POSTCODE_NOT_A_LOST_ZERO`, enumerating `('1108','cadiz')` and
+`('3016','murcia')` as special cases found by eye. Both now fall out of the
+evidence — the first resolved to the right answer, the second left raw because
+Murcia uses 30xxx and padding would have claimed Alicante. **A rule that
+dissolves its own exception list is usually the right rule.**
+
+11 further entries are malformed in other ways (`'08006.'`, `'3584 AE'`,
+`'Madrid'`, 6–10 characters); left raw, too few and too varied. This settles
+the column type independently of the leading-zero argument: `TEXT`, never
+`INTEGER`.
+
+**Architecture — this is the one rule that cannot be a pure function.** It has
+to have read the whole corpus before it can resolve a single value, so the
+evidence index is built by a separate pass and *passed in* rather than imported
+from a module global (`build_postcode_evidence` → `resolve_postcode`). The
+function stays pure given its arguments and is unit-tested on a handful of
+hand-written rows. This is why postcode repair belongs with the other
+corpus-wide resolutions in the loader (step 6), not with the pure rules —
+the user's correction relocated it as well as fixing it.
+
+The evidence key drops the postcode (that is the field being recovered) but
+**keeps the locality**: without it, Clínica Universidad de Navarra's Pamplona
+and Madrid campuses would vote on each other's postcodes, the same merge the
+site-level centre key exists to prevent.
+
+
+**NEW FINDING — `provincia` is a clean vocabulary containing wrong values.**
+The two are different claims, and only the first was made earlier in this
+section. Checked against the postcode prefix across all 85,152 centre rows
+carrying a numeric postcode, 2,302 disagree with the modal province for their
+prefix. 2,044 of those are blank, leaving **258 rows (0.3%) where `provincia`
+names the wrong province** — 65 rows put `HOSPITAL GENERAL UNIVERSITARIO DE
+ALICANTE` in Murcia, 22 put a Sant Joan d'Alacant hospital in Las Palmas, 15
+put Almería's Hospital Virgen del Mar in Segovia, and 134 put Barcelona-prefix
+postcodes in Gerona.
+
+**Decision: no rule, but province-level aggregation uses the postcode prefix,
+not `provincia`.** Repairing the column would mean deriving a province from a
+postcode, which is a derivation and belongs in `analysis/` where the assumption
+can be stated — the same line drawn for route grouping and sponsor entity
+resolution. This is also a small correction to the sentence above calling
+`ccaa`/`provincia` "clean coded vocabularies and good news for the choropleth":
+the *vocabulary* is clean, the *assignment* is not, and the choropleth should
+be built on the postcode.
 
 **`departamento` is free text and must stay that way.** 75% present, **8,268
 distinct values** across 64,047 entries, mixing languages and casing —
@@ -1027,7 +1133,7 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
   `docs/profiles/` — they summarise the 208MB cache, which is gitignored, so
   nobody could regenerate them from a clone.
 - [x] `sponsors` — profiled, decisions recorded in §3.2c: normalise names in
-      the loader, key on the normalised form, keep the most frequent raw
+      the loader, key on the normalised form, keep the most frequent cleaned
       spelling for display. Entity resolution stays out of the database.
 - [x] Fill rates broken down **by year, not corpus-wide**. Averaging across
       2017–2026 blends two regimes either side of the January 2023 CTIS
@@ -1041,6 +1147,32 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
 - **Profiling complete.** Revise `docs/phase2-schema-erd.html` next (2.1),
   then write the DDL from §3.2c.
 - Each table's findings go into §3.2c before its DDL is written.
+
+**2.2b — Cleaning rules as data (`db/rules.py`)**
+Six steps, so each rule lands with the count that justifies it and a corpus
+test that fails when a refresh changes the data underneath.
+- [x] 1. Placeholders and sentinels — `PLACEHOLDERS`, `FLAG_UNKNOWN`,
+      `TOTAL_UNKNOWN`, `TOTAL_NOT_A_COUNT`, `IMPOSSIBLE_DATE_STUDIES`.
+- [x] 2. Administration routes — 129 raw values to 53 canonical routes plus 5
+      that name no route. No coarse grouping: the canonical routes are the
+      grouping, and bucketing is a question-dependent choice for `analysis/`.
+- [x] 3. Name normalisation — `clean_text` / `match_key`, and the sentinel
+      appliers `clean_flag` / `clean_total` wired into `db/transform.py`,
+      which is where every rule so far gets its first caller. Verified over
+      the corpus: 54 flag NULLs, 2,202 total NULLs, 10,036 acronym NULLs,
+      3,742 sponsor spellings to 3,336 identities.
+- [x] 3b. Postcode repair by triangulation (§3.2c) — replaces the zero-padding
+      rule, which was assuming the answer rather than deriving it. 283 of 290
+      resolved from the corpus, 7 left raw. Strictly this is step 6 work:
+      it is the only rule that must read the whole corpus first, so its
+      evidence index is built by a pass in the loader and passed in.
+- [ ] 4. The load manifest — count every rule application, so a load reports
+      what it changed rather than only that it succeeded.
+- [ ] 5. Wire the manifest into `db/validate.py` as a dry run.
+- [ ] 6. Corpus-wide resolutions — most frequent centre name, most frequent
+      non-blank region. These need two passes over the corpus, so they are
+      loader work, not pure-function work. Postcode repair (3b) is already
+      built to this shape and is the template for the rest.
 
 **2.3 — DDL (after profiling)**
 - [ ] `db/schema.sql` — rebuilt from what the profile shows. The reverted

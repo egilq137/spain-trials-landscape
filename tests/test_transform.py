@@ -7,8 +7,17 @@ Success criteria per function:
   flag: '0'/'1' -> 0/1; '-1' and any other value pass through unchanged, so
     the CHECK rejects them rather than the transform hiding them; absent -> None
   integer: digits -> int; blank and non-numeric pass through unchanged
-  sponsor_name: organismo.promotor trimmed; blank or absent -> None so the
+  acronym: placeholders -> None; case and internal punctuation survive,
+    because this is the display form and not the match key
+  sponsor_name: organismo.promotor cleaned for display -- markup decoded,
+    spacing collapsed, case and accents kept; blank or absent -> None so the
     NOT NULL catches it rather than a '' row being created
+  sponsor_key: markup, case and spacing variants of one company collapse to
+    one key, while two companies in one group stay two keys
+  the two kinds of change: structural conversion never repairs an unexpected
+    value, and every value that DOES change is changed by a named rule in
+    db/rules.py -- '-1' as a string still reaches the schema and fails,
+    because that is not the representation the rule was measured against
   study_row: every calendario/poblacion/proposito field lands in its column
     under the snake_case name; sponsor_id is the one passed in, never looked
     up; and NOTHING is derived from the calendario dates -- censoring and
@@ -25,6 +34,7 @@ from db.transform import (
     flag,
     integer,
     iso_date,
+    sponsor_key,
     sponsor_name,
     study_row,
 )
@@ -98,6 +108,16 @@ class TestSponsorName(unittest.TestCase):
     def test_trims(self):
         self.assertEqual(sponsor_name(raw_record()), "Merck Sharp & Dohme")
 
+    def test_decodes_markup_for_display(self):
+        # The most frequent RAW spelling of the largest sponsor is the escaped
+        # one, so a display column taken from the raw mode ships '&amp;'.
+        record = raw_record(organismo={"promotor": "Merck Sharp &amp; Dohme LLC"})
+        self.assertEqual(sponsor_name(record), "Merck Sharp & Dohme LLC")
+
+    def test_keeps_case_and_accents(self):
+        record = raw_record(organismo={"promotor": "Novartis Farmacéutica, S.A."})
+        self.assertEqual(sponsor_name(record), "Novartis Farmacéutica, S.A.")
+
     def test_blank_or_absent_becomes_none(self):
         self.assertIsNone(sponsor_name(raw_record(organismo={"promotor": "   "})))
         self.assertIsNone(sponsor_name({}))
@@ -123,13 +143,20 @@ class TestStudyRow(unittest.TestCase):
         self.assertEqual(row["fase_uno"], 0)
         self.assertEqual(row["poblacion_total"], 120)
 
-    def test_acronym_is_trimmed_but_not_interpreted(self):
-        # ' NA ' becomes 'NA', not None. Deciding that 'NA' means "no acronym"
-        # is a judgement about meaning, which belongs in a named, documented
-        # normalisation step -- not hidden inside a trim. See PROJECT_SPEC.
-        self.assertEqual(self.row()["acronimo"], "NA")
+    def test_acronym_placeholders_become_null(self):
+        # This test used to assert the opposite: ' NA ' stayed 'NA', because
+        # deciding that 'NA' means "no acronym" belonged in a named, documented
+        # normalisation step rather than hidden inside a trim. That step now
+        # exists -- rules.PLACEHOLDERS, with the count that justifies it and a
+        # corpus test behind it -- so the promise is kept, not broken.
+        self.assertIsNone(self.row()["acronimo"])
         self.assertIsNone(self.row(acronimo="   ")["acronimo"])
         self.assertEqual(self.row(acronimo="SPRINT")["acronimo"], "SPRINT")
+
+    def test_acronym_keeps_its_case_and_punctuation(self):
+        # clean_text repairs damage; it is not the match key. 'PRO-ACT' must
+        # not arrive as 'pro-act'.
+        self.assertEqual(self.row(acronimo="PRO-ACT")["acronimo"], "PRO-ACT")
 
     def test_derives_nothing_from_the_dates(self):
         # Guards the 3.2c decision. Reintroducing a survival_start here would
@@ -144,8 +171,45 @@ class TestStudyRow(unittest.TestCase):
         row = self.row(calendario={"fechaFinRealEspana": "31-03-2022"})
         self.assertEqual(row["fecha_fin_real_espana"], "2022-03-31")
 
-    def test_does_not_repair_a_minus_one_flag(self):
+    def test_the_minus_one_sentinel_becomes_null(self):
+        # The corpus sends these as JSON integers.
+        self.assertIsNone(self.row(poblacion={"urgencia": -1})["urgencia"])
+
+    def test_a_minus_one_in_an_unexpected_representation_still_reaches_the_schema(self):
+        # The string '-1' is not what the source sends. flag leaves it alone
+        # because it is neither '0' nor '1', and clean_flag leaves it alone
+        # because it is not the integer -1, so it arrives at the CHECK and
+        # fails loudly. That is the wanted outcome: a rule should cover the
+        # data it was measured against, and a change in representation should
+        # be a visible failure rather than something quietly absorbed.
         self.assertEqual(self.row(poblacion={"urgencia": "-1"})["urgencia"], "-1")
+
+    def test_a_zero_total_becomes_null(self):
+        # 0 planned participants is "not reported" in 2,201 records. Left as 0
+        # it would drag every mean enrolment down.
+        self.assertIsNone(self.row(poblacion={"total": "0"})["poblacion_total"])
+
+    def test_a_real_total_survives(self):
+        self.assertEqual(self.row(poblacion={"total": "1"})["poblacion_total"], 1)
+
+
+class TestSponsorKey(unittest.TestCase):
+    def test_markup_and_case_variants_reach_the_same_key(self):
+        variants = ("Merck Sharp &amp; Dohme LLC", "Merck Sharp & Dohme LLC",
+                    "MERCK SHARP & DOHME LLC", "  Merck  Sharp & Dohme  LLC ")
+        keys = {sponsor_key(raw_record(organismo={"promotor": v}))
+                for v in variants}
+        self.assertEqual(len(keys), 1)
+
+    def test_distinct_legal_entities_keep_distinct_keys(self):
+        # Not entity resolution: same group, different companies, two rows.
+        a = sponsor_key(raw_record(organismo={"promotor": "Novartis Farmacéutica, S.A."}))
+        b = sponsor_key(raw_record(organismo={"promotor": "Novartis Pharma AG"}))
+        self.assertNotEqual(a, b)
+
+    def test_blank_or_absent_becomes_none(self):
+        self.assertIsNone(sponsor_key(raw_record(organismo={"promotor": " "})))
+        self.assertIsNone(sponsor_key({}))
 
 
 if __name__ == "__main__":

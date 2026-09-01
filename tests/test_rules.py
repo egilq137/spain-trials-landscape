@@ -1,4 +1,4 @@
-"""Tests for db.rules (steps 1-2: placeholders, sentinels, routes).
+"""Tests for db.rules (steps 1-3: placeholders, sentinels, routes, names).
 
 Two layers, deliberately. The unit tests are pure and always run. The
 corpus-backed tests re-measure each rule against all 11,847 cached studies and
@@ -23,15 +23,35 @@ Success criteria:
     not guessed into a route; and a value naming several routes becomes
     `multiple routes` rather than whichever is written first. There is no
     coarse grouping to test -- the canonical routes are the grouping
+  clean_text: reverses damage and only damage -- markup (including the ten
+    doubly-escaped centre names), invisible format characters, and spacing --
+    while case, accents and punctuation survive, because this is the form that
+    gets displayed; blank becomes None
+  match_key: destroys on purpose, so markup, case, accent and apostrophe-style
+    variants of one organisation reach one key, while two organisations that
+    differ by a letter do not
+  clean_flag / clean_total: null only the enumerated sentinels, and pass an
+    unexpected representation through so the schema rejects it rather than the
+    rule quietly absorbing it
+  resolve_postcode: recovers the missing digit from the corpus rather than
+    assuming it was the leading zero -- the same centre first, then the same
+    locality, then the province as a last resort; a tie or a contradicted
+    province changes nothing, and a broken postcode never votes on another
   corpus: the placeholder set still covers the acronimo, funder and centre
     reference counts it was built from; -1 still appears in exactly the 12
     flags listed and no others; total is still 0 in 2,201 records; the four
     impossible-date studies still exist and still have an end before their
-    authorisation
+    authorisation; no cleaned value still holds markup; the merge counts hold;
+    the 290 four-digit postcodes still resolve through the same tiers in the
+    same proportions; every recovered postcode is still exactly one deletion
+    from what the registry sent; and the one row where triangulation and
+    zero-padding disagree is still that one row
 """
 
 import json
+import re
 import unittest
+from collections import Counter
 from pathlib import Path
 
 from db.rules import (
@@ -43,8 +63,15 @@ from db.rules import (
     ROUTE_NOT_A_ROUTE,
     TOTAL_NOT_A_COUNT,
     TOTAL_UNKNOWN,
+    build_postcode_evidence,
+    clean_flag,
+    clean_text,
+    clean_total,
     fold,
     is_placeholder,
+    match_key,
+    postcode_candidates,
+    resolve_postcode,
 )
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw" / "detalle"
@@ -148,6 +175,204 @@ class TestRouteMaps(unittest.TestCase):
             with self.subTest(pair=(a, b)):
                 self.assertNotEqual(ROUTE_CANONICAL[a + " use"],
                                     ROUTE_CANONICAL[b + " use"])
+
+
+class TestCleanText(unittest.TestCase):
+    def test_decodes_entities(self):
+        self.assertEqual(clean_text("Merck Sharp &amp; Dohme LLC"),
+                         "Merck Sharp & Dohme LLC")
+        self.assertEqual(clean_text("M&aacute;laga"), "Málaga")
+
+    def test_decodes_double_escaping(self):
+        # Ten centre names need two passes. One pass leaves '&#39;' visible.
+        self.assertEqual(clean_text("Institut Catala D&amp;#39;oncologia"),
+                         "Institut Catala D'oncologia")
+
+    def test_decoding_stops_at_a_fixed_point(self):
+        # A value with no entities must survive untouched, and a stray '&' is
+        # not an entity.
+        self.assertEqual(clean_text("R&D Ltd"), "R&D Ltd")
+
+    def test_drops_invisible_characters(self):
+        # A byte-order mark arrived glued to a postcode. It is not visible, so
+        # it would silently split one value into two rows.
+        self.assertEqual(clean_text("﻿09"), "09")
+        self.assertEqual(clean_text("Hospital​Clinic"), "HospitalClinic")
+
+    def test_collapses_and_trims_whitespace(self):
+        self.assertEqual(clean_text("  Hospital   Vall  d'Hebron "),
+                         "Hospital Vall d'Hebron")
+
+    def test_blank_and_none_become_none(self):
+        for raw in (None, "", "   ", "﻿"):
+            with self.subTest(raw=raw):
+                self.assertIsNone(clean_text(raw))
+
+    def test_case_accents_and_punctuation_are_content(self):
+        # The line between clean_text and match_key. Damage is reversed;
+        # content is not touched.
+        for raw in ("Novartis Farmacéutica, S.A.", "PRO-ACT", "L'Hospitalet"):
+            with self.subTest(raw=raw):
+                self.assertEqual(clean_text(raw), raw)
+
+
+class TestMatchKey(unittest.TestCase):
+    def test_collapses_markup_case_accents_and_spacing(self):
+        keys = {match_key(v) for v in (
+            "Merck Sharp &amp; Dohme LLC", "Merck Sharp & Dohme LLC",
+            "MERCK SHARP & DOHME LLC", " merck  sharp & dohme llc ")}
+        self.assertEqual(len(keys), 1)
+
+    def test_unifies_apostrophe_styles(self):
+        # U+00B4 is a standalone character, not a combining mark, so NFD
+        # leaves it and folding alone cannot merge these.
+        self.assertEqual(match_key("Vall d'Hebron"), match_key("Vall d´Hebron"))
+        self.assertEqual(match_key("L'Hospitalet"), match_key("L’Hospitalet"))
+
+    def test_distinct_organisations_stay_distinct(self):
+        self.assertNotEqual(match_key("Novartis Farmacéutica, S.A."),
+                            match_key("Novartis Pharma AG"))
+        self.assertNotEqual(match_key("Hospital Clinic de Barcelona"),
+                            match_key("Hospital Clinico de Barcelona"))
+
+    def test_blank_and_none_become_none(self):
+        for raw in (None, "", "   ", "..."):
+            with self.subTest(raw=raw):
+                self.assertIsNone(match_key(raw))
+
+
+class TestSentinelAppliers(unittest.TestCase):
+    def test_clean_flag_nulls_only_minus_one(self):
+        self.assertIsNone(clean_flag(-1))
+        self.assertEqual(clean_flag(0), 0)
+        self.assertEqual(clean_flag(1), 1)
+
+    def test_clean_flag_passes_unexpected_values_through(self):
+        # So the schema's CHECK rejects and names them.
+        for value in ("-1", 2, "si", None):
+            with self.subTest(value=value):
+                self.assertEqual(clean_flag(value), value)
+
+    def test_clean_total_nulls_zero_and_the_placeholder(self):
+        self.assertIsNone(clean_total(0))
+        self.assertIsNone(clean_total(999999))
+
+    def test_clean_total_keeps_the_ambiguous_and_the_large_but_real(self):
+        # 99999 may be a real open-ended target on a COVID platform trial, and
+        # 114011 is a genuine pragmatic vaccine trial. Neither is a rule.
+        self.assertEqual(clean_total(99999), 99999)
+        self.assertEqual(clean_total(114011), 114011)
+        self.assertEqual(clean_total(1), 1)
+
+
+class TestPostcodeCandidates(unittest.TestCase):
+    def test_a_candidate_is_any_code_one_deletion_away(self):
+        # Not just the zero-padded one. This is the correction the whole
+        # triangulation rests on: '3010' could be 03010, 30010, 31010, 30100...
+        candidates = postcode_candidates("3010")
+        for plausible in ("03010", "30010", "31010", "30100", "30101"):
+            with self.subTest(plausible=plausible):
+                self.assertIn(plausible, candidates)
+
+    def test_every_candidate_really_is_one_deletion_away(self):
+        for candidate in postcode_candidates("3010"):
+            self.assertEqual(len(candidate), 5)
+            reachable = {candidate[:i] + candidate[i + 1:] for i in range(5)}
+            self.assertIn("3010", reachable)
+
+    def test_the_zero_padded_value_is_only_one_of_many(self):
+        self.assertIn("03010", postcode_candidates("3010"))
+        self.assertGreater(len(postcode_candidates("3010")), 40)
+
+
+class TestResolvePostcode(unittest.TestCase):
+    """Hand-built evidence, so each tier can be exercised in isolation."""
+
+    def evidence(self, *entries):
+        return build_postcode_evidence(entries)
+
+    def test_the_same_centre_wins(self):
+        # Strongest evidence there is: the same physical site, reported
+        # correctly on another trial.
+        ev = self.evidence(("30008", "vissum", "murcia"),
+                           ("03010", "hgu alicante", "alicante"))
+        self.assertEqual(resolve_postcode("3008", "vissum", "murcia", ev),
+                         ("30008", "same centre"))
+
+    def test_the_locality_is_used_when_the_centre_is_unknown(self):
+        ev = self.evidence(("08035", "vall hebron", "barcelona"))
+        self.assertEqual(resolve_postcode("8035", "new centre", "barcelona", ev),
+                         ("08035", "same locality"))
+
+    def test_the_leading_zero_is_not_assumed(self):
+        # The bug this replaced. '1108' in Cádiz is 11008, not 01108 -- and
+        # 01108 is Álava. Blind padding moved a clinic 700km.
+        ev = self.evidence(*[("11008", "other", "cadiz")] * 7)
+        self.assertEqual(resolve_postcode("1108", "lobaton", "cadiz", ev),
+                         ("11008", "same locality"))
+
+    def test_a_majority_settles_competing_candidates(self):
+        ev = self.evidence(*([("11008", "a", "cadiz")] * 7
+                             + [("11408", "b", "cadiz")] * 5))
+        self.assertEqual(resolve_postcode("1108", "c", "cadiz", ev).postcode,
+                         "11008")
+
+    def test_a_tie_is_not_resolved(self):
+        # Two equally supported answers is not evidence for either. Picking one
+        # would be the same mistake as assuming the leading zero.
+        ev = self.evidence(("11008", "a", "cadiz"), ("11408", "b", "cadiz"))
+        self.assertEqual(resolve_postcode("1108", "c", "cadiz", ev),
+                         ("1108", None))
+
+    def test_the_province_decides_when_no_candidate_was_ever_seen(self):
+        # Weakest tier: 08207 is a real Sabadell postcode that happens to
+        # appear nowhere else. The locality's other codes are all 08xxx, so
+        # the padded value is at least in the right province.
+        ev = self.evidence(("08208", "hospital sabadell", "sabadell"))
+        self.assertEqual(resolve_postcode("8207", "concordia", "sabadell", ev),
+                         ("08207", "province agrees"))
+
+    def test_a_contradicted_province_is_left_raw(self):
+        # '3016' in Murcia would pad to 03016, which is Alicante. Murcia uses
+        # 30xxx, so the padding is refused and the broken value survives to
+        # fail validation, where somebody will look at it.
+        ev = self.evidence(("30008", "a", "murcia"), ("30120", "b", "murcia"))
+        self.assertEqual(resolve_postcode("3016", "vissum", "murcia", ev),
+                         ("3016", None))
+
+    def test_no_evidence_at_all_changes_nothing(self):
+        ev = self.evidence()
+        self.assertEqual(resolve_postcode("2260", "x", "fuentealbilla", ev),
+                         ("2260", None))
+
+    def test_valid_and_malformed_values_pass_through_untouched(self):
+        ev = self.evidence(("28046", "a", "madrid"))
+        for raw in ("28046", "09", "280460", "08006.", "3584 AE", "Madrid"):
+            with self.subTest(raw=raw):
+                self.assertEqual(resolve_postcode(raw, "a", "madrid", ev),
+                                 (clean_text(raw), None))
+
+    def test_it_cleans_before_deciding(self):
+        ev = self.evidence(("03010", "a", "alicante"))
+        self.assertEqual(resolve_postcode(" 3010 ", "b", "alicante", ev).postcode,
+                         "03010")
+        # A byte-order mark plus two digits is still not a postcode.
+        self.assertEqual(resolve_postcode("&#65279;09", "b", "alicante", ev),
+                         ("09", None))
+
+    def test_blank_becomes_none(self):
+        ev = self.evidence()
+        for raw in (None, "", "   "):
+            with self.subTest(raw=raw):
+                self.assertEqual(resolve_postcode(raw, "a", "b", ev),
+                                 (None, None))
+
+    def test_broken_postcodes_do_not_vote_on_the_answer(self):
+        # Otherwise one four-digit value could confirm another.
+        ev = self.evidence(("3010", "a", "alicante"), ("803", "b", "alicante"))
+        self.assertEqual(ev.by_locality, {})
+        self.assertEqual(resolve_postcode("3010", "a", "alicante", ev),
+                         ("3010", None))
 
 
 @requires_corpus
@@ -273,6 +498,114 @@ class TestAgainstCorpus(unittest.TestCase):
                             iso(calendar["fechaAutorizacionAEMPS"]),
                             record["identificador"])
         self.assertEqual(seen, set(IMPOSSIBLE_DATE_STUDIES))
+
+    # --- step 3: names and postcodes ---------------------------------------
+
+    def _names(self, kind):
+        for record in self.records:
+            if kind == "sponsor":
+                yield ((record.get("organismo") or {}).get("promotor"))
+            elif kind == "centre":
+                for centre in (record.get("centros") or {}).get("centro") or []:
+                    yield centre.get("nombre")
+            elif kind == "funder":
+                raw = (record.get("organismo") or {}).get("financiador") or ""
+                for part in raw.split("|"):
+                    if part.strip():
+                        yield part
+
+    def _postcodes(self):
+        for record in self.records:
+            for centre in (record.get("centros") or {}).get("centro") or []:
+                yield centre.get("codPostal"), centre.get("localidad")
+
+    def test_no_cleaned_value_still_contains_markup(self):
+        # The fixed-point loop, checked against the data rather than assumed.
+        # A single pass would leave ten centre names holding '&#39;'.
+        entity = re.compile(r"&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7});")
+        for kind in ("sponsor", "centre", "funder"):
+            for raw in self._names(kind):
+                cleaned = clean_text(raw)
+                if cleaned and entity.search(cleaned):
+                    self.fail("{}: {!r} -> {!r}".format(kind, raw, cleaned))
+
+    def test_cleaning_still_merges_the_spellings_it_was_measured_on(self):
+        for kind, expected in (("sponsor", 3742), ("centre", 3245),
+                               ("funder", 2717)):
+            with self.subTest(kind=kind):
+                cleaned = {clean_text(v) for v in self._names(kind)}
+                cleaned.discard(None)
+                self.assertEqual(len(cleaned), expected)
+
+    def test_the_match_key_still_merges_what_it_was_measured_on(self):
+        for kind, expected in (("sponsor", 3336), ("centre", 2580),
+                               ("funder", 2401)):
+            with self.subTest(kind=kind):
+                keys = {match_key(v) for v in self._names(kind)
+                        if not is_placeholder(v)}
+                keys.discard(None)
+                self.assertEqual(len(keys), expected)
+
+    def test_the_biggest_sponsor_is_still_split_by_markup_alone(self):
+        # The finding that made decoding mandatory rather than cosmetic, and
+        # the reason the display column is the cleaned mode and not the raw
+        # mode: the raw mode is the broken spelling.
+        raw = Counter(v for v in self._names("sponsor")
+                      if match_key(v) == match_key("Merck Sharp & Dohme LLC"))
+        self.assertGreater(len(raw), 1)
+        self.assertIn("&amp;", raw.most_common(1)[0][0])
+
+    def _centres(self):
+        for record in self.records:
+            for centre in (record.get("centros") or {}).get("centro") or []:
+                reference = centre.get("referencia")
+                if is_placeholder(reference):
+                    reference = None
+                # The centre key drops the postcode (that is what is being
+                # recovered) but KEEPS the locality -- without it, Clínica
+                # Universidad de Navarra's Pamplona and Madrid campuses would
+                # vote on each other's postcodes.
+                yield (centre.get("codPostal"),
+                       (fold(clean_text(reference) or centre.get("nombre")),
+                        fold(centre.get("localidad"))),
+                       centre.get("localidad"))
+
+    def _resolutions(self):
+        evidence = build_postcode_evidence(self._centres())
+        for postcode, centre_key, locality in self._centres():
+            text = clean_text(postcode) or ""
+            if text.isdigit() and len(text) == 4:
+                yield text, resolve_postcode(postcode, centre_key, locality,
+                                             evidence)
+
+    def test_the_four_digit_postcodes_still_resolve_by_the_tiers_measured(self):
+        bases = Counter(r.basis for _, r in self._resolutions())
+        self.assertEqual(sum(bases.values()), 290)
+        self.assertEqual(bases["same centre"], 226)
+        self.assertEqual(bases["same locality"], 47)
+        self.assertEqual(bases["province agrees"], 10)
+        self.assertEqual(bases[None], 7)  # left raw, deliberately
+
+    def test_triangulation_beats_padding_where_the_two_differ(self):
+        # The row that justifies the whole rewrite. Zero-padding gives 01108,
+        # which is Álava; the corpus says this Cádiz locality uses 11008.
+        differ = [(raw, r.postcode) for raw, r in self._resolutions()
+                  if r.basis and r.postcode != raw.zfill(5)]
+        self.assertEqual(differ, [("1108", "11008")])
+
+    def test_nothing_resolved_is_left_the_wrong_length(self):
+        for raw, resolution in self._resolutions():
+            if resolution.basis:
+                self.assertEqual(len(resolution.postcode), 5, raw)
+            else:
+                self.assertEqual(resolution.postcode, raw)
+
+    def test_every_resolved_postcode_is_one_deletion_from_the_original(self):
+        # The rule may only recover a dropped digit. It must never substitute
+        # a different postcode that happens to be common in the locality.
+        for raw, resolution in self._resolutions():
+            if resolution.basis:
+                self.assertIn(resolution.postcode, postcode_candidates(raw))
 
 
 if __name__ == "__main__":

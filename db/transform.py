@@ -1,21 +1,36 @@
 """Raw REEC records to database column values, for the studies slice.
 
-Pure functions: no database, no filesystem, no coercion of unexpected values.
+Pure functions: no database, no filesystem, no invented repairs.
 
-The no-coercion rule is the important one. A transform that quietly repairs
-odd input hides exactly what db/validate.py exists to find -- REEC emits '-1'
-in some flags and free text in some postcodes, and a helpful transform would
-turn both into something plausible before anyone noticed. So these functions
-do structural conversion only:
+Two kinds of work happen here, and keeping them apart is the point.
 
-  * reshaping nested blocks into flat columns
-  * renaming raw fields to column names
-  * changing representation where the type demands it -- '0'/'1' to 0/1,
-    'DD-MM-YYYY' to ISO-8601
+**Structural conversion** is unconditional and local: reshaping nested blocks
+into flat columns, renaming raw fields, and changing representation where the
+type demands it ('0'/'1' to 0/1, 'DD-MM-YYYY' to ISO-8601). Anything it cannot
+convert is passed through UNCHANGED rather than nulled, so the schema's own
+constraints reject it and name it. A transform that quietly repairs odd input
+hides exactly what db/validate.py exists to find.
 
-Anything they cannot convert structurally is passed through unchanged, so the
-schema's own constraints decide whether it is acceptable.
+**Declared rules** come from db/rules.py and are applied on top. -1 becoming
+NULL is not this module deciding something; it is a rule that was measured
+against the corpus, justified in writing, and is re-checked by a test that
+fails if a refresh changes the data underneath. The distinction that matters
+is not "does the value change" but "is the change stated somewhere a reader
+can find it" -- so no rule is invented here, and every rule applied here is
+one line in rules.py.
+
+Order matters: structural first, then the rule. flag('-1') returns -1
+unchanged because -1 is not '0' or '1'; clean_flag then turns it into NULL.
+An unexpected value survives both and still reaches the schema.
 """
+
+from db.rules import (
+    clean_flag,
+    clean_text,
+    clean_total,
+    is_placeholder,
+    match_key,
+)
 
 # raw poblacion key -> column name. Raw keys are lowercase and unspaced.
 POBLACION_FLAGS = {
@@ -112,9 +127,34 @@ def integer(raw):
     return int(text) if text.isdigit() else (raw if raw is not None else None)
 
 
+def acronym(raw):
+    """Cleaned acronym, or None when there is none.
+
+    4,763 of the 6,574 non-blank acronyms are placeholders -- 'NA' 4,744 times
+    and eighteen other spellings. Kept as text they would make 'NA' the most
+    common trial acronym in Spain.
+    """
+    return None if is_placeholder(raw) else clean_text(raw)
+
+
 def sponsor_name(record):
-    """organismo.promotor, trimmed. Blank becomes None so NOT NULL catches it."""
-    return ((record.get("organismo") or {}).get("promotor") or "").strip() or None
+    """organismo.promotor as it should be displayed. Blank -> None.
+
+    Cleaned rather than raw: the raw mode for the largest sponsor is
+    `Merck Sharp &amp; Dohme LLC`, which is not a name.
+    """
+    return clean_text((record.get("organismo") or {}).get("promotor"))
+
+
+def sponsor_key(record):
+    """organismo.promotor as identity. Blank -> None.
+
+    What the loader looks a sponsor up by before handing out a sponsor_id.
+    Identity has to be settled before ids exist, because studies.sponsor_id is
+    a foreign key -- normalising afterwards would mean merging rows and
+    repointing every reference.
+    """
+    return match_key((record.get("organismo") or {}).get("promotor"))
 
 
 def study_row(record, sponsor_id):
@@ -142,14 +182,14 @@ def study_row(record, sponsor_id):
     row = {
         "identificador": record.get("identificador"),
         "sponsor_id": sponsor_id,
-        "acronimo": (record.get("acronimo") or "").strip() or None,
+        "acronimo": acronym(record.get("acronimo")),
         "enfermedad_rara": flag(record.get("enfermedadRara")),
     }
     for raw_key, column in CALENDARIO_DATES.items():
         row[column] = iso_date(calendario.get(raw_key))
     for raw_key, column in POBLACION_FLAGS.items():
-        row[column] = flag(poblacion.get(raw_key))
-    row["poblacion_total"] = integer(poblacion.get("total"))
+        row[column] = clean_flag(flag(poblacion.get(raw_key)))
+    row["poblacion_total"] = clean_total(integer(poblacion.get("total")))
     for raw_key, column in PROPOSITO_FLAGS.items():
-        row[column] = flag(proposito.get(raw_key))
+        row[column] = clean_flag(flag(proposito.get(raw_key)))
     return row
