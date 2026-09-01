@@ -15,8 +15,10 @@ Counts in comments are measured over all 11,847 cached studies. The
 corpus-backed tests in tests/test_rules.py re-check them when the cache is
 present.
 
-Step 1 of 6: placeholders and sentinels. Route spellings, name normalisation
-and postcode padding follow.
+Step 1 of 6: placeholders and sentinels, as data plus the two functions the
+corpus tests need to check them. Route spellings, name normalisation and
+postcode padding follow; the functions that apply these rules arrive in step 3
+with the code that calls them.
 """
 
 import unicodedata
@@ -101,11 +103,28 @@ FLAGS_WITH_UNKNOWN = {
 # 2,201 records, 18.6%. Median is 180 once excluded.
 TOTAL_UNKNOWN = 0
 
-# Left raw deliberately: one record each, so they are outliers rather than a
-# sentinel convention, and a rule for a single row is not worth its cost.
-# 999999 and 99999 are almost certainly placeholders; 114011 may be a genuinely
-# enormous trial. Recorded so analysis can exclude them knowingly.
-TOTAL_OUTLIERS = (999999, 99999, 114011)
+# Large values, all left raw -- one record each, so a rule for a single row is
+# not worth its cost. Listed with what each turned out to be, because "large"
+# alone is not evidence of anything and two of the three were checked wrongly
+# at first.
+#
+#   999999  2025-524690-16-00 -- NOT a count. A phase I open-label study of
+#           BBO-11818 in KRAS-mutant solid tumours across 7 centres. Phase I
+#           oncology enrols tens to low hundreds; a million is a field cap
+#           someone typed. Exclude from any enrolment statistic.
+#
+#    99999  2020-001366-11 -- ambiguous, and left ambiguous. An international
+#           platform trial of COVID treatments in hospitalised patients
+#           (Ministerio de Sanidad, authorised 25-03-2020), the RECOVERY/
+#           SOLIDARITY shape. Those genuinely enrolled tens of thousands, so
+#           five nines may be a real open-ended target rather than a cap.
+#
+#   114011  2023-506977-36-00 -- GENUINE. A pragmatic randomised trial of
+#           high-dose vs standard-dose influenza vaccine in adults aged 65-79
+#           across Galicia. Pragmatic vaccine-effectiveness trials do enrol at
+#           population scale. Not an outlier; do not exclude it.
+TOTAL_LARGE_VALUES = (999999, 99999, 114011)
+TOTAL_NOT_A_COUNT = (999999,)
 
 # ---------------------------------------------------------------------------
 # Records excluded entirely
@@ -153,28 +172,7 @@ def is_placeholder(text):
     # Folded away to nothing while not blank to begin with: punctuation only.
     return True if not folded else folded in PLACEHOLDERS
 
-
-def clean_text(text):
-    """Trimmed text, or None when blank or a placeholder."""
-    if text is None:
-        return None
-    trimmed = str(text).strip()
-    if not trimmed or is_placeholder(trimmed):
-        return None
-    return trimmed
-
-
-def clean_flag(value):
-    """0/1 unchanged; the unknown sentinel to None; anything else untouched.
-
-    An unexpected value passes through so the schema's CHECK rejects it and
-    names it, rather than this quietly deciding what it meant.
-    """
-    if value == FLAG_UNKNOWN:
-        return None
-    return value
-
-
-def clean_total(value):
-    """Planned participants, with the not-reported sentinel as None."""
-    return None if value == TOTAL_UNKNOWN else value
+# No clean_text / clean_flag / clean_total helpers here yet. They would be the
+# obvious wrappers, but nothing calls them until db/transform.py is wired up in
+# step 3, and a tested-but-uncalled function is still an uncalled function.
+# They arrive with their caller.

@@ -14,11 +14,8 @@ Success criteria:
     run of dashes and dots; and does NOT treat blank as one, because "the
     registry wrote NA" and "wrote nothing" are different facts even though
     both load as NULL
-  clean_text: trims, and returns None for blank or placeholder
-  clean_flag: passes 0 and 1 through, maps -1 to None, and leaves anything
-    unexpected alone so the schema rejects and names it rather than this
-    guessing
-  clean_total: maps only 0 to None; the three large outliers stay raw
+  large totals: the three big values are recorded with what each turned out
+    to be, and only 999999 is marked as not-a-count
   corpus: the placeholder set still covers the acronimo, funder and centre
     reference counts it was built from; -1 still appears in exactly the 12
     flags listed and no others; total is still 0 in 2,201 records; the four
@@ -35,11 +32,9 @@ from db.rules import (
     FLAGS_WITH_UNKNOWN,
     IMPOSSIBLE_DATE_STUDIES,
     PLACEHOLDERS,
-    TOTAL_OUTLIERS,
+    TOTAL_LARGE_VALUES,
+    TOTAL_NOT_A_COUNT,
     TOTAL_UNKNOWN,
-    clean_flag,
-    clean_text,
-    clean_total,
     fold,
     is_placeholder,
 )
@@ -97,43 +92,6 @@ class TestIsPlaceholder(unittest.TestCase):
                 self.assertEqual(fold(entry), entry)
 
 
-class TestCleanText(unittest.TestCase):
-    def test_trims(self):
-        self.assertEqual(clean_text("  SPRINT  "), "SPRINT")
-
-    def test_blank_and_placeholder_both_become_none(self):
-        for variant in (None, "", "   ", "NA", "no aplica", "-"):
-            with self.subTest(variant=variant):
-                self.assertIsNone(clean_text(variant))
-
-
-class TestCleanFlag(unittest.TestCase):
-    def test_passes_zero_and_one_through(self):
-        self.assertEqual(clean_flag(0), 0)
-        self.assertEqual(clean_flag(1), 1)
-
-    def test_maps_the_unknown_sentinel_to_none(self):
-        self.assertIsNone(clean_flag(FLAG_UNKNOWN))
-
-    def test_leaves_unexpected_values_alone(self):
-        # So the schema's CHECK rejects and names them, rather than this
-        # deciding what a 2 or a "si" was supposed to mean.
-        for value in (2, -2, "si", ""):
-            with self.subTest(value=value):
-                self.assertEqual(clean_flag(value), value)
-
-
-class TestCleanTotal(unittest.TestCase):
-    def test_zero_becomes_none(self):
-        self.assertIsNone(clean_total(TOTAL_UNKNOWN))
-
-    def test_real_counts_and_outliers_stay(self):
-        for value in (1, 180, *TOTAL_OUTLIERS):
-            with self.subTest(value=value):
-                self.assertEqual(clean_total(value), value)
-
-
-@requires_corpus
 class TestAgainstCorpus(unittest.TestCase):
     """Re-measures the counts the rules were written from."""
 
@@ -192,6 +150,14 @@ class TestAgainstCorpus(unittest.TestCase):
                 self.assertTrue(values, block)
                 for key, value in values.items():
                     self.assertIsNotNone(value, "{}.{}".format(block, key))
+
+    def test_the_large_totals_are_still_those_three_studies(self):
+        # 114011 is a real enrolment (a pragmatic influenza-vaccine trial
+        # across Galicia), so it must not drift back into a "suspicious" list.
+        found = {r["poblacion"]["total"] for r in self.records
+                 if r["poblacion"]["total"] in TOTAL_LARGE_VALUES}
+        self.assertEqual(found, set(TOTAL_LARGE_VALUES))
+        self.assertEqual(TOTAL_NOT_A_COUNT, (999999,))
 
     def test_total_is_zero_in_the_expected_number_of_records(self):
         zeros = sum(1 for r in self.records

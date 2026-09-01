@@ -381,11 +381,20 @@ neither it nor several of the fields.
 Six flags never carry it: `voluntariossanos`, `pacientes`, `pobvulnerable`,
 `adultos`, `ancianos`, `menores`.
 
-**`poblacion.total` carries two sentinels, not one.** 100% present, 1,307
-distinct, median 123. But **2,201 values (18.6%) are 0**, which means "not
-reported" rather than a trial planning nobody — and the maximum is **999999**,
-a single obvious placeholder, with one further 99999. Excluding zeros and both
-sentinels: n=9,644, min 1, median 180, max 99,999. No negatives.
+**`poblacion.total`: one sentinel, and three large values that had to be
+looked up rather than judged by size.** 100% present, 1,307 distinct, median
+123. **2,201 values (18.6%) are 0**, meaning "not reported" rather than a trial
+planning nobody. The three largest were each checked against the study record,
+because "large" is not evidence:
+
+| value | study | verdict |
+|---|---|---|
+| 999999 | 2025-524690-16-00 | **not a count** — a *phase I* study of BBO-11818 in KRAS-mutant solid tumours, 7 centres. Phase I enrols tens to low hundreds |
+| 99999 | 2020-001366-11 | **ambiguous** — an international COVID platform trial (Ministerio de Sanidad, March 2020), RECOVERY/SOLIDARITY shape. Those really did enrol tens of thousands, so this may be an open-ended target rather than a cap |
+| 114011 | 2023-506977-36-00 | **genuine** — a pragmatic randomised trial of high- vs standard-dose influenza vaccine in adults 65–79 across Galicia. Pragmatic vaccine-effectiveness trials enrol at population scale |
+
+All three load raw; only 999999 is marked as not-a-count. Excluding zeros and
+999999: n=9,645, min 1, median 180. No negatives.
 
 **Decision — sentinels load as `NULL`, and here the mapping loses nothing.**
 `-1` and `total = 0` both mean "unknown", which SQL already has a word for.
