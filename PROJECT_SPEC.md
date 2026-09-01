@@ -687,6 +687,48 @@ uses. Downgrade to a lookup plus a plain foreign key, or a column; a
 many-to-many models a relationship the source cannot express. A third bridge
 goes.
 
+**Administration routes need grouping, and it belongs on the lookup table.**
+129 distinct values, and normalisation by case/accent merges none of them —
+they are genuinely different strings for a small number of real routes.
+
+Two separable problems, which belong in different places:
+
+  - **Spelling and phrasing → the loader.** `oral` (4,026) and `oral use`
+    (3,219) are one route. So are `intravenous`, `intravenous use`,
+    `intravenous infusion`, `iv infusion`. And there are real misspellings:
+    **`intravenious infusion` (466) and `intravenus use` (51)** — 517 rows a
+    naive match on "intravenous" would miss entirely. Mechanical, enumerable.
+  - **Grouping into clinical categories → a `grupo` column on
+    `administration_routes`, filled by the loader from an enumerated map.**
+    Unlike sponsor entity resolution this is 129 hand-reviewable rows, the
+    mapping lives in one place, and `nombre` is kept so any later question can
+    regroup from the original.
+
+**TODO — the two-group scheme does not fit the data.** Oral and intravenous
+cover only 78.9%:
+
+| bucket | rows | share |
+|---|---|---|
+| oral | 7,342 | 42.5% |
+| intravenous | 6,279 | 36.4% |
+| **subcutaneous** | **1,786** | **10.3%** |
+| intramuscular | 356 | 2.1% |
+| topical / ocular | 308 | 1.8% |
+| inhalation | 249 | 1.4% |
+| unclassified | 948 | 5.5% |
+
+Subcutaneous alone is 10.3% and is clinically distinct from both — folding it
+into either would be wrong, and dropping it silently discards a fifth of the
+field. Recommend **oral / intravenous / subcutaneous / other**, with `other`
+honest about what it holds. Decide the buckets before the loader is written.
+
+**Correction to the finding above: a single route value can name two routes.**
+16 distinct values across 256 rows do — `intravenous bolus injection/iv
+infusion`, `oral and iv` (43), `intravenous (iv) or subcutaneous (sc)` (34).
+So "never multi-valued" is true only of the pipe delimiter; the free text
+sometimes carries two. Too few to justify restoring the bridge, but the
+grouping map has to decide what each compound value becomes.
+
 **`sustancias` is genuinely multi-valued and keeps its bridge:** 12,389
 elements with one substance, 512 with two, 182 with three, up to 7. That is
 the one intervention bridge the data supports.
@@ -709,11 +751,13 @@ not a route — so this is a genuine loss of comparability, not a rename.
 
 **`nombreComercial` and `nombreCientifico` are the same string in 90.3% of
 elements.** Keeping both stores 27,949 duplicated values to preserve 2,997
-genuine differences. Worth deciding whether the scientific name earns its
-column.
+genuine differences. **Decision: drop `nombreCientifico`** — the duplication is
+not worth a column, and the commercial name is the one an analysis would
+display.
 
-**`formaFarmaceutica` is 56.4% placeholder, and its two language columns are
-swapped for exactly that value.** `'Not indicated'` (English) sits in the
+**`formaFarmaceutica` is dropped, both language columns.** No §3.3 question
+uses dosage form, and the field is in poor shape: **56.4% placeholder, with the
+two language columns swapped for exactly that value.** `'Not indicated'` (English) sits in the
 Spanish column and `'No Indicado'` (Spanish) in the English one, 17,459 times.
 Every real value is correctly placed — `Comprimido recubierto con película` /
 `Film-coated tablet`. So the swap is specific to the placeholder, which means a

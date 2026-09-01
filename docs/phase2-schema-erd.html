@@ -405,8 +405,8 @@
     <div class="ledger">
       <div class="cell"><div class="num">12</div><div class="lbl">tables, from 15</div></div>
       <div class="cell"><div class="num">4</div><div class="lbl">many-to-many bridges, from 6</div></div>
-      <div class="cell"><div class="num">49</div><div class="lbl">columns on <code>studies</code>, from 59</div></div>
-      <div class="cell gone"><div class="num">11</div><div class="lbl">source fields dropped as empty or constant</div></div>
+      <div class="cell"><div class="num">48</div><div class="lbl">columns on <code>studies</code>, from 59</div></div>
+      <div class="cell gone"><div class="num">15</div><div class="lbl">source fields dropped as empty, constant or uninterpretable</div></div>
     </div>
   </header>
 
@@ -466,8 +466,8 @@
           <text x="16" y="63" class="erd-tag" fill="currentColor" fill-opacity="0.6">FK sponsor_id</text>
           <text x="16" y="86" class="erd-card" fill="currentColor" fill-opacity="0.75">9 calendario dates</text>
           <text x="16" y="102" class="erd-card" fill="currentColor" fill-opacity="0.75">19 poblacion columns</text>
-          <text x="16" y="118" class="erd-card" fill="currentColor" fill-opacity="0.75">17 proposito flags</text>
-          <text x="16" y="138" class="erd-card" fill="var(--accent)">49 columns · 11,847 rows</text>
+          <text x="16" y="118" class="erd-card" fill="currentColor" fill-opacity="0.75">16 proposito flags</text>
+          <text x="16" y="138" class="erd-card" fill="var(--accent)">48 columns · 11,847 rows</text>
         </g>
 
         <g transform="translate(530,40)">
@@ -644,7 +644,7 @@
       <div class="entity-card wide">
         <div class="entity-head">
           <span class="name">studies</span>
-          <span class="purpose">one row per trial · hub · 49 columns · 11,847 rows</span>
+          <span class="purpose">one row per trial · hub · 48 columns · 11,847 rows</span>
         </div>
         <table>
           <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
@@ -705,14 +705,13 @@
         </details>
 
         <details class="group">
-          <summary>proposito — 17 flags <span class="count">7 of 24 dropped, constant in every record</span></summary>
+          <summary>proposito — 16 flags <span class="count">8 of 24 dropped — 7 constant, 1 uninterpretable</span></summary>
           <table>
             <tbody>
               <tr><td class="col-name">fase_uno · fase_dos · fase_tres · fase_cuatro</td><td class="col-type">bool</td><td class="col-note">four columns, never an enum: 1,436 studies set two flags and 3 set three. Every study sets at least one, so a 0 means "not this phase" rather than "not recorded"</td></tr>
               <tr class="caveat-row"><td class="col-name">diagnostico · profilaxis · tratamiento</td><td class="col-type">bool</td><td class="col-note">6,125 studies (51.7%) set none of the three. Here a 0 <b>does</b> read as unrecorded — the opposite of the phase flags. Any "trials by purpose" denominator has to say which it means</td></tr>
               <tr><td class="col-name">seguridad · eficacia · farmacocinetica …</td><td class="col-type">bool</td><td class="col-note">9 objective flags; only 3.4% of studies set none</td></tr>
-              <tr><td class="col-name">otras_fuentes</td><td class="col-type">bool</td><td class="col-note">sole survivor of 8 data-source flags. Set 1,801 times, but "other" relative to seven categories nobody ever ticks</td></tr>
-              <tr class="excluded-row"><td class="col-name"><span class="tag excluded">dropped</span>atencion_primaria · hospitalizacion · medico · farmaceutico · historial_clinico · bases_datos · atencion_personalizada</td><td class="col-type">—</td><td class="col-note">0 in all 11,847 records. A column that never varies carries no information</td></tr>
+              <tr class="excluded-row"><td class="col-name"><span class="tag excluded">dropped</span>all 8 data-source flags</td><td class="col-type">—</td><td class="col-note">seven are 0 in all 11,847 records. <code>otras_fuentes</code> varies (1,801 set) but means "other" relative to seven categories nobody ever ticks, so it cannot be interpreted on its own. The whole block goes</td></tr>
             </tbody>
           </table>
         </details>
@@ -857,12 +856,12 @@
             <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>intervention_id</td><td class="col-type">int</td><td class="col-note">&nbsp;</td></tr>
             <tr><td class="col-name"><span class="tag fk">FK</span>study_id</td><td class="col-type">text</td><td class="col-note">→ studies. The block is <i>absent</i>, not blank, from 1,514 studies — 1,516 end up with no intervention</td></tr>
             <tr><td class="col-name">nombre_comercial</td><td class="col-type">text, null</td><td class="col-note">placeholders <code>-</code> (1,922) and <code>NA</code> (283) load as NULL</td></tr>
-            <tr class="caveat-row"><td class="col-name"><span class="tag caveat">?</span>nombre_cientifico</td><td class="col-type">text, null</td><td class="col-note">identical to the commercial name in 90.3% of rows. Kept for the 2,997 that differ, but it earns its column only marginally</td></tr>
             <tr><td class="col-name">codigo</td><td class="col-type">text, null</td><td class="col-note">78.7% present, improving sharply — 52% through 2021, 100% from 2024</td></tr>
             <tr><td class="col-name">huerfano</td><td class="col-type">bool</td><td class="col-note">orphan designation, 2,447 set. A string in the source like <code>enfermedad_rara</code></td></tr>
-            <tr><td class="col-name">forma_farmaceutica_es · _en</td><td class="col-type">text, null</td><td class="col-note">56.4% placeholder. The two language columns are swapped for exactly that value — <code>'Not indicated'</code> sits in the Spanish column 17,459 times — while every real value is correctly placed, so mapping placeholders to NULL removes the problem</td></tr>
             <tr><td class="col-name"><span class="tag fk">FK</span>route_id</td><td class="col-type">int, null</td><td class="col-note">→ administration_routes. A plain key, not a bridge</td></tr>
             <tr class="excluded-row"><td class="col-name"><span class="tag excluded">dropped</span>atcs</td><td class="col-type">—</td><td class="col-note">empty in all 30,946 elements. The previous design gave it a lookup table and a bridge</td></tr>
+            <tr class="excluded-row"><td class="col-name"><span class="tag excluded">dropped</span>nombre_cientifico</td><td class="col-type">—</td><td class="col-note">identical to the commercial name in 90.3% of rows; the 2,997 that differ do not earn a second column</td></tr>
+            <tr class="excluded-row"><td class="col-name"><span class="tag excluded">dropped</span>forma_farmaceutica · _en</td><td class="col-type">—</td><td class="col-note">56.4% placeholder, and the two language columns are swapped for exactly that value — <code>'Not indicated'</code> sits in the Spanish column 17,459 times. No §3.3 question uses dosage form</td></tr>
             <tr class="excluded-row"><td class="col-name"><span class="tag excluded">does not exist</span>tipo</td><td class="col-type">—</td><td class="col-note">the previous revision documented this as <code>0</code> comparator / <code>1</code> experimental / <code>2</code> treatment per manual §4.8. The endpoint returns no such field on any of the 30,946 elements — it returns exactly nine, and this is not one of them</td></tr>
           </tbody>
         </table>
@@ -909,14 +908,18 @@
           <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
           <tbody>
             <tr class="pk-row"><td class="col-name"><span class="tag pk">PK</span>route_id</td><td class="col-type">int</td><td class="col-note">&nbsp;</td></tr>
-            <tr><td class="col-name">nombre</td><td class="col-type">text · unique</td><td class="col-note"><code>ORAL</code>, <code>ORAL USE</code>, <code>INTRAVENOUS</code>, <code>INTRAVENOUS USE</code> — Spanish and English forms of the same route are not yet merged</td></tr>
+            <tr><td class="col-name">nombre</td><td class="col-type">text · unique</td><td class="col-note">the canonical route, after the loader merges phrasing and misspellings — <code>oral</code> / <code>oral use</code> are one route, and <code>intravenious infusion</code> (466) and <code>intravenus use</code> (51) are typos a naive match would miss</td></tr>
+            <tr class="caveat-row"><td class="col-name"><span class="tag caveat">todo</span>grupo</td><td class="col-type">text</td><td class="col-note">clinical grouping, filled from an enumerated map. 129 hand-reviewable rows, so it belongs here rather than in analysis — and <code>nombre</code> is kept, so a later question can regroup. <b>Buckets not yet settled:</b> oral 42.5% and intravenous 36.4% leave out subcutaneous at 10.3%, which is clinically distinct from both</td></tr>
           </tbody>
         </table>
         <p class="cluster-note">
           Reached by a foreign key on <code>interventions</code>. The source
-          pipe-delimits it, but all 17,268 populated values hold exactly one
-          route — zero hold two — so the previous design's bridge modelled a
-          relationship the registry cannot express.
+          pipe-delimits it, but no populated value ever uses the delimiter for
+          two routes, so the previous design's bridge modelled a relationship
+          the registry does not express. The free text does occasionally name
+          two — <code>oral and iv</code> (43), <code>intravenous (iv) or
+          subcutaneous (sc)</code> (34), 256 rows in all — too few to restore a
+          bridge, but the grouping map has to decide what each becomes.
         </p>
       </div>
 
