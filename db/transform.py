@@ -22,9 +22,14 @@ one line in rules.py.
 Order matters: structural first, then the rule. flag('-1') returns -1
 unchanged because -1 is not '0' or '1'; clean_flag then turns it into NULL.
 An unexpected value survives both and still reaches the schema.
+
+An optional db.manifest.Manifest counts what the rules changed. Counts are
+taken from each rule's OUTPUT, never by re-testing its condition, so the
+manifest cannot drift away from the rules it describes.
 """
 
 from db.rules import (
+    TOTAL_UNKNOWN,
     clean_flag,
     clean_text,
     clean_total,
@@ -137,13 +142,17 @@ def acronym(raw):
     return None if is_placeholder(raw) else clean_text(raw)
 
 
-def sponsor_name(record):
+def sponsor_name(record, manifest=None):
     """organismo.promotor as it should be displayed. Blank -> None.
 
     Cleaned rather than raw: the raw mode for the largest sponsor is
     `Merck Sharp &amp; Dohme LLC`, which is not a name.
     """
-    return clean_text((record.get("organismo") or {}).get("promotor"))
+    raw = (record.get("organismo") or {}).get("promotor")
+    cleaned = clean_text(raw)
+    if manifest is not None and raw is not None and cleaned != raw.strip():
+        manifest.applied("sponsors.promotor", "markup or spacing cleaned")
+    return cleaned
 
 
 def sponsor_key(record):
@@ -157,8 +166,15 @@ def sponsor_key(record):
     return match_key((record.get("organismo") or {}).get("promotor"))
 
 
-def study_row(record, sponsor_id):
+def study_row(record, sponsor_id, manifest=None):
     """One studies row. sponsor_id is passed in, not looked up.
+
+    `manifest` counts what the declared rules changed. It is optional so that
+    the transform stays usable on its own, and every count is taken from the
+    rule's OUTPUT rather than by re-testing its condition -- `is_placeholder`
+    is not called twice. Counting by re-running the test would let the manifest
+    drift away from the rule it claims to describe, which is the one failure
+    mode a manifest must not have.
 
     Stores the calendario dates as recorded and derives nothing from them. An
     earlier version computed censored/survival_start/survival_end here; that
@@ -178,18 +194,45 @@ def study_row(record, sponsor_id):
     calendario = record.get("calendario") or {}
     poblacion = record.get("poblacion") or {}
     proposito = record.get("proposito") or {}
+    if manifest is not None:
+        manifest.saw_record()
 
+    raw_acronym = record.get("acronimo")
     row = {
         "identificador": record.get("identificador"),
         "sponsor_id": sponsor_id,
-        "acronimo": acronym(record.get("acronimo")),
+        "acronimo": acronym(raw_acronym),
         "enfermedad_rara": flag(record.get("enfermedadRara")),
     }
+    if manifest is not None and raw_acronym and raw_acronym.strip():
+        # Non-blank in, nothing out: only is_placeholder can do that.
+        if row["acronimo"] is None:
+            manifest.applied("studies.acronimo", "placeholder -> NULL")
+        elif row["acronimo"] != raw_acronym.strip():
+            manifest.applied("studies.acronimo", "markup or spacing cleaned")
+
     for raw_key, column in CALENDARIO_DATES.items():
         row[column] = iso_date(calendario.get(raw_key))
-    for raw_key, column in POBLACION_FLAGS.items():
-        row[column] = clean_flag(flag(poblacion.get(raw_key)))
-    row["poblacion_total"] = clean_total(integer(poblacion.get("total")))
-    for raw_key, column in PROPOSITO_FLAGS.items():
-        row[column] = clean_flag(flag(proposito.get(raw_key)))
+
+    for source, mapping in ((poblacion, POBLACION_FLAGS),
+                            (proposito, PROPOSITO_FLAGS)):
+        for raw_key, column in mapping.items():
+            raw = source.get(raw_key)
+            row[column] = clean_flag(flag(raw))
+            # Every flag is present in every record and is 0, 1 or -1, so a
+            # NULL out of a non-None in can only be the sentinel.
+            if manifest is not None and raw is not None and row[column] is None:
+                manifest.applied("studies." + column, "-1 (unknown) -> NULL")
+
+    raw_total = poblacion.get("total")
+    row["poblacion_total"] = clean_total(integer(raw_total))
+    if manifest is not None and raw_total is not None \
+            and row["poblacion_total"] is None:
+        # Two sentinels with different meanings, counted apart: one is the
+        # registry declining to report, the other is a value that is not a
+        # count at all (PROJECT_SPEC 3.2c).
+        manifest.applied(
+            "studies.poblacion_total",
+            "0 (not reported) -> NULL" if integer(raw_total) == TOTAL_UNKNOWN
+            else "not a count -> NULL")
     return row

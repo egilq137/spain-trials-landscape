@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules being written as data in db/rules.py, steps 1-3 of 6 done (placeholders and sentinels, administration routes, name normalisation, and postcode repair by triangulation) and applied in db/transform.py. Next: the load manifest, then the DDL
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules being written as data in db/rules.py, steps 1-3 of 6 done (placeholders and sentinels, administration routes, name normalisation, postcode repair by triangulation, and the load manifest) and applied in db/transform.py. Next: wire the manifest into db/validate.py as a dry run, then the DDL
 last updated: 2026-09-01
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
@@ -1166,8 +1166,25 @@ test that fails when a refresh changes the data underneath.
       resolved from the corpus, 7 left raw. Strictly this is step 6 work:
       it is the only rule that must read the whole corpus first, so its
       evidence index is built by a pass in the loader and passed in.
-- [ ] 4. The load manifest — count every rule application, so a load reports
-      what it changed rather than only that it succeeded.
+- [x] 4. The load manifest (`db/manifest.py`) — counts every rule application
+      by (field, rule), so a load reports what it changed rather than only
+      that it succeeded. Over the corpus: 7,652 changes in 11,847 records —
+      4,763 placeholder acronyms, 2,201 unreported totals, 585 sponsor names
+      cleaned of markup or spacing, 54 `-1` flags across 12 columns, 1 total
+      that was never a count.
+      - **Counts come from each rule's output, never from re-testing its
+        condition.** `is_placeholder` is not called twice. A manifest that
+        re-runs the test can drift away from the rule it claims to describe,
+        which is the one failure mode a manifest must not have; a corpus test
+        asserts the counted flag totals are the same dict as
+        `rules.FLAGS_WITH_UNKNOWN`.
+      - **It counts, it does not log.** Per-row provenance would be a table
+        the size of the database, and `data/raw/` already holds every original
+        value. Records seen is tracked separately from changes made, so the
+        report has a denominator.
+      - The two `poblacion_total` sentinels are counted apart: "the registry
+        declined to report" and "this is not a count" both load as NULL but
+        are different facts.
 - [ ] 5. Wire the manifest into `db/validate.py` as a dry run.
 - [ ] 6. Corpus-wide resolutions — most frequent centre name, most frequent
       non-blank region. These need two passes over the corpus, so they are
