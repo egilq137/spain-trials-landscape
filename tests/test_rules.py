@@ -14,8 +14,8 @@ Success criteria:
     run of dashes and dots; and does NOT treat blank as one, because "the
     registry wrote NA" and "wrote nothing" are different facts even though
     both load as NULL
-  large totals: the three big values are recorded with what each turned out
-    to be, and only 999999 is marked as not-a-count
+  large totals: only the one value a rule acts on is data; it is checked by
+    what the study is (a phase I trial) rather than by the number being big
   corpus: the placeholder set still covers the acronimo, funder and centre
     reference counts it was built from; -1 still appears in exactly the 12
     flags listed and no others; total is still 0 in 2,201 records; the four
@@ -32,7 +32,6 @@ from db.rules import (
     FLAGS_WITH_UNKNOWN,
     IMPOSSIBLE_DATE_STUDIES,
     PLACEHOLDERS,
-    TOTAL_LARGE_VALUES,
     TOTAL_NOT_A_COUNT,
     TOTAL_UNKNOWN,
     fold,
@@ -151,13 +150,14 @@ class TestAgainstCorpus(unittest.TestCase):
                 for key, value in values.items():
                     self.assertIsNotNone(value, "{}.{}".format(block, key))
 
-    def test_the_large_totals_are_still_those_three_studies(self):
-        # 114011 is a real enrolment (a pragmatic influenza-vaccine trial
-        # across Galicia), so it must not drift back into a "suspicious" list.
-        found = {r["poblacion"]["total"] for r in self.records
-                 if r["poblacion"]["total"] in TOTAL_LARGE_VALUES}
-        self.assertEqual(found, set(TOTAL_LARGE_VALUES))
-        self.assertEqual(TOTAL_NOT_A_COUNT, (999999,))
+    def test_the_not_a_count_value_is_still_a_phase_one_study(self):
+        # The only large total that any rule acts on. It is excluded because
+        # of what the study is, not because the number is big, so the test
+        # checks the study rather than the number.
+        for record in self.records:
+            if record["poblacion"]["total"] in TOTAL_NOT_A_COUNT:
+                self.assertEqual(record["identificador"], "2025-524690-16-00")
+                self.assertEqual(record["proposito"]["faseUno"], 1)
 
     def test_total_is_zero_in_the_expected_number_of_records(self):
         zeros = sum(1 for r in self.records

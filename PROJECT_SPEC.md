@@ -393,8 +393,11 @@ because "large" is not evidence:
 | 99999 | 2020-001366-11 | **ambiguous** — an international COVID platform trial (Ministerio de Sanidad, March 2020), RECOVERY/SOLIDARITY shape. Those really did enrol tens of thousands, so this may be an open-ended target rather than a cap |
 | 114011 | 2023-506977-36-00 | **genuine** — a pragmatic randomised trial of high- vs standard-dose influenza vaccine in adults 65–79 across Galicia. Pragmatic vaccine-effectiveness trials enrol at population scale |
 
-All three load raw; only 999999 is marked as not-a-count. Excluding zeros and
-999999: n=9,645, min 1, median 180. No negatives.
+All three load raw, and only 999999 becomes a rule — the other two are the
+record of a check, not data. Grouping them as "large values" would repeat the
+error that made 114,011 look suspicious in the first place: they share nothing
+but magnitude, and a rule keyed on magnitude is what got it wrong. Excluding
+zeros and 999999: n=9,645, min 1, median 180. No negatives.
 
 **Decision — sentinels load as `NULL`, and here the mapping loses nothing.**
 `-1` and `total = 0` both mean "unknown", which SQL already has a word for.
