@@ -16,6 +16,13 @@ Success criteria:
     both load as NULL
   large totals: only the one value a rule acts on is data; it is checked by
     what the study is (a phase I trial) rather than by the number being big
+  routes: every one of the 129 raw values is covered by exactly one of the two
+    maps, with no fallthrough and no dead entries -- an unmapped value must be
+    a visible failure, never a silent drop into `other`; the misspellings
+    still merge; a value naming several routes becomes `multiple routes`
+    rather than whichever is written first; and group membership is
+    allow-listed, so a route added later lands in `other` until someone
+    classifies it
   corpus: the placeholder set still covers the acronimo, funder and centre
     reference counts it was built from; -1 still appears in exactly the 12
     flags listed and no others; total is still 0 in 2,201 records; the four
@@ -29,6 +36,13 @@ from pathlib import Path
 
 from db.rules import (
     FLAG_UNKNOWN,
+    ROUTE_CANONICAL,
+    ROUTE_GROUP_IV,
+    ROUTE_GROUP_ORAL,
+    ROUTE_GROUP_OTHER,
+    ROUTE_GROUP_SC,
+    ROUTE_GROUPS,
+    ROUTE_NOT_A_ROUTE,
     FLAGS_WITH_UNKNOWN,
     IMPOSSIBLE_DATE_STUDIES,
     PLACEHOLDERS,
@@ -149,6 +163,40 @@ class TestAgainstCorpus(unittest.TestCase):
                 self.assertTrue(values, block)
                 for key, value in values.items():
                     self.assertIsNotNone(value, "{}.{}".format(block, key))
+
+    def test_every_route_value_is_covered_by_exactly_one_map(self):
+        # The test this whole step exists for. An unmapped value must fail
+        # here rather than fall through into `other`, which would hide it.
+        known = set(ROUTE_CANONICAL) | set(ROUTE_NOT_A_ROUTE)
+        seen = set()
+        for record in self.records:
+            for item in (record.get("intervenciones") or {}).get("intervencion") or []:
+                raw = (item.get("viasAdministracion") or "").strip()
+                if raw:
+                    seen.add(fold(raw))
+        self.assertEqual(seen - known, set(), "unmapped route values")
+        self.assertEqual(len(seen), 129)
+
+    def test_no_map_entry_is_dead(self):
+        # An entry matching nothing is either a typo or a rule for data that
+        # no longer exists; either way it should not sit there unnoticed.
+        known = set(ROUTE_CANONICAL) | set(ROUTE_NOT_A_ROUTE)
+        seen = set()
+        for record in self.records:
+            for item in (record.get("intervenciones") or {}).get("intervencion") or []:
+                raw = (item.get("viasAdministracion") or "").strip()
+                if raw:
+                    seen.add(fold(raw))
+        self.assertEqual(known - seen, set(), "map entries matching nothing")
+
+    def test_the_misspellings_still_account_for_the_rows_they_did(self):
+        hits = 0
+        for record in self.records:
+            for item in (record.get("intervenciones") or {}).get("intervencion") or []:
+                if fold(item.get("viasAdministracion")) in (
+                        "intravenious infusion", "intravenus use"):
+                    hits += 1
+        self.assertEqual(hits, 517)
 
     def test_the_not_a_count_value_is_still_a_phase_one_study(self):
         # The only large total that any rule acts on. It is excluded because
