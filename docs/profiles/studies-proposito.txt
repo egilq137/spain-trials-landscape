@@ -1,0 +1,153 @@
+studies.proposito  --  24 fields over 11847 studies
+
+proposito.faseUno
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 9145  |  1 2702
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.faseDos
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 7297  |  1 4550
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.faseTres
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 6899  |  1 4948
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.faseCuatro
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 10758  |  1 1089
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.diagnostico
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 11589  |  1 258
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.profilaxis
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 11330  |  1 517
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.tratamiento
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 6581  |  1 5266
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.seguridad
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    1 10553  |  0 1294
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.eficacia
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    1 9963  |  0 1884
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.farmacocinetica
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    1 6379  |  0 5468
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.farmacodinamica
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 8080  |  1 3767
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.bioequivalencia
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 11466  |  1 381
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.dosis
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 9946  |  1 1901
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.farmacogenetica
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 10421  |  1 1426
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.farmacogenomica
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 10519  |  1 1328
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.farmacoeconomica
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 11400  |  1 447
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.atencionPrimaria
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.atencionPersonalizada
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.hospitalizacion
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.medico
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.farmaceutico
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.historialClinico
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.basesDatos
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1 exact
+  values    0 11847
+  CONSTANT  one value in every record -- carries no information
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+proposito.otrasFuentes
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2 exact
+  values    0 10046  |  1 1801
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+

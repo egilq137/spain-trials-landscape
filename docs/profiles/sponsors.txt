@@ -1,0 +1,86 @@
+========================================================================
+organismo.promotor
+========================================================================
+structure (types of each level, outermost first)
+  dict > dict                               11847  100.0%
+
+presence
+  present     11847  100.0%
+  blank           0    0.0%
+  null            0    0.0%
+  absent          0    0.0%
+
+length  min 3  max 146  mean 29
+
+distinct values: 3763 exact
+                 3336 after casefold/accent/space normalisation (427 would merge)
+                 most frequent value is 2.5% of non-blank
+
+most frequent values
+     300  'AstraZeneca AB'
+     260  'Novartis Farmacéutica, S.A.'
+     188  'Novartis Pharma AG'
+     173  'F. Hoffmann-La Roche AG'
+     150  'Merck Sharp &amp; Dohme LLC'
+     133  'Pfizer Inc.'
+     121  'Bristol-Myers Squibb International Corporation'
+     120  'Amgen Inc.'
+     118  'AbbVie Deutschland GmbH & Co. KG'
+     104  'Bayer AG'
+     102  'Novo Nordisk A/S'
+      93  'Janssen-Cilag International NV'
+  ... 2431 values occur exactly once
+
+values that differ only by case/accent/spacing/punctuation
+     300  'AstraZeneca AB'
+      45  'Astrazeneca AB'
+  --
+     260  'Novartis Farmacéutica, S.A.'
+      10  'Novartis Farmaceutica, S.A.'
+       9  'Novartis Farmacéutica, S.A'
+       1  'Novartis Farmaceutica, S.A'
+       1  'NOVARTIS FARMACEUTICA, S.A.'
+       1  'Novartis Farmacéutica, S.A.,'
+  --
+     118  'AbbVie Deutschland GmbH & Co. KG'
+      91  'AbbVie Deutschland GmbH &amp; Co. KG'
+      24  'Abbvie Deutschland GmbH & Co. KG'
+       6  'Abbvie Deutschland GmbH &amp; Co. KG'
+  --
+     150  'Merck Sharp &amp; Dohme LLC'
+      55  'Merck Sharp & Dohme LLC'
+  --
+     120  'Amgen Inc.'
+      28  'Amgen Inc'
+  --
+      78  'Sanofi-Aventis Recherche &amp; Developpement'
+      21  'Sanofi-Aventis Recherche & Développement'
+      14  'Sanofi-aventis recherche & développement'
+      11  'sanofi-aventis recherche & développement'
+      10  'Sanofi-aventis Recherche & Développement'
+       3  'sanofi-aventis Recherche & Développement'
+       3  'Sanofi-aventis recherche & developpement'
+       2  'Sanofi-Aventis Recherche & Developpement'
+       1  'SANOFI-AVENTIS RECHERCHE & DEVELOPPEMENT'
+  --
+     133  'Pfizer Inc.'
+       6  'Pfizer Inc'
+       1  'Pfizer Inc,'
+       1  'PFIZER INC'
+  --
+     121  'Bristol-Myers Squibb International Corporation'
+       1  'Bristol-Myers Squibb international Corporation'
+  --
+
+presence by year
+  year   present   blank    null  absent
+  2017      3304       0       0       0
+  2018      1119       0       0       0
+  2019       629       0       0       0
+  2020       775       0       0       0
+  2021       569       0       0       0
+  2022       521       0       0       0
+  2023      1164       0       0       0
+  2024      2348       0       0       0
+  2025      1059       0       0       0
+  2026       359       0       0       0

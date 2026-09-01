@@ -1,0 +1,61 @@
+array centros.centro  --  11847 studies, 85410 elements
+  container types : {'list': 11847}
+  studies with none: 147
+  elements per study: min 0  max 93  mean 7.2
+
+centers  --  9 fields over 11847 studies
+
+centros.centro[].referencia
+  presence  present 82715 (96.8%)   blank 2695   null 0   absent 0
+  distinct  1597 exact
+  top       'ORG-100030781' 4961  |  'ORG-100009329' 3051  |  'ORG-100028548' 2950  |  'ORG-100028646' 2563
+  by year   2017 94%  2018 95%  2019 97%  2020 95%  2021 95%  2022 97%  2023 99%  2024 99%  2025 100%  2026 100%
+
+centros.centro[].nombre
+  presence  present 85407 (100.0%)   blank 3   null 0   absent 0
+  distinct  3305 exact
+  top       "HOSPITAL UNIVERSITARI VALL D'HEBRON" 2667  |  'HOSPITAL UNIVERSITARIO 12 DE OCTUBRE' 1964  |  "Institut Catala D'oncologia" 1737  |  'Hospital Universitari Vall D Hebron' 1553
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+centros.centro[].tipo
+  presence  present 84980 (99.5%)   blank 430   null 0   absent 0
+  distinct  3 exact
+  values    '0' 80516  |  '1' 4055  |  '2' 409
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 97%  2026 96%
+
+centros.centro[].situacion
+  presence  present 85410 (100.0%)   blank 0   null 0   absent 0
+  distinct  3 exact
+  values    '2' 40950  |  '0' 24231  |  '1' 20229
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+centros.centro[].ccaa
+  presence  present 84947 (99.5%)   blank 463   null 0   absent 0
+  distinct  19 exact
+  values    'CATALUÑA' 23317  |  'MADRID, COMUNIDAD DE' 22148  |  'ANDALUCÍA' 11449  |  'COMUNITAT VALENCIANA' 8123  |  'GALICIA' 4695  |  'CASTILLA Y LEÓN' 2411  |  'PAÍS VASCO' 2033  |  'NAVARRA, COMUNIDAD FORAL DE' 1979  |  'ARAGÓN' 1489  |  'CANTABRIA' 1336  |  'CANARIAS' 1220  |  'MURCIA, REGIÓN DE' 1167  |  'BALEARS, ILLES' 1063  |  'ASTURIAS, PRINCIPADO DE' 947  |  'EXTREMADURA' 752  |  'CASTILLA-LA MANCHA' 692  |  'RIOJA, LA' 115  |  'CEUTA' 6  |  'MELILLA' 5
+  by year   2017 99%  2018 99%  2019 100%  2020 99%  2021 99%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+centros.centro[].provincia
+  presence  present 83117 (97.3%)   blank 2293   null 0   absent 0
+  distinct  52 exact
+  top       'MADRID' 22179  |  'BARCELONA' 21634  |  'VALENCIA' 6408  |  'SEVILLA' 4901
+  by year   2017 92%  2018 96%  2019 100%  2020 99%  2021 99%  2022 100%  2023 100%  2024 99%  2025 100%  2026 100%
+
+centros.centro[].localidad
+  presence  present 85195 (99.7%)   blank 215   null 0   absent 0
+  distinct  947 exact
+  top       'Madrid' 15266  |  'Barcelona' 11463  |  'Valencia' 4005  |  'Sevilla' 3907
+  by year   2017 100%  2018 100%  2019 100%  2020 99%  2021 99%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+centros.centro[].codPostal
+  presence  present 85163 (99.7%)   blank 247   null 0   absent 0
+  distinct  876 exact
+  top       '08035' 5274  |  '28040' 3229  |  '08036' 3116  |  '28041' 2994
+  by year   2017 100%  2018 100%  2019 100%  2020 99%  2021 99%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+centros.centro[].departamento
+  presence  present 64047 (75.0%)   blank 21363   null 0   absent 0
+  distinct  8268 exact
+  top       'Oncology' 5714  |  'Medical Oncology' 2682  |  'Oncología' 2657  |  'Hematology' 2336
+  by year   2017 69%  2018 66%  2019 59%  2020 56%  2021 57%  2022 68%  2023 89%  2024 78%  2025 99%  2026 100%
+

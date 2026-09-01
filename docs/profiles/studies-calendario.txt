@@ -1,0 +1,73 @@
+studies.calendario  --  11 fields over 11847 studies
+
+calendario.fechaAutorizacionAEMPS
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  2216 exact
+  format    11847/11847 match dd-MM-yyyy
+  range     2009-03-04 .. 2026-08-26
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+calendario.fechaRegistro
+  presence  present 11847 (100.0%)   blank 0   null 0   absent 0
+  distinct  1645 exact
+  format    11847/11847 match dd-MM-yyyy
+  range     2017-11-02 .. 2026-07-29
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+calendario.fechaClasificacion
+  presence  present 0 (0.0%)   blank 11847   null 0   absent 0
+  distinct  0 -- never populated
+
+calendario.fechaInicioPrevista
+  presence  present 7559 (63.8%)   blank 4288   null 0   absent 0
+  distinct  2060 exact
+  format    7559/7559 match dd-MM-yyyy
+  range     2009-02-02 .. 2024-12-24
+  by year   2017 89%  2018 87%  2019 87%  2020 83%  2021 86%  2022 64%  2023 32%  2024 53%  2025 2%  2026 0%
+
+calendario.fechaFinPrevista
+  presence  present 0 (0.0%)   blank 11847   null 0   absent 0
+  distinct  0 -- never populated
+
+calendario.fechaInicioReal
+  presence  present 10127 (85.5%)   blank 1720   null 0   absent 0
+  distinct  3242 exact
+  format    10127/10127 match dd-MM-yyyy
+  range     2009-04-27 .. 2026-08-25
+  by year   2017 84%  2018 83%  2019 87%  2020 85%  2021 84%  2022 82%  2023 91%  2024 95%  2025 80%  2026 39%
+
+calendario.fechaFinRealEspana
+  presence  present 6437 (54.3%)   blank 5410   null 0   absent 0
+  distinct  2902 exact
+  format    6437/6437 match dd-MM-yyyy
+  range     2003-05-02 .. 2026-08-20
+  by year   2017 88%  2018 79%  2019 73%  2020 74%  2021 73%  2022 55%  2023 29%  2024 24%  2025 2%  2026 1%
+
+calendario.fechaFinRealGlobal
+  presence  present 4588 (38.7%)   blank 7259   null 0   absent 0
+  distinct  2406 exact
+  format    4588/4588 match dd-MM-yyyy
+  range     2013-03-08 .. 2026-08-25
+  by year   2017 60%  2018 53%  2019 57%  2020 51%  2021 52%  2022 45%  2023 26%  2024 18%  2025 1%  2026 0%
+
+calendario.fechaInterrupcion
+  presence  present 762 (6.4%)   blank 11085   null 0   absent 0
+  distinct  565 exact
+  format    762/762 match dd-MM-yyyy
+  range     2016-03-30 .. 2026-08-26
+  by year   2017 3%  2018 7%  2019 15%  2020 12%  2021 12%  2022 6%  2023 6%  2024 8%  2025 2%  2026 0%
+
+calendario.fechaReinicio
+  presence  present 239 (2.0%)   blank 11608   null 0   absent 0
+  distinct  195 exact
+  format    239/239 match dd-MM-yyyy
+  range     2016-12-13 .. 2024-10-14
+  by year   2017 1%  2018 3%  2019 7%  2020 4%  2021 3%  2022 2%  2023 1%  2024 3%  2025 0%  2026 0%
+
+calendario.fechaFinPrematuro
+  presence  present 1676 (14.1%)   blank 10171   null 0   absent 0
+  distinct  1162 exact
+  format    1676/1676 match dd-MM-yyyy
+  range     2013-02-19 .. 2026-08-06
+  by year   2017 15%  2018 23%  2019 26%  2020 29%  2021 32%  2022 26%  2023 7%  2024 4%  2025 3%  2026 1%
+

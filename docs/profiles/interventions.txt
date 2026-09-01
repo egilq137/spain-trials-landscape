@@ -1,0 +1,59 @@
+array intervenciones.intervencion  --  11847 studies, 30946 elements
+  container types : {'list': 10333, 'missing': 1514}
+  studies with none: 1516
+  elements per study: min 0  max 98  mean 3.0
+
+interventions  --  9 fields over 11847 studies
+
+intervenciones.intervencion[].nombreComercial
+  presence  present 30946 (100.0%)   blank 0   null 0   absent 0
+  distinct  11259 exact
+  top       '-' 1922  |  'NA' 283  |  'KEYTRUDA 25 mg/mL concentrate for solution for infusion' 244  |  'OPDIVO 10 mg/mL concentrate for solution for infusion.' 103
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+intervenciones.intervencion[].nombreCientifico
+  presence  present 30946 (100.0%)   blank 0   null 0   absent 0
+  distinct  10981 exact
+  top       '-' 1922  |  'NA' 284  |  'KEYTRUDA 25 mg/mL concentrate for solution for infusion' 243  |  'OPDIVO 10 mg/mL concentrate for solution for infusion.' 104
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+intervenciones.intervencion[].codigo
+  presence  present 24366 (78.7%)   blank 6580   null 0   absent 0
+  distinct  10376 exact
+  top       'PRD4323105' 210  |  'BMS-936558' 111  |  'SUB06614MIG' 93  |  'SUB07017MIG' 89
+  by year   2017 52%  2018 52%  2019 53%  2020 50%  2021 49%  2022 80%  2023 98%  2024 100%  2025 100%  2026 100%
+
+intervenciones.intervencion[].huerfano
+  presence  present 30921 (99.9%)   blank 25   null 0   absent 0
+  distinct  2 exact
+  values    '0' 28474  |  '1' 2447
+  by year   2017 100%  2018 99%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+intervenciones.intervencion[].formaFarmaceutica
+  presence  present 30946 (100.0%)   blank 0   null 0   absent 0
+  distinct  258 exact
+  top       'Not indicated' 17459  |  'Comprimido recubierto con película' 2070  |  'Concentrado para solución para perfusión' 1263  |  'Solución inyectable' 1205
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+intervenciones.intervencion[].formaFarmaceutica_en
+  presence  present 30946 (100.0%)   blank 0   null 0   absent 0
+  distinct  258 exact
+  top       'No Indicado' 17459  |  'Film-coated tablet' 2070  |  'Concentrate for solution for infusion' 1263  |  'Solution for injection' 1205
+  by year   2017 100%  2018 100%  2019 100%  2020 100%  2021 100%  2022 100%  2023 100%  2024 100%  2025 100%  2026 100%
+
+intervenciones.intervencion[].sustancias
+  presence  present 13236 (42.8%)   blank 17710   null 0   absent 0
+  distinct  4106 exact
+  top       'N/A|' 147  |  'Not available|' 140  |  'NA|' 124  |  'PACLITAXEL|' 121
+  by year   2017 97%  2018 97%  2019 98%  2020 97%  2021 93%  2022 48%  2023 4%  2024 0%  2025 0%  2026 0%
+
+intervenciones.intervencion[].atcs
+  presence  present 0 (0.0%)   blank 30946   null 0   absent 0
+  distinct  0 -- never populated
+
+intervenciones.intervencion[].viasAdministracion
+  presence  present 17268 (55.8%)   blank 13678   null 0   absent 0
+  distinct  129 exact
+  top       'ORAL' 4026  |  'ORAL USE' 3219  |  'INTRAVENOUS USE' 1830  |  'INTRAVENOUS' 1307
+  by year   2017 0%  2018 0%  2019 0%  2020 0%  2021 0%  2022 47%  2023 96%  2024 100%  2025 100%  2026 100%
+

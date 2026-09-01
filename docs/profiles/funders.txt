@@ -1,0 +1,77 @@
+========================================================================
+organismo.financiador
+========================================================================
+structure (types of each level, outermost first)
+  dict > dict                               11847  100.0%
+
+presence
+  present      6843   57.8%
+  blank        5004   42.2%
+  null            0    0.0%
+  absent          0    0.0%
+
+length  min 2  max 421  mean 26
+
+distinct values: 2912 exact
+                 2709 after casefold/accent/space normalisation (203 would merge)
+                 most frequent value is 8.3% of non-blank
+
+most frequent values
+     566  'NA'
+     142  'Novartis Pharma AG|'
+     140  'Novartis Pharma Services AG|'
+     103  'F. Hoffmann-La Roche Ltd|'
+     103  'Bristol-Myers Squibb International Corporation|'
+     102  'AstraZeneca AB|'
+      76  'Eli Lilly and Company|'
+      70  'Merck Sharp & Dohme Corp., a subsidiary of Merck & Co., Inc.|'
+      64  'Boehringer Ingelheim España, S.A.|'
+      54  'Gilead Sciences, Inc.|'
+      52  'Novo Nordisk A/S|'
+      46  'AbbVie Inc.|'
+  ... 2164 values occur exactly once
+
+values that differ only by case/accent/spacing/punctuation
+     140  'Novartis Pharma Services AG|'
+       1  'Novartis Pharma services AG|'
+  --
+     102  'AstraZeneca AB|'
+       2  'Astrazeneca AB|'
+  --
+     103  'Bristol-Myers Squibb International Corporation|'
+       1  'BRISTOL-MYERS SQUIBB INTERNATIONAL CORPORATION|'
+  --
+      64  'Boehringer Ingelheim España, S.A.|'
+       1  'boehringer Ingelheim España, S.A.|'
+       1  'Boehringer Ingelheim España,  S.A.|'
+  --
+      39  'AbbVie Inc.'
+      11  'AbbVie Inc'
+       3  'AbbVie INC'
+       2  'Abbvie Inc.'
+       1  'Abbvie Inc'
+  --
+      46  'AbbVie Inc.|'
+       5  'Abbvie Inc.|'
+  --
+      35  'Instituto de Salud Carlos III|'
+       4  'INSTITUTO DE SALUD CARLOS III|'
+       2  'Instituto de salud Carlos III|'
+       1  'INSTITUTO DE SALUD  CARLOS III|'
+  --
+      37  'F. Hoffmann-La Roche Ltd.|'
+       1  'F. Hoffmann-La Roche LTD.|'
+  --
+
+presence by year
+  year   present   blank    null  absent
+  2017      3304       0       0       0
+  2018      1119       0       0       0
+  2019       629       0       0       0
+  2020       775       0       0       0
+  2021       569       0       0       0
+  2022       357     164       0       0
+  2023        89    1075       0       0
+  2024         1    2347       0       0
+  2025         0    1059       0       0
+  2026         0     359       0       0
