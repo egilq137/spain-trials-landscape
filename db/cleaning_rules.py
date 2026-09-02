@@ -9,17 +9,18 @@ underneath fails loudly instead of silently.
 
 `data/raw/` is never rewritten, so it stays the provenance record — the
 database therefore does not carry shadow columns holding the original values.
-The rules plus the load manifest are enough to get back to any raw value.
+The rules plus the tally in db/cleaning_rules_tally.py are enough to get back
+to any raw value.
 
 Counts in comments are measured over all 11,847 cached studies. The
-corpus-backed tests in tests/test_rules.py re-check them when the cache is
-present.
+corpus-backed tests in tests/test_cleaning_rules.py re-check them when the
+cache is present.
 
 Steps 1-3 of 6: placeholders, sentinels, administration routes, and name
 normalisation. Postcode repair is here too, but it is step 6 work arriving
 early: it is the one rule that cannot be a pure function of a single value,
-because it has to consult the rest of the corpus. The load manifest that counts
-each rule's applications follows in step 4.
+because it has to consult the rest of the corpus. The tally that counts each
+rule's applications follows in step 4.
 """
 
 import collections
@@ -80,7 +81,7 @@ PLACEHOLDERS = frozenset({
 # records -- never blank, never null, never absent -- and -1 is the only value
 # that is not 0 or 1. So there are no pre-existing NULLs for the mapping to
 # collide with, and a NULL in a flag column means "the source sent -1" and
-# nothing else. Re-checked on refresh by tests/test_rules.py, not assumed.
+# nothing else. Re-checked on refresh by tests/test_cleaning_rules.py, not assumed.
 FLAG_UNKNOWN = -1
 
 # The 12 poblacion flags that carry -1, and how many values each. The other 6
@@ -162,7 +163,7 @@ def is_placeholder(text):
     """True when a value means "nothing here" rather than carrying content.
 
     Blank is not a placeholder -- it is already absent, and the distinction
-    matters for the manifest: "the registry wrote NA" and "the registry wrote
+    matters for the tally: "the registry wrote NA" and "the registry wrote
     nothing" are different facts about the source even though both load as
     NULL.
     """
@@ -253,7 +254,7 @@ def clean_text(text):
     Blank becomes None so a NOT NULL constraint catches it rather than an
     empty-string row being created. Placeholders are NOT handled here: whether
     'NA' should become NULL is is_placeholder's decision, and keeping the two
-    apart lets the manifest count them separately.
+    apart lets the tally count them separately.
     """
     if text is None:
         return None
@@ -590,7 +591,7 @@ def resolve_postcode(raw, centre_key, locality, evidence):
     """Recover a 4-digit postcode from the rest of the corpus.
 
     Returns a Resolution: the postcode, and which tier of evidence produced it,
-    so the load manifest can report how each row was settled rather than only
+    so the cleaning-rules tally can report how each row was settled rather than only
     that something changed. `basis` is None when nothing was changed.
 
     Anything that is not exactly four digits passes through unchanged -- the

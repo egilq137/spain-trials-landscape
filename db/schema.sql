@@ -63,9 +63,9 @@ CREATE TABLE sponsors (
     -- INTEGER PRIMARY KEY aliases the rowid, so ids auto-assign without the
     -- AUTOINCREMENT keyword, which costs writes and buys nothing here.
     sponsor_id   INTEGER PRIMARY KEY,
-    -- rules.match_key output: identity. 3,336 rows.
+    -- cleaning_rules.match_key output: identity. 3,336 rows.
     promotor_key TEXT NOT NULL UNIQUE CHECK (promotor_key <> ''),
-    -- rules.clean_text output: the most frequent CLEANED spelling, for
+    -- cleaning_rules.clean_text output: the most frequent CLEANED spelling, for
     -- display. Not the raw mode - that is 'Merck Sharp &amp; Dohme LLC'.
     promotor     TEXT NOT NULL        CHECK (promotor     <> '')
 ) STRICT;
@@ -209,9 +209,9 @@ CREATE INDEX idx_studies_fecha_autorizacion ON studies(fecha_autorizacion_aemps)
 -- one era with a denominator of a quarter.
 CREATE TABLE funders (
     funder_id  INTEGER PRIMARY KEY,
-    -- rules.match_key output: identity, same rule as sponsors.promotor_key.
+    -- cleaning_rules.match_key output: identity, same rule as sponsors.promotor_key.
     nombre_key TEXT NOT NULL UNIQUE CHECK (nombre_key <> ''),
-    -- rules.clean_text output, for display.
+    -- cleaning_rules.clean_text output, for display.
     nombre     TEXT NOT NULL        CHECK (nombre     <> '')
 ) STRICT;
 
@@ -224,7 +224,7 @@ CREATE TABLE funders (
 -- 'NA' is the most frequent funder name in the source (572 occurrences), and
 -- placeholders create neither a funder nor a bridge row - a missing bridge row
 -- already means "no funder recorded", so this needs no representation here.
--- Enforced in the loader against rules.PLACEHOLDERS rather than by a CHECK:
+-- Enforced in the loader against cleaning_rules.PLACEHOLDERS rather than by a CHECK:
 -- restating the list in SQL would be a second copy that can drift from the one
 -- the loader actually applies.
 CREATE TABLE study_funders (
@@ -302,7 +302,7 @@ CREATE INDEX idx_study_therapeutic_areas_eutct ON study_therapeutic_areas(eutct_
 CREATE TABLE centers (
     center_id  INTEGER PRIMARY KEY,
     -- The identity part of the key: referencia when it is a real reference,
-    -- otherwise rules.match_key of the name. Computed by the loader because
+    -- otherwise cleaning_rules.match_key of the name. Computed by the loader because
     -- the choice between the two is conditional. CHECK (<> '') is what stops
     -- the 5 entries that name no site - 3 blank in every field but situacion,
     -- 2 whose name is '.' or '-' - from collapsing into one nameless centre
@@ -370,11 +370,11 @@ CREATE INDEX idx_study_centers_center_id ON study_centers(center_id);
 -- source pipe-delimits the field, implying a list, but 0 of 17,268 populated
 -- elements carry two: the delimiter models a relationship the data never uses.
 --
--- The 129 raw values reach 53 canonical routes through rules.ROUTE_CANONICAL,
+-- The 129 raw values reach 53 canonical routes through cleaning_rules.ROUTE_CANONICAL,
 -- which merges phrasing ('oral' / 'oral use'), real misspellings
 -- ('intravenious infusion', 466 rows) and forms that name their route
 -- unambiguously. Every raw value must appear in exactly one of the two route
--- maps; tests/test_rules.py fails on a fallthrough or a dead entry.
+-- maps; tests/test_cleaning_rules.py fails on a fallthrough or a dead entry.
 --
 -- No grupo column. Merging 'oral use' into 'oral' is mechanical; deciding
 -- that intramuscular counts as "other" is a judgement about what a question
@@ -386,7 +386,7 @@ CREATE INDEX idx_study_centers_center_id ON study_centers(center_id);
 -- 'injection, route unspecified' (a dosage form, not a route) and 'multiple
 -- routes' (16 values over 256 rows that genuinely name two, e.g. 'oral and
 -- iv'). The 299 rows saying 'unknown use' or 'other use' name no route at all
--- and get no route_id - rules.ROUTE_NOT_A_ROUTE.
+-- and get no route_id - cleaning_rules.ROUTE_NOT_A_ROUTE.
 CREATE TABLE administration_routes (
     route_id INTEGER PRIMARY KEY,
     nombre   TEXT NOT NULL UNIQUE CHECK (nombre <> '')

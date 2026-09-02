@@ -1,4 +1,4 @@
-"""Resolving 85,410 centre entries into 3,361 physical sites.
+"""Resolving 85,410 centre entries into 3,360 physical sites.
 
 Every other transform in this project is a pure function of one record. This
 one cannot be, and the reason is worth stating: a centre entry does not carry
@@ -8,9 +8,9 @@ that only the rest of the corpus can supply. So the corpus is read once to
 build an index of what it collectively knows, and a second time to resolve each
 entry against it.
 
-`build_center_index` -> `center_row` follows the shape rules.py already uses
-for `build_postcode_evidence` -> `resolve_postcode`: the index is built by a
-pass and PASSED IN, never imported from a module global. The resolving
+`build_center_index` -> `center_row` follows the shape cleaning_rules.py
+already uses for `build_postcode_evidence` -> `resolve_postcode`: the index is
+built by a pass and PASSED IN, never imported from a module global. The resolving
 function stays pure given its arguments, so it can be tested on a handful of
 hand-written entries instead of on 85,410 real ones.
 
@@ -22,7 +22,7 @@ Three resolutions happen here, all of them "most frequent wins":
   * **provincia and ccaa**, because 149 sites disagree with themselves; 132 of
     those only because one variant is blank, and the other 17 are
     single-occurrence typos that lose to the majority by construction
-  * **the postcode**, delegated to rules.resolve_postcode
+  * **the postcode**, delegated to cleaning_rules.resolve_postcode
 
 Identity is the awkward part and is deliberately two-layered. A site is
 (reference-or-name, locality, postcode), but the postcode is the field being
@@ -35,7 +35,7 @@ which is the exact merge the site-level key exists to prevent.
 
 import collections
 
-from db.rules import (
+from db.cleaning_rules import (
     build_postcode_evidence,
     clean_text,
     fold,
@@ -56,9 +56,11 @@ Entry = collections.namedtuple(
 def read_entry(raw):
     """One raw centro dict as the fields a site is built from.
 
-    Returns None when the entry names no site at all. Three of the 85,410 are
-    blank in every field but `situacion`, so there is nothing for identity to
-    be built from and nothing to store -- they create no centre and no bridge
+    Returns None when the entry names no site at all -- 5 of the 85,410. Three
+    are blank in every field but `situacion`; two name the site '.' or '-',
+    which folds away to nothing, so match_key gives them no identity either.
+    Same outcome by two routes, which is why the rule is "identity is empty"
+    rather than "the fields are blank". They create no centre and no bridge
     row, the same shape as a placeholder funder.
     """
     referencia = clean_text(raw.get("referencia"))
@@ -140,7 +142,7 @@ def _most_frequent(counter, default=None):
     return min(counter.items(), key=lambda item: (-item[1], item[0]))[0]
 
 
-def center_row(raw, index, manifest=None):
+def center_row(raw, index, tally=None):
     """(site key, row) for one raw centro dict, or None when it names no site.
 
     The site key is what the loader deduplicates on; the row is what it
@@ -150,17 +152,17 @@ def center_row(raw, index, manifest=None):
     """
     entry = read_entry(raw)
     if entry is None:
-        if manifest is not None:
-            manifest.applied("centers.nombre", "names no site -> no centre")
+        if tally is not None:
+            tally.applied("centers.nombre", "names no site -> no centre")
         return None
 
     key = _site_key(entry, index.postcodes)
-    if manifest is not None:
+    if tally is not None:
         resolution = resolve_postcode(
             entry.cod_postal, evidence_key(entry), entry.localidad,
             index.postcodes)
         if resolution.basis is not None:
-            manifest.applied("centers.cod_postal",
+            tally.applied("centers.cod_postal",
                              "digit recovered ({})".format(resolution.basis))
 
     regions = index.regions.get(key, {})

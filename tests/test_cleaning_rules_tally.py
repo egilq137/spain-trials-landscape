@@ -1,26 +1,26 @@
-"""Tests for db.manifest and the counting wired into db.transform.
+"""Tests for db.cleaning_rules_tally and the counting wired into db.transform.
 
 Success criteria:
-  Manifest: counts by (field, rule); tracks records seen separately from
-    changes made, so the report has a denominator; an empty manifest reports
+  CleaningRulesTally: counts by (field, rule); tracks records seen separately from
+    changes made, so the report has a denominator; an empty tally reports
     that nothing changed rather than an empty report
   counting is driven by the rule's OUTPUT, not by re-testing its condition --
-    the one thing a manifest must never do is drift from the rule it claims to
+    the one thing a tally must never do is drift from the rule it claims to
     describe, so a record with nothing to change must produce no counts at all
   the two total sentinels are counted APART: "the registry declined to report"
     and "this is not a count" are different facts that both load as NULL
-  corpus: every number the manifest reports is the number db/rules.py claims,
-    field for field -- this is the test that makes the manifest trustworthy,
-    because a manifest that quietly disagrees with the rules is worse than no
-    manifest at all
+  corpus: every number the tally reports is the number db/cleaning_rules.py claims,
+    field for field -- this is the test that makes the tally trustworthy,
+    because a tally that quietly disagrees with the rules is worse than no
+    tally at all
 """
 
 import json
 import unittest
 from pathlib import Path
 
-from db.manifest import Manifest
-from db.rules import FLAGS_WITH_UNKNOWN
+from db.cleaning_rules_tally import CleaningRulesTally
+from db.cleaning_rules import FLAGS_WITH_UNKNOWN
 from db.transform import POBLACION_FLAGS, PROPOSITO_FLAGS, sponsor_name, study_row
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw" / "detalle"
@@ -48,38 +48,38 @@ def raw_record(**overrides):
     return record
 
 
-class TestManifest(unittest.TestCase):
+class TestTally(unittest.TestCase):
     def test_counts_by_field_and_rule(self):
-        manifest = Manifest()
-        manifest.applied("studies.acronimo", "placeholder -> NULL")
-        manifest.applied("studies.acronimo", "placeholder -> NULL")
-        manifest.applied("studies.urgencia", "-1 (unknown) -> NULL")
-        self.assertEqual(manifest.counts(), {
+        tally = CleaningRulesTally()
+        tally.applied("studies.acronimo", "placeholder -> NULL")
+        tally.applied("studies.acronimo", "placeholder -> NULL")
+        tally.applied("studies.urgencia", "-1 (unknown) -> NULL")
+        self.assertEqual(tally.counts(), {
             ("studies.acronimo", "placeholder -> NULL"): 2,
             ("studies.urgencia", "-1 (unknown) -> NULL"): 1,
         })
-        self.assertEqual(manifest.total(), 3)
+        self.assertEqual(tally.total(), 3)
 
     def test_records_seen_is_separate_from_changes_made(self):
         # A count without a denominator cannot be read. 4,763 placeholders
         # means one thing in 11,847 records and another in 20,000.
-        manifest = Manifest()
+        tally = CleaningRulesTally()
         for _ in range(5):
-            manifest.saw_record()
-        manifest.applied("studies.acronimo", "placeholder -> NULL")
-        self.assertEqual(manifest.records, 5)
-        self.assertEqual(manifest.total(), 1)
+            tally.saw_record()
+        tally.applied("studies.acronimo", "placeholder -> NULL")
+        self.assertEqual(tally.records, 5)
+        self.assertEqual(tally.total(), 1)
 
-    def test_an_empty_manifest_says_so(self):
-        manifest = Manifest()
-        manifest.saw_record()
-        self.assertIn("nothing changed", manifest.report())
+    def test_an_empty_tally_says_so(self):
+        tally = CleaningRulesTally()
+        tally.saw_record()
+        self.assertIn("nothing changed", tally.report())
 
     def test_the_report_names_every_field_and_rule_it_counted(self):
-        manifest = Manifest()
-        manifest.saw_record()
-        manifest.applied("studies.poblacion_total", "0 (not reported) -> NULL")
-        report = manifest.report()
+        tally = CleaningRulesTally()
+        tally.saw_record()
+        tally.applied("studies.poblacion_total", "0 (not reported) -> NULL")
+        report = tally.report()
         for expected in ("studies.poblacion_total", "0 (not reported) -> NULL",
                          "total changes", "1"):
             with self.subTest(expected=expected):
@@ -88,18 +88,18 @@ class TestManifest(unittest.TestCase):
 
 class TestTransformCounting(unittest.TestCase):
     def counts(self, **overrides):
-        manifest = Manifest()
+        tally = CleaningRulesTally()
         record = raw_record(**overrides)
-        sponsor_name(record, manifest)
-        study_row(record, 1, manifest)
-        return manifest
+        sponsor_name(record, tally)
+        study_row(record, 1, tally)
+        return tally
 
     def test_a_clean_record_produces_no_counts(self):
         # The drift guard. If counting re-tested the rules' conditions instead
         # of reading their output, an over-broad condition would show up here.
-        manifest = self.counts()
-        self.assertEqual(manifest.counts(), {})
-        self.assertEqual(manifest.records, 1)
+        tally = self.counts()
+        self.assertEqual(tally.counts(), {})
+        self.assertEqual(tally.records, 1)
 
     def test_a_placeholder_acronym_is_counted(self):
         self.assertEqual(
@@ -132,7 +132,7 @@ class TestTransformCounting(unittest.TestCase):
             self.counts(organismo={"promotor": "Merck &amp; Co"}).counts(),
             {("sponsors.promotor", "markup or spacing cleaned"): 1})
 
-    def test_the_manifest_is_optional(self):
+    def test_the_tally_is_optional(self):
         # The transform has to stay usable on its own.
         record = raw_record(acronimo="NA")
         self.assertIsNone(study_row(record, 1)["acronimo"])
@@ -140,14 +140,14 @@ class TestTransformCounting(unittest.TestCase):
 
     def test_a_value_the_rules_do_not_touch_is_not_counted(self):
         # An unexpected representation reaches the schema instead, and the
-        # manifest must not claim to have handled it.
-        manifest = self.counts(poblacion={"urgencia": "-1"})
-        self.assertEqual(manifest.counts(), {})
+        # tally must not claim to have handled it.
+        tally = self.counts(poblacion={"urgencia": "-1"})
+        self.assertEqual(tally.counts(), {})
 
 
 @requires_corpus
-class TestManifestAgainstCorpus(unittest.TestCase):
-    """The manifest must report exactly what db/rules.py claims."""
+class TestTallyAgainstCorpus(unittest.TestCase):
+    """The tally must report exactly what db/cleaning_rules.py claims."""
 
     @classmethod
     def setUpClass(cls):
@@ -157,20 +157,20 @@ class TestManifestAgainstCorpus(unittest.TestCase):
                 continue
             with path.open(encoding="utf-8") as handle:
                 records.extend(json.loads(line) for line in handle)
-        cls.manifest = Manifest()
+        cls.tally = CleaningRulesTally()
         for record in records:
-            sponsor_name(record, cls.manifest)
-            study_row(record, 1, cls.manifest)
+            sponsor_name(record, cls.tally)
+            study_row(record, 1, cls.tally)
 
     def test_it_saw_every_record(self):
-        self.assertEqual(self.manifest.records, 11847)
+        self.assertEqual(self.tally.records, 11847)
 
     def test_the_flag_counts_are_the_ones_rules_py_declares(self):
         # Not "roughly the same" -- the same dict. If a refresh adds a -1 to a
         # thirteenth flag, this fails and FLAGS_WITH_UNKNOWN gets updated
         # alongside the NOT NULL constraints that depend on it.
         counted = {}
-        for (field, rule), count in self.manifest.counts().items():
+        for (field, rule), count in self.tally.counts().items():
             if rule.startswith("-1"):
                 counted[field[len("studies."):]] = count
         columns = {POBLACION_FLAGS[k]: v for k, v in FLAGS_WITH_UNKNOWN.items()}
@@ -178,7 +178,7 @@ class TestManifestAgainstCorpus(unittest.TestCase):
         self.assertEqual(sum(counted.values()), 54)
 
     def test_the_placeholder_and_sentinel_counts_match_the_rules(self):
-        counts = self.manifest.counts()
+        counts = self.tally.counts()
         self.assertEqual(
             counts[("studies.acronimo", "placeholder -> NULL")], 4763)
         self.assertEqual(
@@ -187,9 +187,9 @@ class TestManifestAgainstCorpus(unittest.TestCase):
             counts[("studies.poblacion_total", "not a count -> NULL")], 1)
 
     def test_the_report_is_readable_and_totals_correctly(self):
-        report = self.manifest.report()
+        report = self.tally.report()
         self.assertIn("11,847 records", report)
-        self.assertIn("{:,}".format(self.manifest.total()), report)
+        self.assertIn("{:,}".format(self.tally.total()), report)
 
 
 if __name__ == "__main__":

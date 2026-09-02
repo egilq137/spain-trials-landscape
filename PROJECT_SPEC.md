@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules written as data in db/rules.py, steps 1-4 of 6 done (placeholders and sentinels, administration routes, name normalisation, postcode repair by triangulation, and the load manifest) and applied in db/transform.py. Next: db/schema.sql (2.3), which steps 5-6 are blocked on
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules written as data in db/cleaning_rules.py, steps 1-4 of 6 done (placeholders and sentinels, administration routes, name normalisation, postcode repair by triangulation, and the cleaning-rules tally) and applied in db/transform.py. Next: db/schema.sql (2.3), which steps 5-6 are blocked on
 last updated: 2026-09-01
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
@@ -221,7 +221,7 @@ one sponsor split by markup alone. Case-folding cannot fix it; it needs
 decoding. Worth re-checking on every other free-text field.
 
 **Decision — normalise in the loader, enforce in the schema.** Implemented as
-two functions in `db/rules.py`, because a name is used for two things and the
+two functions in `db/cleaning_rules.py`, because a name is used for two things and the
 two rules are not the same one applied twice:
 
   - `clean_text` — the form that is **stored and shown**. Reverses damage and
@@ -850,7 +850,7 @@ Two separable problems, which belong in different places:
     mapping lives in one place, and `nombre` is kept so any later question can
     regroup from the original.
 
-**Settled — harmonise, but do not bucket.** `db/rules.py` reduces the 129 raw
+**Settled — harmonise, but do not bucket.** `db/cleaning_rules.py` reduces the 129 raw
 values to **53 canonical routes** via `ROUTE_CANONICAL`, plus a small
 `ROUTE_NOT_A_ROUTE` set for the 299 rows (1.7%) that name no route at all —
 `unknown use`, `other use`, `route of administration not applicable`.
@@ -1195,7 +1195,7 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
   then write the DDL from §3.2c.
 - Each table's findings go into §3.2c before its DDL is written.
 
-**2.2b — Cleaning rules as data (`db/rules.py`)**
+**2.2b — Cleaning rules as data (`db/cleaning_rules.py`)**
 Six steps, so each rule lands with the count that justifies it and a corpus
 test that fails when a refresh changes the data underneath.
 - [x] 1. Placeholders and sentinels — `PLACEHOLDERS`, `FLAG_UNKNOWN`,
@@ -1213,18 +1213,18 @@ test that fails when a refresh changes the data underneath.
       resolved from the corpus, 7 left raw. Strictly this is step 6 work:
       it is the only rule that must read the whole corpus first, so its
       evidence index is built by a pass in the loader and passed in.
-- [x] 4. The load manifest (`db/manifest.py`) — counts every rule application
+- [x] 4. The cleaning-rules tally (`db/cleaning_rules_tally.py`) — counts every rule application
       by (field, rule), so a load reports what it changed rather than only
       that it succeeded. Over the corpus: 7,652 changes in 11,847 records —
       4,763 placeholder acronyms, 2,201 unreported totals, 585 sponsor names
       cleaned of markup or spacing, 54 `-1` flags across 12 columns, 1 total
       that was never a count.
       - **Counts come from each rule's output, never from re-testing its
-        condition.** `is_placeholder` is not called twice. A manifest that
+        condition.** `is_placeholder` is not called twice. A tally that
         re-runs the test can drift away from the rule it claims to describe,
-        which is the one failure mode a manifest must not have; a corpus test
+        which is the one failure mode a tally must not have; a corpus test
         asserts the counted flag totals are the same dict as
-        `rules.FLAGS_WITH_UNKNOWN`.
+        `cleaning_rules.FLAGS_WITH_UNKNOWN`.
       - **It counts, it does not log.** Per-row provenance would be a table
         the size of the database, and `data/raw/` already holds every original
         value. Records seen is tracked separately from changes made, so the
@@ -1232,7 +1232,7 @@ test that fails when a refresh changes the data underneath.
       - The two `poblacion_total` sentinels are counted apart: "the registry
         declined to report" and "this is not a count" both load as NULL but
         are different facts.
-- [ ] 5. Wire the manifest into `db/validate.py` as a dry run.
+- [ ] 5. Wire the tally into `db/validate.py` as a dry run.
 - [ ] 6. Corpus-wide resolutions — most frequent centre name, most frequent
       non-blank region. These need two passes over the corpus, so they are
       loader work, not pure-function work. Postcode repair (3b) is already

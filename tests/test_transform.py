@@ -16,7 +16,7 @@ Success criteria per function:
     one key, while two companies in one group stay two keys
   the two kinds of change: structural conversion never repairs an unexpected
     value, and every value that DOES change is changed by a named rule in
-    db/rules.py -- '-1' as a string still reaches the schema and fails,
+    db/cleaning_rules.py -- '-1' as a string still reaches the schema and fails,
     because that is not the representation the rule was measured against
   funders: the pipe-delimited field splits whether or not it ends with a
     separator; placeholders create no funder at all, because absence of a
@@ -171,7 +171,7 @@ class TestStudyRow(unittest.TestCase):
         # This test used to assert the opposite: ' NA ' stayed 'NA', because
         # deciding that 'NA' means "no acronym" belonged in a named, documented
         # normalisation step rather than hidden inside a trim. That step now
-        # exists -- rules.PLACEHOLDERS, with the count that justifies it and a
+        # exists -- cleaning_rules.PLACEHOLDERS, with the count that justifies it and a
         # corpus test behind it -- so the promise is kept, not broken.
         self.assertIsNone(self.row()["acronimo"])
         self.assertIsNone(self.row(acronimo="   ")["acronimo"])

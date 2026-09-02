@@ -11,26 +11,26 @@ convert is passed through UNCHANGED rather than nulled, so the schema's own
 constraints reject it and name it. A transform that quietly repairs odd input
 hides exactly what db/validate.py exists to find.
 
-**Declared rules** come from db/rules.py and are applied on top. -1 becoming
-NULL is not this module deciding something; it is a rule that was measured
-against the corpus, justified in writing, and is re-checked by a test that
+**Declared rules** come from db/cleaning_rules.py and are applied on top. -1
+becoming NULL is not this module deciding something; it is a rule measured
+against the corpus, justified in writing, and re-checked by a test that
 fails if a refresh changes the data underneath. The distinction that matters
 is not "does the value change" but "is the change stated somewhere a reader
 can find it" -- so no rule is invented here, and every rule applied here is
-one line in rules.py.
+one line in cleaning_rules.py.
 
 Order matters: structural first, then the rule. flag('-1') returns -1
 unchanged because -1 is not '0' or '1'; clean_flag then turns it into NULL.
 An unexpected value survives both and still reaches the schema.
 
-An optional db.manifest.Manifest counts what the rules changed. Counts are
-taken from each rule's OUTPUT, never by re-testing its condition, so the
-manifest cannot drift away from the rules it describes.
+An optional CleaningRulesTally (db/cleaning_rules_tally.py) counts what the
+rules changed. Counts are taken from each rule's OUTPUT, never by re-testing
+its condition, so the tally cannot drift away from the rules it describes.
 """
 
 import collections
 
-from db.rules import (
+from db.cleaning_rules import (
     ROUTE_CANONICAL,
     ROUTE_NOT_A_ROUTE,
     TOTAL_UNKNOWN,
@@ -150,7 +150,7 @@ def acronym(raw):
     return None if is_placeholder(raw) else clean_text(raw)
 
 
-def sponsor_name(record, manifest=None):
+def sponsor_name(record, tally=None):
     """organismo.promotor as it should be displayed. Blank -> None.
 
     Cleaned rather than raw: the raw mode for the largest sponsor is
@@ -158,8 +158,8 @@ def sponsor_name(record, manifest=None):
     """
     raw = (record.get("organismo") or {}).get("promotor")
     cleaned = clean_text(raw)
-    if manifest is not None and raw is not None and cleaned != raw.strip():
-        manifest.applied("sponsors.promotor", "markup or spacing cleaned")
+    if tally is not None and raw is not None and cleaned != raw.strip():
+        tally.applied("sponsors.promotor", "markup or spacing cleaned")
     return cleaned
 
 
@@ -174,7 +174,7 @@ def sponsor_key(record):
     return match_key((record.get("organismo") or {}).get("promotor"))
 
 
-def funders(record, manifest=None):
+def funders(record, tally=None):
     """[(key, display name)] for one study, in source order.
 
     `financiador` is pipe-delimited and the delimiter is inconsistent -- 5,280
@@ -198,17 +198,17 @@ def funders(record, manifest=None):
         if not part.strip():
             continue
         if is_placeholder(part):
-            if manifest is not None:
-                manifest.applied("funders.nombre", "placeholder -> no funder")
+            if tally is not None:
+                tally.applied("funders.nombre", "placeholder -> no funder")
             continue
         key, name = match_key(part), clean_text(part)
         if key is None or key in seen:
-            if manifest is not None and key is not None:
-                manifest.applied("funders.nombre", "repeated within a study")
+            if tally is not None and key is not None:
+                tally.applied("funders.nombre", "repeated within a study")
             continue
         seen.add(key)
-        if manifest is not None and name != part.strip():
-            manifest.applied("funders.nombre", "markup or spacing cleaned")
+        if tally is not None and name != part.strip():
+            tally.applied("funders.nombre", "markup or spacing cleaned")
         out.append((key, name))
     return out
 
@@ -230,11 +230,11 @@ def therapeutic_area_rows(record):
             for area in areas]
 
 
-def route_name(raw, manifest=None):
+def route_name(raw, tally=None):
     """The canonical administration route, or None when the value names none.
 
     129 raw values for 53 real routes, harmonised through
-    rules.ROUTE_CANONICAL: phrasing ('oral' / 'oral use'), real misspellings
+    cleaning_rules.ROUTE_CANONICAL: phrasing ('oral' / 'oral use'), real misspellings
     ('intravenious infusion', 466 rows), and dosage forms that name their
     route unambiguously.
 
@@ -255,18 +255,18 @@ def route_name(raw, manifest=None):
         return None
     key = route_key(raw)
     if key in ROUTE_NOT_A_ROUTE:
-        if manifest is not None:
-            manifest.applied("interventions.route_id", "names no route -> NULL")
+        if tally is not None:
+            tally.applied("interventions.route_id", "names no route -> NULL")
         return None
     canonical = ROUTE_CANONICAL.get(key)
     if canonical is None:
         return text
-    if manifest is not None and canonical != text:
-        manifest.applied("administration_routes.nombre", "harmonised")
+    if tally is not None and canonical != text:
+        tally.applied("administration_routes.nombre", "harmonised")
     return canonical
 
 
-def substances(intervention, manifest=None):
+def substances(intervention, tally=None):
     """[(key, display name)] for one intervention, in source order.
 
     Pipe-delimited like financiador, and handled the same way: split, discard
@@ -281,8 +281,8 @@ def substances(intervention, manifest=None):
         if not part.strip():
             continue
         if is_placeholder(part):
-            if manifest is not None:
-                manifest.applied("substances.nombre",
+            if tally is not None:
+                tally.applied("substances.nombre",
                                  "placeholder -> no substance")
             continue
         key, name = match_key(part), clean_text(part)
@@ -293,7 +293,7 @@ def substances(intervention, manifest=None):
     return out
 
 
-def intervention_rows(record, manifest=None):
+def intervention_rows(record, tally=None):
     """One Intervention per element of intervenciones.intervencion.
 
     The block is genuinely optional, unlike centros: it is ABSENT from 1,514
@@ -311,8 +311,8 @@ def intervention_rows(record, manifest=None):
         # 100% present, but '-' appears 1,922 times and 'NA' 283. Same
         # enumerated placeholder list as acronimo and financiador.
         name = None if is_placeholder(raw_name) else clean_text(raw_name)
-        if manifest is not None and is_placeholder(raw_name):
-            manifest.applied("interventions.nombre_comercial",
+        if tally is not None and is_placeholder(raw_name):
+            tally.applied("interventions.nombre_comercial",
                              "placeholder -> NULL")
         raw_huerfano = element.get("huerfano")
         rows.append(Intervention(
@@ -323,20 +323,20 @@ def intervention_rows(record, manifest=None):
             # declare here, only a missing value.
             huerfano=(flag(raw_huerfano)
                       if str(raw_huerfano or "").strip() else None),
-            route=route_name(element.get("viasAdministracion"), manifest),
-            substances=substances(element, manifest)))
+            route=route_name(element.get("viasAdministracion"), tally),
+            substances=substances(element, tally)))
     return rows
 
 
-def study_row(record, sponsor_id, manifest=None):
+def study_row(record, sponsor_id, tally=None):
     """One studies row. sponsor_id is passed in, not looked up.
 
-    `manifest` counts what the declared rules changed. It is optional so that
+    `tally` counts what the declared rules changed. It is optional so that
     the transform stays usable on its own, and every count is taken from the
     rule's OUTPUT rather than by re-testing its condition -- `is_placeholder`
-    is not called twice. Counting by re-running the test would let the manifest
+    is not called twice. Counting by re-running the test would let the tally
     drift away from the rule it claims to describe, which is the one failure
-    mode a manifest must not have.
+    mode a tally must not have.
 
     Stores the calendario dates as recorded and derives nothing from them. An
     earlier version computed censored/survival_start/survival_end here; that
@@ -356,8 +356,8 @@ def study_row(record, sponsor_id, manifest=None):
     calendario = record.get("calendario") or {}
     poblacion = record.get("poblacion") or {}
     proposito = record.get("proposito") or {}
-    if manifest is not None:
-        manifest.saw_record()
+    if tally is not None:
+        tally.saw_record()
 
     raw_acronym = record.get("acronimo")
     row = {
@@ -366,12 +366,12 @@ def study_row(record, sponsor_id, manifest=None):
         "acronimo": acronym(raw_acronym),
         "enfermedad_rara": flag(record.get("enfermedadRara")),
     }
-    if manifest is not None and raw_acronym and raw_acronym.strip():
+    if tally is not None and raw_acronym and raw_acronym.strip():
         # Non-blank in, nothing out: only is_placeholder can do that.
         if row["acronimo"] is None:
-            manifest.applied("studies.acronimo", "placeholder -> NULL")
+            tally.applied("studies.acronimo", "placeholder -> NULL")
         elif row["acronimo"] != raw_acronym.strip():
-            manifest.applied("studies.acronimo", "markup or spacing cleaned")
+            tally.applied("studies.acronimo", "markup or spacing cleaned")
 
     for raw_key, column in CALENDARIO_DATES.items():
         row[column] = iso_date(calendario.get(raw_key))
@@ -383,17 +383,17 @@ def study_row(record, sponsor_id, manifest=None):
             row[column] = clean_flag(flag(raw))
             # Every flag is present in every record and is 0, 1 or -1, so a
             # NULL out of a non-None in can only be the sentinel.
-            if manifest is not None and raw is not None and row[column] is None:
-                manifest.applied("studies." + column, "-1 (unknown) -> NULL")
+            if tally is not None and raw is not None and row[column] is None:
+                tally.applied("studies." + column, "-1 (unknown) -> NULL")
 
     raw_total = poblacion.get("total")
     row["poblacion_total"] = clean_total(integer(raw_total))
-    if manifest is not None and raw_total is not None \
+    if tally is not None and raw_total is not None \
             and row["poblacion_total"] is None:
         # Two sentinels with different meanings, counted apart: one is the
         # registry declining to report, the other is a value that is not a
         # count at all (PROJECT_SPEC 3.2c).
-        manifest.applied(
+        tally.applied(
             "studies.poblacion_total",
             "0 (not reported) -> NULL" if integer(raw_total) == TOTAL_UNKNOWN
             else "not a count -> NULL")

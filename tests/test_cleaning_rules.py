@@ -1,4 +1,4 @@
-"""Tests for db.rules (steps 1-3: placeholders, sentinels, routes, names).
+"""Tests for db.cleaning_rules (steps 1-3: placeholders, sentinels, routes, names).
 
 Two layers, deliberately. The unit tests are pure and always run. The
 corpus-backed tests re-measure each rule against all 11,847 cached studies and
@@ -54,7 +54,7 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
-from db.rules import (
+from db.cleaning_rules import (
     FLAG_UNKNOWN,
     FLAGS_WITH_UNKNOWN,
     IMPOSSIBLE_DATE_STUDIES,

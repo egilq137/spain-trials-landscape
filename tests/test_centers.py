@@ -36,7 +36,7 @@ from db.centers import (
     read_entry,
     study_centers,
 )
-from db.manifest import Manifest
+from db.cleaning_rules_tally import CleaningRulesTally
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw" / "detalle"
 
@@ -232,11 +232,11 @@ class TestAgainstCorpus(unittest.TestCase):
         self.assertEqual(len(keys), 3360)
 
     def test_postcode_repairs_land_in_the_tiers_the_rule_claims(self):
-        manifest = Manifest()
+        tally = CleaningRulesTally()
         for entry in self.entries:
-            center_row(entry, self.index, manifest)
+            center_row(entry, self.index, tally)
         self.assertEqual(
-            manifest.counts(),
+            tally.counts(),
             {("centers.cod_postal", "digit recovered (same centre)"): 226,
              ("centers.cod_postal", "digit recovered (same locality)"): 47,
              ("centers.cod_postal", "digit recovered (province agrees)"): 10,
