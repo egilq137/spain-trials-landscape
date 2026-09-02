@@ -272,7 +272,7 @@ class TestFunders(unittest.TestCase):
     def test_identity_and_display_are_the_two_different_forms(self):
         [(key, name)] = self.funders_of("  Merck Sharp &amp; Dohme  |")
         self.assertEqual(name, "Merck Sharp & Dohme")
-        self.assertEqual(key, "merck sharp & dohme")
+        self.assertEqual(key, "mercksharp&dohme")
 
     def test_blank_and_absent_yield_nothing(self):
         self.assertEqual(self.funders_of(""), [])

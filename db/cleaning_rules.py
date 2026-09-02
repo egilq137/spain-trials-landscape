@@ -372,12 +372,40 @@ IDENTITY_PUNCTUATION = ".,;:()[]{}\"/\\!¡?¿" + APOSTROPHES
 # one of them differs by anything except dots and spacing.
 INITIALS = re.compile(r"\b(?:[a-z0-9] )+[a-z0-9]\b")
 
+# And having got that far, the space itself is style too. `Astra Zeneca` and
+# `AstraZeneca` are one company; so are `Pharma Mar` and `PharmaMar`,
+# `Geiser Pharma` and `GeiserPharma`, `AB Science` and `ABScience`, `World
+# Antidoping Agency` and `World Anti Doping Agency`. The registry also writes
+# `Boehringer Ingelhei m España` with a space inside a word, and `BTI
+# Biotechnology Institute I mas D` for `IMASD` -- Spanish `I+D`, spelled out.
+#
+# Checked the way the others were: 15 sponsor groups and 13 funder groups
+# merge, and every one is a single organisation. Substances merge 3, all of
+# them spacing inside a formula (`CD34+CELLS` / `CD34+ CELLS`).
+#
+# The key stops being readable -- `astrazenecaab` -- which is fine, because it
+# is compared and never shown. The display column is what a reader sees.
+SPACES = re.compile(r"\s+")
+
+
+def _spaced_key(text):
+    """The identity form with its spaces still in.
+
+    Only `organisation_key` needs this: its clause markers are phrases, so the
+    cut has to happen while there are still word boundaries to cut at.
+    """
+    cleaned = clean_text(text)
+    if cleaned is None:
+        return None
+    spaced = "".join(" " if c in IDENTITY_PUNCTUATION else c for c in cleaned)
+    return fold(spaced) or None
+
 
 def match_key(text):
-    """The identity form: clean_text, punctuation to spaces, then folded.
+    """The identity form: cleaned, punctuation and spacing removed, folded.
 
-    Over the corpus: 3,245 distinct cleaned centre names collapse to 2,539
-    identities, and 4,244 substance spellings to 3,352. Sponsors and funders
+    Over the corpus: 3,245 distinct cleaned centre names collapse to 2,520
+    identities, and 4,244 substance spellings to 3,305. Sponsors and funders
     go through `organisation_key` below, which adds one more cut.
 
     Safe to automate because it only removes case, accents, spacing, markup and
@@ -388,12 +416,8 @@ def match_key(text):
     so do `F. Hoffmann-La Roche AG` and `F. Hoffmann-La Roche Ltd`, which is
     why the legal form itself is never stripped here.
     """
-    cleaned = clean_text(text)
-    if cleaned is None:
-        return None
-    spaced = "".join(" " if c in IDENTITY_PUNCTUATION else c for c in cleaned)
-    folded = fold(spaced)
-    return INITIALS.sub(lambda m: m.group(0).replace(" ", ""), folded) or None
+    key = _spaced_key(text)
+    return SPACES.sub("", key) or None if key is not None else None
 
 
 # Phrases that turn an organisation's name into a sentence about it. Counted
@@ -451,14 +475,14 @@ def organisation_key(text):
     in front of it -- a value that begins with one names nobody and is left
     alone for the schema to refuse.
     """
-    key = match_key(text)
+    key = _spaced_key(text)
     if key is None:
         return None
     cuts = [key.find(marker) for marker in ORGANISATION_CLAUSES]
     earliest = min((c for c in cuts if c > 0), default=None)
-    if earliest is None:
-        return key
-    return key[:earliest].strip() or key
+    if earliest is not None:
+        key = key[:earliest].strip() or key
+    return SPACES.sub("", key) or None
 
 
 # ---------------------------------------------------------------------------

@@ -301,19 +301,32 @@ to Phase 2.5.
     imagined. Applied to sponsors and funders only — a hospital or a molecule
     is never described this way.
 
-A third change belongs with them, found while checking the first: removing
-the dots from `S.A.` leaves `s a`, where the same abbreviation written without
-them leaves `sa`. Runs of single characters are closed back up, so `Roche
-Farma S.A.` and `Roche Farma SA` are one sponsor. 58 further identities merge,
-none differing by anything but dots and spacing.
+A third change belongs with them, and it subsumes an intermediate version of
+itself. Removing the dots from `S.A.` leaves `s a`, where the same abbreviation
+written without them leaves `sa` — so spacing had to go too. And once that was
+being fixed, `Astra Zeneca` / `AstraZeneca` and `Pharma Mar` / `PharmaMar` are
+the same problem: **the space is style as much as the comma is.** The identity
+key therefore has no spaces at all. It stops being readable (`astrazenecaab`),
+which is fine — it is compared, never shown, and the display column is what a
+reader sees.
+
+Checked the same way: 15 sponsor groups and 13 funder groups merge and every
+one is a single organisation, including `Boehringer Ingelhei m España` (a
+space inside a word) and `BTI Biotechnology Institute I mas D` for `IMASD` —
+Spanish `I+D`, spelled out. 3 substances merge, all spacing inside a formula
+(`CD34+CELLS` / `CD34+ CELLS`). The 11 centre identities it merges are hyphen
+spacing, `S L` / `SL`, and `SUMMA 112` / `SUMMA112`.
+
+The clause cut in `organisation_key` runs *before* spaces are removed, because
+its markers are phrases and need word boundaries to match against.
 
 | | before | after |
 |---|---|---|
-| sponsors | 3,336 | **2,984** |
-| funders | 2,712 → 2,401 | **2,233** |
-| centre names | 2,580 | **2,539** |
-| substances | 3,364 | **3,352** |
-| centre *sites* | 3,361 | **3,343** |
+| sponsors | 3,336 | **2,968** |
+| funders | 2,712 → 2,401 | **2,216** |
+| centre names | 2,580 | **2,520** |
+| substances | 3,364 | **3,305** |
+| centre *sites* | 3,361 | **3,336** |
 
 **Why this is still normalisation and not entity resolution.** Every merge was
 checked, not assumed: for sponsors, funders and substances, all 211 punctuation

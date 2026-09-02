@@ -63,7 +63,7 @@ CREATE TABLE sponsors (
     -- INTEGER PRIMARY KEY aliases the rowid, so ids auto-assign without the
     -- AUTOINCREMENT keyword, which costs writes and buys nothing here.
     sponsor_id   INTEGER PRIMARY KEY,
-    -- cleaning_rules.organisation_key output: identity. 2,983 rows.
+    -- cleaning_rules.organisation_key output: identity. 2,967 rows.
     promotor_key TEXT NOT NULL UNIQUE CHECK (promotor_key <> ''),
     -- cleaning_rules.clean_text output: the most frequent CLEANED spelling, for
     -- display. Not the raw mode - that is 'Merck Sharp &amp; Dohme LLC'.
@@ -188,7 +188,7 @@ CREATE INDEX idx_studies_fecha_autorizacion ON studies(fecha_autorizacion_aemps)
 -- 1,563 do not - so the loader splits on '|' and discards empties.
 --
 -- Same two-column shape as sponsors, and keyed the same way: 2,712 distinct
--- cleaned names collapse to 2,233 identities, so 479 (17.7%) are variants of
+-- cleaned names collapse to 2,216 identities, so 496 (18.3%) are variants of
 -- a name already present -- case, accents, spacing, markup, punctuation, or a
 -- descriptive clause tacked onto the end.
 --
@@ -283,7 +283,7 @@ CREATE INDEX idx_study_therapeutic_areas_eutct ON study_therapeutic_areas(eutct_
 --   referencia only                 2,849   1,616
 --   referencia + postcode           3,114     488
 --   referencia + locality           3,228     661
---   reference-or-name + both        3,343      11
+--   reference-or-name + both        3,336      11
 --
 -- referencia alone is too coarse in both directions. It is missing from 2,695
 -- entries, and 'NR' appears in 119 covering 103 distinct hospitals, so
@@ -307,8 +307,8 @@ CREATE TABLE centers (
     -- the choice between the two is conditional. CHECK (<> '') is what stops
     -- the 5 entries that name no site - 3 blank in every field but situacion,
     -- 2 whose name is '.' or '-' - from collapsing into one nameless centre
-    -- that every study reporting one would appear to share. 3,342 sites load
-    -- (3,343 before the four impossible-date studies go); 3.2c's 3,361
+    -- that every study reporting one would appear to share. 3,335 sites load
+    -- (3,336 before the four impossible-date studies go); 3.2c's 3,361
     -- counted those five as one and predated punctuation-insensitive names.
     center_key TEXT NOT NULL CHECK (center_key <> ''),
     -- Kept alongside the key so a site can be traced back to what the
@@ -361,7 +361,7 @@ CREATE TABLE study_centers (
 CREATE INDEX idx_study_centers_center_id ON study_centers(center_id);
 
 -- No index on ccaa or cod_postal: geography moved onto centers, which is
--- 3,342 rows. A region rollup scans that in full whatever the plan, and the
+-- 3,335 rows. A region rollup scans that in full whatever the plan, and the
 -- 85,410-row version this replaces is what needed one.
 
 
@@ -401,7 +401,7 @@ CREATE TABLE administration_routes (
 -- Same two-column identity pattern as sponsors, funders and centers, and here
 -- on the strongest evidence of the four: profiled per substance rather than
 -- per pipe-joined string, 15,130 mentions give 4,244 distinct cleaned
--- spellings against 3,352 identities, so 892 merge - 21.0%.
+-- spellings against 3,305 identities, so 939 merge - 22.1%.
 --
 -- 884 mentions are placeholders ('N/A', 'NA', 'Not available'). They create no
 -- substance and no bridge row, the same rule as funders and empty centres.
