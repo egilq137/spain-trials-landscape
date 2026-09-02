@@ -70,6 +70,7 @@ from db.cleaning_rules import (
     fold,
     is_placeholder,
     match_key,
+    organisation_key,
     postcode_candidates,
     resolve_postcode,
     route_key,
@@ -548,10 +549,14 @@ class TestAgainstCorpus(unittest.TestCase):
                 self.assertEqual(len(cleaned), expected)
 
     def test_the_match_key_still_merges_what_it_was_measured_on(self):
-        for kind, expected in (("sponsor", 3336), ("centre", 2580),
-                               ("funder", 2401)):
+        # Sponsors and funders are keyed by organisation_key, which cuts a
+        # descriptive clause on top of match_key; centres are not, because a
+        # hospital is never described that way.
+        for kind, key, expected in (("sponsor", organisation_key, 2984),
+                                    ("centre", match_key, 2539),
+                                    ("funder", organisation_key, 2233)):
             with self.subTest(kind=kind):
-                keys = {match_key(v) for v in self._names(kind)
+                keys = {key(v) for v in self._names(kind)
                         if not is_placeholder(v)}
                 keys.discard(None)
                 self.assertEqual(len(keys), expected)

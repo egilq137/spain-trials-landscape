@@ -39,6 +39,7 @@ from db.cleaning_rules import (
     clean_total,
     is_placeholder,
     match_key,
+    organisation_key,
     route_key,
 )
 
@@ -171,7 +172,7 @@ def sponsor_key(record):
     a foreign key -- normalising afterwards would mean merging rows and
     repointing every reference.
     """
-    return match_key((record.get("organismo") or {}).get("promotor"))
+    return organisation_key((record.get("organismo") or {}).get("promotor"))
 
 
 def funders(record, tally=None):
@@ -201,7 +202,7 @@ def funders(record, tally=None):
             if tally is not None:
                 tally.applied("funders.nombre", "placeholder -> no funder")
             continue
-        key, name = match_key(part), clean_text(part)
+        key, name = organisation_key(part), clean_text(part)
         if key is None or key in seen:
             if tally is not None and key is not None:
                 tally.applied("funders.nombre", "repeated within a study")

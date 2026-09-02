@@ -16,15 +16,17 @@ Counts in comments are measured over all 11,847 cached studies. The
 corpus-backed tests in tests/test_cleaning_rules.py re-check them when the
 cache is present.
 
-Steps 1-3 of 6: placeholders, sentinels, administration routes, and name
-normalisation. Postcode repair is here too, but it is step 6 work arriving
-early: it is the one rule that cannot be a pure function of a single value,
-because it has to consult the rest of the corpus. The tally that counts each
-rule's applications follows in step 4.
+Placeholders, sentinels, administration routes, and name normalisation.
+Postcode repair is here too, though it is the one rule that cannot be a pure
+function of a single value -- it has to consult the rest of the corpus, so its
+evidence is built by a pass in the loader and passed in. The corpus-wide
+resolutions that need the same treatment live in db/centers.py, and the tally
+that counts every rule's applications in db/cleaning_rules_tally.py.
 """
 
 import collections
 import html
+import re
 import unicodedata
 
 # ---------------------------------------------------------------------------
@@ -271,23 +273,115 @@ def clean_text(text):
     return " ".join(visible.split()) or None
 
 
-def match_key(text):
-    """The identity form: clean_text, apostrophes unified, then folded.
+# Punctuation is style wherever it sits, not only at the ends of a value.
+# `fold` strips it at the edges, which left `Novartis Farmacéutica, S.A.` and
+# `Novartis Farmacéutica S.A.` as two sponsors over one comma. Replacing it
+# with a space rather than deleting it keeps `Merck & Co.,Inc` from becoming
+# `merck & coinc`: the punctuation was doing a separator's job.
+#
+# Measured over the corpus before this was adopted: it merges 249 sponsor rows
+# across 211 groups, 125 funder rows and 4 substances, and every one of those
+# groups differs ONLY by punctuation, spacing or accent style -- checked by
+# comparing the letters of the merged names, not assumed. It also merges the
+# two most frequent centre names in the source, which 3.2c had already
+# identified as one hospital: HOSPITAL UNIVERSITARI VALL D'HEBRON (2,667) and
+# Hospital Universitari Vall D Hebron (1,553).
+IDENTITY_PUNCTUATION = ".,;:()[]{}\"/\\!¡?¿" + APOSTROPHES
 
-    Over the corpus this collapses 3,742 distinct cleaned sponsor spellings to
-    3,336 keys, 3,245 centre names to 2,580, and 2,717 funder names to 2,401.
+# Removing the dots from `S.A.` leaves `s a`, where the same abbreviation
+# written without them leaves `sa`. So the letters of an abbreviation are
+# closed back up: a run of single characters becomes one token. Measured over
+# every sponsor and funder name, this merges 58 further identities, and not
+# one of them differs by anything except dots and spacing.
+INITIALS = re.compile(r"\b(?:[a-z0-9] )+[a-z0-9]\b")
+
+
+def match_key(text):
+    """The identity form: clean_text, punctuation to spaces, then folded.
+
+    Over the corpus: 3,245 distinct cleaned centre names collapse to 2,539
+    identities, and 4,244 substance spellings to 3,352. Sponsors and funders
+    go through `organisation_key` below, which adds one more cut.
 
     Safe to automate because it only removes case, accents, spacing, markup and
     punctuation style. Two genuinely different organisations would have to be
     identical letter for letter to collide. This is emphatically NOT entity
     resolution -- `Novartis Farmacéutica, S.A.` and `Novartis Pharma AG` are
-    different legal entities and stay different rows (PROJECT_SPEC 3.2c).
+    different legal entities and stay different rows (PROJECT_SPEC 3.2c), and
+    so do `F. Hoffmann-La Roche AG` and `F. Hoffmann-La Roche Ltd`, which is
+    why the legal form itself is never stripped here.
     """
     cleaned = clean_text(text)
     if cleaned is None:
         return None
-    unified = "".join("'" if c in APOSTROPHES else c for c in cleaned)
-    return fold(unified) or None
+    spaced = "".join(" " if c in IDENTITY_PUNCTUATION else c for c in cleaned)
+    folded = fold(spaced)
+    return INITIALS.sub(lambda m: m.group(0).replace(" ", ""), folded) or None
+
+
+# Phrases that turn an organisation's name into a sentence about it. Counted
+# in the corpus rather than imagined -- 98 sponsor and funder values carry one,
+# covering 299 trials:
+#
+#   subsidiary of 74   que realiza 38   como representante 36   actua como 38
+#   que actua 31       representante de 23   en nombre de 12    filial de 1
+#
+# The registry is describing a relationship, not naming a different company:
+#
+#   Roche Farma S.A (Soc.Unipersonal) que realiza el ensayo en España y que
+#   actúa como representante de F.Hoffmann-La Roche Ltd
+#
+# Two such values differ by whichever words the writer chose that day, so they
+# split one sponsor into as many rows as there are phrasings. Cutting at the
+# first marker leaves the name, which is the part that identifies anyone.
+#
+# NOT the same as stripping the legal form, which is the next thing anyone
+# reaches for and is wrong: it merges Roche AG with Roche Ltd and Novartis
+# Pharma AG with GmbH, which are different companies. The clause is commentary;
+# the legal form is part of the name.
+ORGANISATION_CLAUSES = (
+    "que realiza",
+    "que actua",
+    "actua como",
+    "actuando como",
+    "como representante",
+    "representante de",
+    "en representacion de",
+    "que representa",
+    "representado en espana por",
+    "realizado en espana por",
+    "por delegacion de",
+    "por encargo de",
+    "en nombre de",
+    "por cuenta de",
+    "en calidad de",
+    "a subsidiary of",
+    "subsidiary of",
+    "filial de",
+    "on behalf of",
+    "de aqui en adelante",
+)
+
+
+def organisation_key(text):
+    """`match_key`, with any descriptive clause cut off the end.
+
+    For sponsors and funders only. A centre or a substance is not described
+    this way, and the markers are Spanish and English organisational language
+    that has no business deciding whether two hospitals are the same site.
+
+    The clause is cut at the EARLIEST marker, and only when something is left
+    in front of it -- a value that begins with one names nobody and is left
+    alone for the schema to refuse.
+    """
+    key = match_key(text)
+    if key is None:
+        return None
+    cuts = [key.find(marker) for marker in ORGANISATION_CLAUSES]
+    earliest = min((c for c in cuts if c > 0), default=None)
+    if earliest is None:
+        return key
+    return key[:earliest].strip() or key
 
 
 # ---------------------------------------------------------------------------
