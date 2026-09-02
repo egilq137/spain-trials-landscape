@@ -39,8 +39,10 @@ import unicodedata
 # 'NA' is a legitimate trade name fragment, and a fuzzy rule would eat it.
 #
 # Where they occur:
-#   acronimo               4,763 of 6,574 non-blank   (NA alone 4,744)
-#   funders.nombre           584 across the corpus      (NA alone   572)
+#   acronimo               4,765 of 6,574 non-blank   (NA alone 4,744)
+#   funders.nombre           596 across the corpus      (NA alone   572)
+#   substances               520 across the corpus      -- the field the
+#                                 absence statements below were found in
 #   centers.referencia       119  -- spanning 103 distinct hospitals, so this
 #                                   one changes identity, not just a label
 #   centers.nombre             2
@@ -63,6 +65,81 @@ PLACEHOLDERS = frozenset({
     "none",
     "ninguno",
     "not available",
+    # Absence STATEMENTS, almost all of them in `sustancias`: 107 mentions
+    # across 16 spellings. A trial can be authorised before its drug has an
+    # INN -- an International Nonproprietary Name, the generic name a
+    # substance is known by -- so the registry writes a sentence saying so
+    # where the name will eventually go. 'not yet available' is the most
+    # common substance value after the real drugs.
+    #
+    # Enumerated, like everything above, and the reason is right here in the
+    # candidates: a pattern matching "available" would also delete `Best
+    # Available Treatment`, which is a real comparator arm, and one matching
+    # short strings would delete PRGF, 5-FU, IL-2, BCG, RUTI and V160, which
+    # are real substances.
+    #
+    # Each was checked against every field is_placeholder is applied to, not
+    # just the one that prompted it. 'tbc' is the one to re-check on a
+    # refresh: here it appears only in `sustancias`, where it means "to be
+    # confirmed", but TBC is also the Spanish abbreviation for tuberculosis
+    # and would be a real value in a field naming a condition.
+    "not yet available",
+    "not available yet",
+    "not yet availble",
+    "not available or proposed",
+    "not available yet/no disponible todavia",
+    "no disponible",
+    "no inn available",
+    "inn not available",
+    "inn not available yet",
+    "none available",
+    "unavailable",
+    "unknown",
+    "not aplicable",
+    "sin asignar",
+    "tbc",
+    "tbd",
+    # The same thing said 29 more ways, 413 further mentions, almost all of
+    # them substances. Found by reading the frequency list rather than by
+    # pattern -- 'Not Applicable' (115) and 'Not yet assigned' (90) sat in the
+    # top eight substances, above most real drugs, and an English-versus-
+    # Spanish blind spot in the first sweep had missed both.
+    #
+    # The candidate net that found them is also the argument for enumerating:
+    # matching "none" catches finerenone, eplerenone and drospirenone;
+    # matching "nan" catches nanocolloid and every recombinant protein. Both
+    # would have deleted real drugs.
+    "not applicable",
+    "notapplicable",
+    "not applicable yet",
+    "not yet applicable",
+    "not applicable at this stage",
+    "not yet assigned",
+    "not assigned",
+    "not assigned yet",
+    "inn not yet assigned",
+    "inn name not yet assigned",
+    "inn name not assigned yet",
+    "no inn assigned",
+    "no inn assigned yet",
+    "not yet defined",
+    "not yet established",
+    "not established yet",
+    "not yet requested",
+    "inn not yet proposed",
+    "inn not yet proposed see d.3.9.3",
+    "not yet known",
+    "not know yet",
+    "not yet",
+    "none yet",
+    "none at this time",
+    "none registered",
+    "to be determined",
+    "no",
+    # `fold` strips edge punctuation but not these two, so they survive as
+    # values naming nothing.
+    "_",
+    "/",
 })
 
 # Values that are punctuation only -- '-' (1,922 intervention names), '--',

@@ -184,7 +184,7 @@ class TestTallyAgainstCorpus(unittest.TestCase):
     def test_the_placeholder_and_sentinel_counts_match_the_rules(self):
         counts = self.tally.counts()
         self.assertEqual(
-            counts[("studies.acronimo", "placeholder -> NULL")], 4763)
+            counts[("studies.acronimo", "placeholder -> NULL")], 4765)
         self.assertEqual(
             counts[("studies.poblacion_total", "0 (not reported) -> NULL")], 2201)
         self.assertEqual(

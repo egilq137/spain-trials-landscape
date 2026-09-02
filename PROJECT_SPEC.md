@@ -999,6 +999,37 @@ genuine differences. **Decision: drop `nombreCientifico`** — the duplication i
 not worth a column, and the commercial name is the one an analysis would
 display.
 
+**REVISION — `sustancias` carries 520 placeholder mentions, not 884, and the
+missed ones were the biggest.** The first pass matched the enumerated
+`PLACEHOLDERS` list, which was built from `acronimo` and `financiador` and so
+was Spanish-shaped. Reading the loaded `substances` table by frequency found
+`Not Applicable` (115) and `Not yet assigned` (90) sitting in the **top eight
+substances, above most real drugs**, plus 43 further spellings of the same
+statement — `not assigned`, `not yet defined`, `not yet established`, `none
+yet`, `to be determined`, `INN not yet proposed`, `TBC`.
+
+**Why the registry writes them.** A trial can be authorised before its drug
+has an INN — an International Nonproprietary Name, the generic name a
+substance is finally known by — so the registry writes a sentence saying so
+where the name will go. That is a real fact about early-phase trials, and it
+belongs in the same bucket as `'NA'`: absence of a bridge row already says it.
+
+**Enumerated, and the candidate sweep is the argument for enumerating.** The
+word net used to *find* these also matched real drugs: `none` catches
+finerenone, eplerenone and drospirenone; `nan` catches nanocolloid and every
+recombinant protein; `available` catches `Best Available Treatment`, a real
+comparator arm; and any short-string rule would delete PRGF, 5-FU, IL-2, BCG,
+RUTI and V160. Patterns find candidates; only the list decides.
+
+Each of the 45 additions was checked against **every** field
+`is_placeholder` touches, not just the one that prompted it — `not applicable`
+turns out to be an intervention name 10 times and a funder once, `No` a funder
+11 times. `tbc` is the one to re-check on a refresh: it means "to be
+confirmed" here, but TBC is also the Spanish abbreviation for tuberculosis.
+
+Effect: substances 3,352 → **3,308**, intervention_substances 14,127 →
+**13,651**, funders 2,232 → **2,230**, acronyms 4,763 → **4,765**.
+
 **`formaFarmaceutica` is dropped, both language columns.** No §3.3 question
 uses dosage form, and the field is in poor shape: **56.4% placeholder, with the
 two language columns swapped for exactly that value.** `'Not indicated'` (English) sits in the

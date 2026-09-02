@@ -402,14 +402,14 @@ class TestAgainstCorpus(unittest.TestCase):
 
     def test_placeholders_still_cover_the_acronyms_they_were_built_from(self):
         hits = sum(1 for r in self.records if is_placeholder(r.get("acronimo")))
-        self.assertEqual(hits, 4763)  # 4,744 'NA' + 19 other forms
+        self.assertEqual(hits, 4765)  # 4,744 'NA' + 21 other forms
 
     def test_placeholders_still_cover_the_funder_names(self):
         hits = 0
         for record in self.records:
             raw = (record.get("organismo") or {}).get("financiador") or ""
             hits += sum(1 for part in raw.split("|") if is_placeholder(part))
-        self.assertEqual(hits, 584)  # 572 'NA' + 12 'None'/'NO APLICA'
+        self.assertEqual(hits, 596)  # 572 'NA', 12 'No', and the rest
 
     def test_placeholders_still_cover_the_centre_references(self):
         # The one placeholder that changes identity rather than a label: 'NR'
@@ -554,7 +554,7 @@ class TestAgainstCorpus(unittest.TestCase):
         # hospital is never described that way.
         for kind, key, expected in (("sponsor", organisation_key, 2984),
                                     ("centre", match_key, 2539),
-                                    ("funder", organisation_key, 2233)):
+                                    ("funder", organisation_key, 2231)):
             with self.subTest(kind=kind):
                 keys = {key(v) for v in self._names(kind)
                         if not is_placeholder(v)}

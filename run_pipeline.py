@@ -33,7 +33,7 @@ from db.cleaning_rules_tally import CleaningRulesTally
 EXPECTED_ROWS = {
     "studies": 11843,          # 11,847 cached, 4 dropped for impossible dates
     "sponsors": 2983,          # 2,984 in the cache
-    "funders": 2232,           # 2,233
+    "funders": 2230,           # 2,231
     "centers": 3342,           # 3,343
     "therapeutic_areas": 55,
     "administration_routes": 53,
