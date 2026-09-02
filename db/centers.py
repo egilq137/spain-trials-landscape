@@ -1,4 +1,4 @@
-"""Resolving 85,410 centre entries into 3,360 physical sites.
+"""Resolving 85,410 centre entries into 3,306 physical sites.
 
 Every other transform in this project is a pure function of one record. This
 one cannot be, and the reason is worth stating: a centre entry does not carry
@@ -16,6 +16,12 @@ hand-written entries instead of on 85,410 real ones.
 
 Three resolutions happen here, all of them "most frequent wins":
 
+  * **the locality's spelling**, resolved across the WHOLE corpus rather than
+    per site. Sites already group correctly, because the key compares the
+    locality rather than storing it -- but the stored value is what a
+    dashboard groups by, and
+    `BARCELONA`, `Barcelona` and `barcelona` are three bars in that chart.
+    Resolved once per place, every site in a city stores the same spelling
   * **the name**, because the two commonest values in the whole field are one
     hospital -- HOSPITAL UNIVERSITARI VALL D'HEBRON (2,667) and Hospital
     Universitari Vall D Hebron (1,553)
@@ -45,7 +51,7 @@ from db.cleaning_rules import (
 )
 
 CenterIndex = collections.namedtuple(
-    "CenterIndex", "postcodes names localities regions")
+    "CenterIndex", "postcodes names localities regions place_names")
 
 # What one entry contributes, before any resolution. Kept small on purpose:
 # the index materialises one of these per centre entry, and there are 85,410.
@@ -81,9 +87,20 @@ def read_entry(raw):
                  referencia=referencia)
 
 
+def place_key(localidad):
+    """How two spellings of one place are compared.
+
+    `match_key`, not `fold`: a locality is a name, and it is compared the same
+    way every other name in this project is compared. `fold` alone left
+    `Hospitalet de Llobregat, L'` apart from `HOSPITALET DE LLOBREGAT (L´)`
+    over a comma, a bracket and an apostrophe style.
+    """
+    return match_key(localidad) or ""
+
+
 def evidence_key(entry):
     """The group a postcode is repaired within: identity plus locality."""
-    return (entry.identity, fold(entry.localidad))
+    return (entry.identity, place_key(entry.localidad))
 
 
 def build_center_index(raw_entries):
@@ -107,6 +124,14 @@ def build_center_index(raw_entries):
     names = collections.defaultdict(collections.Counter)
     localities = collections.defaultdict(collections.Counter)
     regions = collections.defaultdict(collections.Counter)
+    # Keyed on the FOLDED locality and shared by every site in that place, so
+    # one city has one spelling wherever it appears. The per-site `localities`
+    # counter above cannot do this: it only ever sees one site's entries, and
+    # a city with 335 sites would resolve its spelling 335 times over.
+    place_names = collections.defaultdict(collections.Counter)
+    for entry in entries:
+        if entry.localidad:
+            place_names[place_key(entry.localidad)][entry.localidad] += 1
     for entry in entries:
         key = _site_key(entry, postcodes)
         if entry.nombre:
@@ -121,18 +146,21 @@ def build_center_index(raw_entries):
                 regions[key][(field, value)] += 1
 
     return CenterIndex(postcodes=postcodes, names=names,
-                       localities=localities, regions=regions)
+                       localities=localities, regions=regions,
+                       place_names=place_names)
 
 
 def _site_key(entry, postcodes):
-    """(identity, folded locality, repaired postcode) -- the grouping key.
+    """(identity, compared locality, repaired postcode) -- the grouping key.
 
-    Folded, not display: the key must not split MADRID from Madrid. The
-    display spellings are resolved separately, per group, by most frequent.
+    Compared, not display: the key must not split MADRID from Madrid, nor
+    `Coruña, A` from `CORUÑA (A)`. The display spellings are resolved
+    separately -- and for the locality, across the whole corpus.
     """
     resolution = resolve_postcode(
         entry.cod_postal, evidence_key(entry), entry.localidad, postcodes)
-    return (entry.identity, fold(entry.localidad), resolution.postcode or "")
+    return (entry.identity, place_key(entry.localidad),
+            resolution.postcode or "")
 
 
 def _most_frequent(counter, default=None):
@@ -140,6 +168,26 @@ def _most_frequent(counter, default=None):
     if not counter:
         return default
     return min(counter.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def _best_spelling(counter, default=None):
+    """Most frequent spelling that is not shouting, else most frequent.
+
+    For place names, where the display value is also what a dashboard shows.
+    541 of the 675 localities have at least one mixed-case spelling on record;
+    for 29 of them ALL CAPS wins on raw frequency, and preferring the
+    mixed-case one gives `Donostia-San Sebastián` and `Coruña (A)` instead of
+    the same words in capitals. A registry that shouts is not more
+    authoritative.
+
+    It never invents a spelling: the 134 localities the registry only ever
+    wrote in capitals stay in capitals, because there is nothing else to pick.
+    """
+    if not counter:
+        return default
+    quiet = collections.Counter({value: n for value, n in counter.items()
+                                 if not value.isupper()})
+    return _most_frequent(quiet or counter, default)
 
 
 def center_row(raw, index, tally=None):
@@ -173,7 +221,8 @@ def center_row(raw, index, tally=None):
         # '' and not NULL: both are part of the UNIQUE, and SQL counts every
         # NULL as distinct, so a NULL here would duplicate exactly the sites
         # whose locality or postcode is unknown.
-        "localidad": _most_frequent(index.localities.get(key)) or "",
+        # The place's spelling, not this site's: see build_center_index.
+        "localidad": _best_spelling(index.place_names.get(key[1])) or "",
         "cod_postal": key[2],
         "provincia": _most_frequent(
             {v: n for (f, v), n in regions.items() if f == "provincia"}),

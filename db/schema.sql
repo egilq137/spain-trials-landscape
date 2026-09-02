@@ -283,7 +283,7 @@ CREATE INDEX idx_study_therapeutic_areas_eutct ON study_therapeutic_areas(eutct_
 --   referencia only                 2,849   1,616
 --   referencia + postcode           3,114     488
 --   referencia + locality           3,228     661
---   reference-or-name + both        3,336      11
+--   reference-or-name + both        3,306      11
 --
 -- referencia alone is too coarse in both directions. It is missing from 2,695
 -- entries, and 'NR' appears in 119 covering 103 distinct hospitals, so
@@ -307,8 +307,8 @@ CREATE TABLE centers (
     -- the choice between the two is conditional. CHECK (<> '') is what stops
     -- the 5 entries that name no site - 3 blank in every field but situacion,
     -- 2 whose name is '.' or '-' - from collapsing into one nameless centre
-    -- that every study reporting one would appear to share. 3,335 sites load
-    -- (3,336 before the four impossible-date studies go); 3.2c's 3,361
+    -- that every study reporting one would appear to share. 3,305 sites load
+    -- (3,306 before the four impossible-date studies go); 3.2c's 3,361
     -- counted those five as one and predated punctuation-insensitive names.
     center_key TEXT NOT NULL CHECK (center_key <> ''),
     -- Kept alongside the key so a site can be traced back to what the
@@ -361,7 +361,7 @@ CREATE TABLE study_centers (
 CREATE INDEX idx_study_centers_center_id ON study_centers(center_id);
 
 -- No index on ccaa or cod_postal: geography moved onto centers, which is
--- 3,335 rows. A region rollup scans that in full whatever the plan, and the
+-- 3,305 rows. A region rollup scans that in full whatever the plan, and the
 -- 85,410-row version this replaces is what needed one.
 
 

@@ -326,7 +326,7 @@ its markers are phrases and need word boundaries to match against.
 | funders | 2,712 → 2,401 | **2,216** |
 | centre names | 2,580 | **2,520** |
 | substances | 3,364 | **3,305** |
-| centre *sites* | 3,361 | **3,336** |
+| centre *sites* | 3,361 | **3,306** |
 
 **Why this is still normalisation and not entity resolution.** Every merge was
 checked, not assumed: for sponsors, funders and substances, all 211 punctuation
@@ -811,6 +811,42 @@ undocumented codes the manual describes wrongly and no §3.3 question uses;
 that is its own project. All three stay in the raw cache if they are ever
 decoded. With `departamento` gone, `study_centers` carries nothing but the
 pairing.
+
+**REVISION — the locality's spelling is resolved across the corpus, and
+compared the way every other name is.** Two separate problems, found by
+looking at what `GROUP BY localidad` returns.
+
+  - **Display was resolved per site.** Every site picked its own most frequent
+    spelling, so `BARCELONA` (140 sites), `Barcelona` (335) and `barcelona`
+    (1) all persisted, and a trials-by-city chart drew three bars for one
+    city. The spelling is now resolved once per *place* over the whole corpus:
+    823 distinct stored localities become 674, and the top of the chart reads
+    Madrid, Barcelona, Valencia, Sevilla, Málaga, Badalona.
+  - **The comparison was weaker than the one used for every other name.**
+    `_site_key` folded the locality, while `match_key` had moved on to
+    ignoring punctuation and spacing — so `Hospitalet de Llobregat, L'` and
+    `HOSPITALET DE LLOBREGAT (L´)` were two places, and 26 sites were split
+    across them despite sharing a registry reference AND a postcode. Locality
+    now goes through `match_key` like any other name. Sites: 3,336 → **3,306**.
+
+**Why most frequent rather than storing the folded form.** Folding is enough
+to group by and wrong to store: it gives `malaga`, `cordoba`, `a coruna`,
+`pamplona/iruna`. Spanish and Basque place names carry their accents as part
+of the name, and this project already settled the same question for sponsors
+— *storing only the normalised form would put `astrazeneca ab` on the
+dashboard*. **Normalise for comparison, preserve for display.**
+
+One refinement the frequency rule needed: for 29 localities the most frequent
+spelling is ALL CAPS while a mixed-case spelling exists, so the display picks
+the most frequent **non-shouting** spelling — `Donostia-San Sebastián` rather
+than `DONOSTIA-SAN SEBASTIÁN`. It never invents one: the 134 localities the
+registry only ever wrote in capitals stay in capitals.
+
+**Still split, and left alone:** `Coruña, A` vs `A Coruña`, `Roca del Vallès,
+La` vs `La Roca del Vallès` — the Spanish convention of moving the article to
+the end. That is word order, not spelling, and fixing it means either sorting
+tokens (which would merge genuinely different names) or a list of articles.
+Roughly a dozen places, none of them large.
 
 **NEW FINDING — 5 centre entries name no centre at all**, across 3 studies.
 `nombre` is blank in 3 of 85,410 entries, and those same 3 have no usable

@@ -34,7 +34,7 @@ EXPECTED_ROWS = {
     "studies": 11843,          # 11,847 cached, 4 dropped for impossible dates
     "sponsors": 2967,          # 2,968 in the cache
     "funders": 2215,           # 2,216
-    "centers": 3335,           # 3,336
+    "centers": 3305,           # 3,306
     "therapeutic_areas": 55,
     "administration_routes": 53,
 }
