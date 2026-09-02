@@ -72,6 +72,7 @@ from db.rules import (
     match_key,
     postcode_candidates,
     resolve_postcode,
+    route_key,
 )
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw" / "detalle"
@@ -143,8 +144,16 @@ class TestRouteMaps(unittest.TestCase):
             with self.subTest(typo=typo):
                 self.assertEqual(ROUTE_CANONICAL[typo], "intravenous")
 
-    def test_an_undecoded_html_entity_still_merges(self):
-        self.assertEqual(ROUTE_CANONICAL["infusi&oacute;n intravenosa"],
+    def test_an_entity_encoded_value_still_merges(self):
+        # The registry sends 'INFUSI&Oacute;N INTRAVENOSA' 20 times. The map
+        # is keyed on route_key, which decodes before folding, so the entity
+        # and the decoded spelling reach the same entry. Keying it as the raw
+        # entity text -- as an earlier version did, on the reasoning that
+        # nothing decoded it -- made the entry dead once the loader ran
+        # clean_text, and those 20 rows became a 54th route.
+        self.assertEqual(ROUTE_CANONICAL[route_key("INFUSI&Oacute;N INTRAVENOSA")],
+                         "intravenous")
+        self.assertEqual(ROUTE_CANONICAL[route_key("Infusión intravenosa")],
                          "intravenous")
 
     def test_phrasing_variants_merge(self):
@@ -156,7 +165,8 @@ class TestRouteMaps(unittest.TestCase):
         for compound in ("oral and iv", "intravenous (iv) or subcutaneous (sc)",
                          "intravenous/subcutaneous/intramuscular"):
             with self.subTest(compound=compound):
-                self.assertEqual(ROUTE_CANONICAL[compound], "multiple routes")
+                self.assertEqual(ROUTE_CANONICAL[route_key(compound)],
+                                 "multiple routes")
 
     def test_a_route_written_twice_is_not_compound(self):
         self.assertEqual(ROUTE_CANONICAL["iv injection, iv infusion"],
@@ -444,7 +454,7 @@ class TestAgainstCorpus(unittest.TestCase):
             for item in (record.get("intervenciones") or {}).get("intervencion") or []:
                 raw = (item.get("viasAdministracion") or "").strip()
                 if raw:
-                    seen.add(fold(raw))
+                    seen.add(route_key(raw))
         self.assertEqual(seen - known, set(), "unmapped route values")
         self.assertEqual(len(seen), 129)
 
@@ -457,7 +467,7 @@ class TestAgainstCorpus(unittest.TestCase):
             for item in (record.get("intervenciones") or {}).get("intervencion") or []:
                 raw = (item.get("viasAdministracion") or "").strip()
                 if raw:
-                    seen.add(fold(raw))
+                    seen.add(route_key(raw))
         self.assertEqual(known - seen, set(), "map entries matching nothing")
 
     def test_the_misspellings_still_account_for_the_rows_they_did(self):

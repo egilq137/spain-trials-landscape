@@ -28,14 +28,26 @@ taken from each rule's OUTPUT, never by re-testing its condition, so the
 manifest cannot drift away from the rules it describes.
 """
 
+import collections
+
 from db.rules import (
+    ROUTE_CANONICAL,
+    ROUTE_NOT_A_ROUTE,
     TOTAL_UNKNOWN,
     clean_flag,
     clean_text,
     clean_total,
     is_placeholder,
     match_key,
+    route_key,
 )
+
+# One intervention, before ids exist. `route` is a canonical route NAME and
+# `substances` a list of (key, name): both are looked up or created by the
+# caller, the same way sponsor_id is passed into study_row rather than
+# resolved here.
+Intervention = collections.namedtuple(
+    "Intervention", "nombre_comercial codigo huerfano route substances")
 
 # raw poblacion key -> column name. Raw keys are lowercase and unspaced.
 POBLACION_FLAGS = {
@@ -216,6 +228,104 @@ def therapeutic_area_rows(record):
              clean_text(area.get("nombre_es")),
              clean_text(area.get("nombre_en")))
             for area in areas]
+
+
+def route_name(raw, manifest=None):
+    """The canonical administration route, or None when the value names none.
+
+    129 raw values for 53 real routes, harmonised through
+    rules.ROUTE_CANONICAL: phrasing ('oral' / 'oral use'), real misspellings
+    ('intravenious infusion', 466 rows), and dosage forms that name their
+    route unambiguously.
+
+    299 rows say 'unknown use', 'other use' or 'route of administration not
+    applicable'. Those name no route and get None -- which is not the same as
+    the 13,678 elements where the field is simply absent, but both mean the
+    intervention has no route to point at, and the source's own distinction
+    between them survives in data/raw/.
+
+    An UNMAPPED value passes through cleaned rather than being dropped or
+    guessed at. It then appears in administration_routes as itself, so a
+    refresh that adds a 130th spelling shows up as 54 routes where 53 are
+    expected instead of being silently absorbed -- the failure mode that let
+    -1 stay invisible for so long.
+    """
+    text = clean_text(raw)
+    if text is None:
+        return None
+    key = route_key(raw)
+    if key in ROUTE_NOT_A_ROUTE:
+        if manifest is not None:
+            manifest.applied("interventions.route_id", "names no route -> NULL")
+        return None
+    canonical = ROUTE_CANONICAL.get(key)
+    if canonical is None:
+        return text
+    if manifest is not None and canonical != text:
+        manifest.applied("administration_routes.nombre", "harmonised")
+    return canonical
+
+
+def substances(intervention, manifest=None):
+    """[(key, display name)] for one intervention, in source order.
+
+    Pipe-delimited like financiador, and handled the same way: split, discard
+    empties, drop placeholders (884 mentions), deduplicate by key. The
+    normalisation matters more here than anywhere else -- 4,244 distinct
+    cleaned spellings collapse to 3,364 identities, 20.7%.
+    """
+    raw = intervention.get("sustancias") or ""
+    out = []
+    seen = set()
+    for part in raw.split("|"):
+        if not part.strip():
+            continue
+        if is_placeholder(part):
+            if manifest is not None:
+                manifest.applied("substances.nombre",
+                                 "placeholder -> no substance")
+            continue
+        key, name = match_key(part), clean_text(part)
+        if key is None or key in seen:
+            continue
+        seen.add(key)
+        out.append((key, name))
+    return out
+
+
+def intervention_rows(record, manifest=None):
+    """One Intervention per element of intervenciones.intervencion.
+
+    The block is genuinely optional, unlike centros: it is ABSENT from 1,514
+    studies rather than empty, so `record.get` doing the work is the point.
+
+    Nothing here is deduplicated across elements. Two arms of one trial can
+    name the same drug, and each is a row: an intervention belongs to its
+    study rather than being a shared object, which is why interventions is a
+    child table and not a lookup plus a bridge.
+    """
+    elements = (record.get("intervenciones") or {}).get("intervencion") or []
+    rows = []
+    for element in elements:
+        raw_name = element.get("nombreComercial")
+        # 100% present, but '-' appears 1,922 times and 'NA' 283. Same
+        # enumerated placeholder list as acronimo and financiador.
+        name = None if is_placeholder(raw_name) else clean_text(raw_name)
+        if manifest is not None and is_placeholder(raw_name):
+            manifest.applied("interventions.nombre_comercial",
+                             "placeholder -> NULL")
+        raw_huerfano = element.get("huerfano")
+        rows.append(Intervention(
+            nombre_comercial=name,
+            codigo=clean_text(element.get("codigo")),
+            # Blank in 25 of 30,946 elements. Blank means absent, which is not
+            # the same as the -1 sentinel elsewhere: there is no rule to
+            # declare here, only a missing value.
+            huerfano=(flag(raw_huerfano)
+                      if str(raw_huerfano or "").strip() else None),
+            route=route_name(element.get("viasAdministracion"), manifest),
+            substances=substances(element, manifest)))
+    return rows
 
 
 def study_row(record, sponsor_id, manifest=None):

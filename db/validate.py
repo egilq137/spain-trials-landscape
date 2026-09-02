@@ -26,6 +26,7 @@ from pathlib import Path
 from db.centers import build_center_index, center_row, study_centers
 from db.transform import (
     funders,
+    intervention_rows,
     sponsor_key,
     sponsor_name,
     study_row,
@@ -119,7 +120,8 @@ def _iter_records(paths):
 
 
 def _load_children(con, report, record, study_id, year, funder_ids,
-                   area_codes, center_ids, center_index):
+                   area_codes, center_ids, center_index, route_ids,
+                   substance_ids):
     """The rows that hang off an accepted study: funders, areas and centres.
 
     Only reached once the study itself is in, because both bridges reference
@@ -196,6 +198,73 @@ def _load_children(con, report, record, study_id, year, funder_ids,
         _insert_bridge(con, report, "study_centers", "center_id",
                        study_id, center_ids[key], year)
 
+    for intervention in intervention_rows(record):
+        route_id = None
+        if intervention.route is not None:
+            route_id = _lookup(con, report, "administration_routes", "nombre",
+                               intervention.route, route_ids, year, study_id)
+            if route_id is None:
+                continue
+        con.execute("SAVEPOINT child")
+        try:
+            cursor = con.execute(
+                "INSERT INTO interventions (study_id, nombre_comercial, "
+                "codigo, huerfano, route_id) VALUES (?, ?, ?, ?, ?)",
+                (study_id, intervention.nombre_comercial, intervention.codigo,
+                 intervention.huerfano, route_id))
+        except sqlite3.DatabaseError:
+            con.execute("ROLLBACK TO child")
+            report.record_anomaly("interventions",
+                                  intervention.nombre_comercial, year,
+                                  study_id)
+            con.execute("RELEASE child")
+            continue
+        intervention_id = cursor.lastrowid
+        con.execute("RELEASE child")
+
+        for key, name in intervention.substances:
+            substance_id = _lookup(con, report, "substances", "nombre_key",
+                                   key, substance_ids, year, study_id, name)
+            if substance_id is None:
+                continue
+            con.execute("SAVEPOINT bridge")
+            try:
+                con.execute("INSERT INTO intervention_substances "
+                            "VALUES (?, ?)", (intervention_id, substance_id))
+            except sqlite3.DatabaseError:
+                con.execute("ROLLBACK TO bridge")
+                report.record_anomaly("intervention_substances", name, year,
+                                      study_id)
+            finally:
+                con.execute("RELEASE bridge")
+
+
+def _lookup(con, report, table, column, value, cache, year, study_id,
+            display=None):
+    """The id of a vocabulary row, inserting it the first time it is seen.
+
+    Returns None when the row will not load, so the caller can skip whatever
+    depended on it rather than the whole study failing.
+    """
+    if value in cache:
+        return cache[value]
+    columns = (column,) if display is None else (column, "nombre")
+    values = (value,) if display is None else (value, display)
+    con.execute("SAVEPOINT child")
+    try:
+        cursor = con.execute(
+            "INSERT INTO {} ({}) VALUES ({})".format(
+                table, ", ".join(columns), ", ".join("?" * len(columns))),
+            values)
+    except sqlite3.DatabaseError:
+        con.execute("ROLLBACK TO child")
+        report.record_anomaly(table, value, year, study_id)
+        con.execute("RELEASE child")
+        return None
+    cache[value] = cursor.lastrowid
+    con.execute("RELEASE child")
+    return cache[value]
+
 
 def _insert_bridge(con, report, table, column, study_id, parent, year):
     con.execute("SAVEPOINT bridge")
@@ -223,6 +292,8 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
     funder_ids = {}
     area_codes = set()
     center_ids = {}
+    route_ids = {}
+    substance_ids = {}
     template = None
     deferred = []
 
@@ -274,7 +345,8 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
             if template is None:
                 template = dict(row)
             _load_children(con, report, record, study_id, year,
-                           funder_ids, area_codes, center_ids, center_index)
+                           funder_ids, area_codes, center_ids, center_index,
+                           route_ids, substance_ids)
         finally:
             con.execute("RELEASE row")
 

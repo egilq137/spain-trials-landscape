@@ -300,6 +300,21 @@ def match_key(text):
 # CTIS transition and the two never co-occur -- so any route analysis is
 # confined to that side of the break.
 
+# Both route maps are keyed on `route_key`, NOT on `fold` alone. The
+# difference is one value and it was a real bug: the corpus sends
+# 'INFUSI&Oacute;N INTRAVENOSA' 20 times, and an earlier version of this map
+# keyed it as the entity text on the reasoning that nothing decoded it. The
+# loader does decode it -- clean_text runs on every stored value -- so the
+# entry matched nothing and 20 rows fell through as a 54th route. Keeping the
+# lookup and its corpus tests on one normalisation is what makes the
+# no-fallthrough test able to see that; folding the raw value here while the
+# loader cleans it first meant the test and the pipeline asked different
+# questions.
+def route_key(raw):
+    """The form both route maps are keyed on: cleaned, then folded."""
+    return fold(clean_text(raw))
+
+
 # Values that name no route. Not the same as absent: the registry wrote
 # something, and what it wrote was "we do not know" or "does not apply".
 ROUTE_NOT_A_ROUTE = frozenset({
@@ -343,7 +358,7 @@ ROUTE_CANONICAL = {
     "direct intravenous injection": "intravenous",
     "iv infusion": "intravenous",
     "solution for intravenous infusion": "intravenous",
-    "infusi&oacute;n intravenosa": "intravenous",    # HTML entity, never decoded
+    "infusion intravenosa": "intravenous",           # 20 rows, entity-encoded
     "intravenious infusion": "intravenous",          # misspelling, 466 rows
     "intravenus use": "intravenous",                 # misspelling, 51 rows
     "infusion": "intravenous",                       # INFERRED

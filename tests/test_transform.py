@@ -27,6 +27,15 @@ Success criteria per function:
     and both names, in order, with nothing deduplicated -- no study repeats a
     code, and 442 extra memberships across 363 studies are the reason this is
     a bridge rather than a column
+  route_name: 129 raw spellings reach 53 canonical routes; a value naming no
+    route and an absent field both give None; an unmapped value passes through
+    instead of vanishing, so a refresh that adds a spelling is visible
+  substances: pipe-split, placeholders dropped, deduplicated by identity --
+    the same rule as funders, on the field where it merges most (20.7%)
+  intervention_rows: one row per element with NO deduplication, because an
+    intervention belongs to its study; placeholder names and blank orphan
+    flags become NULL; route and substances are both optional, since the
+    source swapped one for the other at the CTIS transition
   study_row: every calendario/poblacion/proposito field lands in its column
     under the snake_case name; sponsor_id is the one passed in, never looked
     up; and NOTHING is derived from the calendario dates -- censoring and
@@ -42,13 +51,17 @@ from db.transform import (
     PROPOSITO_FLAGS,
     flag,
     funders,
-    therapeutic_area_rows,
     integer,
+    intervention_rows,
     iso_date,
+    route_name,
     sponsor_key,
     sponsor_name,
     study_row,
+    substances,
+    therapeutic_area_rows,
 )
+
 
 def raw_record(**overrides):
     """A REEC detail record shaped like the real ones."""
@@ -291,6 +304,114 @@ class TestTherapeuticAreaRows(unittest.TestCase):
         self.assertEqual(
             therapeutic_area_rows(raw_record(areasTerapeuticas={"area": []})),
             [])
+
+
+class TestRouteName(unittest.TestCase):
+    def test_phrasing_and_misspellings_reach_one_route(self):
+        for raw in ("ORAL", "oral use", "Oral Use"):
+            with self.subTest(raw=raw):
+                self.assertEqual(route_name(raw), "oral")
+        for raw in ("INTRAVENOUS USE", "iv infusion", "intravenious infusion"):
+            with self.subTest(raw=raw):
+                self.assertEqual(route_name(raw), "intravenous")
+
+    def test_an_entity_encoded_value_reaches_the_same_route(self):
+        # 20 rows. The map is keyed after decoding, so this is not a special
+        # case -- it goes through the same normalisation as every other value.
+        self.assertEqual(route_name("INFUSI&Oacute;N INTRAVENOSA"),
+                         "intravenous")
+
+    def test_a_value_naming_no_route_is_none(self):
+        # 299 rows. Not the same as absent, but both mean no route to point at.
+        for raw in ("unknown use", "OTHER USE",
+                    "route of administration not applicable"):
+            with self.subTest(raw=raw):
+                self.assertIsNone(route_name(raw))
+
+    def test_absent_is_none(self):
+        # 13,678 of 30,946 elements: the field only exists from 2022.
+        self.assertIsNone(route_name(None))
+        self.assertIsNone(route_name("  "))
+
+    def test_a_compound_value_is_not_forced_into_one_route(self):
+        self.assertEqual(route_name("oral and iv"), "multiple routes")
+
+    def test_a_dosage_form_is_not_guessed_into_a_route(self):
+        self.assertEqual(route_name("solution for injection"),
+                         "injection, route unspecified")
+
+    def test_an_unmapped_value_passes_through_rather_than_vanishing(self):
+        # It then shows up as an extra administration_routes row, which is how
+        # a refresh that adds a spelling becomes visible instead of silent.
+        self.assertEqual(route_name("teleportation use"), "teleportation use")
+
+
+class TestSubstances(unittest.TestCase):
+    def substances_of(self, sustancias):
+        return substances({"sustancias": sustancias})
+
+    def test_splits_and_deduplicates_by_identity(self):
+        self.assertEqual(
+            [name for _, name in self.substances_of("PACLITAXEL|Paclitaxel|")],
+            ["PACLITAXEL"])
+
+    def test_several_substances_all_come_through(self):
+        # 512 elements list two, 182 three, and one lists 45.
+        self.assertEqual(
+            [name for _, name in self.substances_of("PACLITAXEL|CISPLATIN|")],
+            ["PACLITAXEL", "CISPLATIN"])
+
+    def test_placeholders_create_no_substance(self):
+        # 884 of 15,130 mentions.
+        self.assertEqual(self.substances_of("N/A|"), [])
+        self.assertEqual(self.substances_of("Not available|NA|"), [])
+
+    def test_absent_yields_nothing(self):
+        self.assertEqual(self.substances_of(""), [])
+        self.assertEqual(substances({}), [])
+
+
+class TestInterventionRows(unittest.TestCase):
+    def rows_for(self, *elements):
+        return intervention_rows(
+            raw_record(intervenciones={"intervencion": list(elements)}))
+
+    def test_each_element_becomes_a_row_without_deduplication(self):
+        # Two arms can name one drug; each is a row, because an intervention
+        # belongs to its study rather than being a shared object.
+        rows = self.rows_for({"nombreComercial": "KEYTRUDA", "huerfano": "0"},
+                             {"nombreComercial": "KEYTRUDA", "huerfano": "0"})
+        self.assertEqual(len(rows), 2)
+
+    def test_a_missing_block_yields_nothing(self):
+        # ABSENT from 1,514 studies, not blank -- unlike centros.
+        self.assertEqual(intervention_rows({}), [])
+        self.assertEqual(self.rows_for(), [])
+
+    def test_placeholder_names_become_null(self):
+        # '-' appears 1,922 times and 'NA' 283.
+        for raw in ("-", "NA", "N/A"):
+            with self.subTest(raw=raw):
+                self.assertIsNone(
+                    self.rows_for({"nombreComercial": raw})[0].nombre_comercial)
+
+    def test_a_blank_orphan_flag_is_null_not_a_rejected_value(self):
+        # Blank in 25 of 30,946. Blank means absent; there is no rule here.
+        self.assertIsNone(self.rows_for({"huerfano": ""})[0].huerfano)
+        self.assertEqual(self.rows_for({"huerfano": "1"})[0].huerfano, 1)
+
+    def test_the_route_and_substances_come_through_resolved(self):
+        row = self.rows_for({"viasAdministracion": "ORAL USE",
+                             "sustancias": "PACLITAXEL|"})[0]
+        self.assertEqual(row.route, "oral")
+        self.assertEqual([name for _, name in row.substances], ["PACLITAXEL"])
+
+    def test_the_two_fields_that_never_co_occur_are_both_optional(self):
+        # Not one element of 30,946 has both: substances ran to 2021, routes
+        # from 2022. A row with neither is the 1.4% that has neither.
+        row = self.rows_for({"nombreComercial": "KEYTRUDA"})[0]
+        self.assertIsNone(row.route)
+        self.assertEqual(row.substances, [])
 
 
 if __name__ == "__main__":

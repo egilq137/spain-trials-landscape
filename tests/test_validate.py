@@ -214,6 +214,41 @@ class TestChildTables(ValidateTestCase):
         self.assertEqual(report.rows["study_therapeutic_areas"], 1)
 
 
+class TestInterventions(ValidateTestCase):
+    def intervention(self, **overrides):
+        element = {"nombreComercial": "KEYTRUDA", "codigo": "SUB0661",
+                   "huerfano": "0", "viasAdministracion": "ORAL USE",
+                   "sustancias": "PACLITAXEL|"}
+        element.update(overrides)
+        return {"intervencion": [element]}
+
+    def test_routes_and_substances_are_created_once_and_reused(self):
+        self.write_year(2019, [
+            self.study("a", intervenciones=self.intervention()),
+            self.study("b", intervenciones=self.intervention(
+                nombreComercial="OPDIVO")),
+        ])
+        rows = self.run_validate().rows
+        self.assertEqual(rows["interventions"], 2)
+        self.assertEqual(rows["administration_routes"], 1)
+        self.assertEqual(rows["substances"], 1)
+        self.assertEqual(rows["intervention_substances"], 2)
+
+    def test_an_intervention_with_neither_route_nor_substance_still_loads(self):
+        # 442 elements have neither, and no element ever has both.
+        self.write_year(2019, [self.study("a", intervenciones=self.intervention(
+            viasAdministracion="", sustancias=""))])
+        report = self.run_validate()
+        self.assertEqual(report.rows["interventions"], 1)
+        self.assertEqual(report.rows["administration_routes"], 0)
+
+    def test_a_study_with_no_intervenciones_block_loads(self):
+        # The block is absent from 1,514 studies rather than empty.
+        self.write_year(2019, [self.study("a")])
+        report = self.run_validate()
+        self.assertEqual((report.accepted, report.rows["interventions"]), (1, 0))
+
+
 class TestSchemaCoupling(ValidateTestCase):
     def test_report_follows_the_schema_file(self):
         # Loosening the constraint in a copy of the schema must change the
