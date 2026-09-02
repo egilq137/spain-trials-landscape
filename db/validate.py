@@ -23,6 +23,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from db.centers import build_center_index, center_row, study_centers
 from db.transform import (
     funders,
     sponsor_key,
@@ -109,9 +110,17 @@ def _probe(con, row, template):
     return bad
 
 
+def _iter_records(paths):
+    """(year, record) over every cached line. Streamed, never materialised."""
+    for path in paths:
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                yield path.stem, json.loads(line)
+
+
 def _load_children(con, report, record, study_id, year, funder_ids,
-                   area_codes):
-    """The rows that hang off an accepted study: funders and areas.
+                   area_codes, center_ids, center_index):
+    """The rows that hang off an accepted study: funders, areas and centres.
 
     Only reached once the study itself is in, because both bridges reference
     it. Each row is attempted on its own savepoint, so one bad funder is
@@ -157,6 +166,36 @@ def _load_children(con, report, record, study_id, year, funder_ids,
         _insert_bridge(con, report, "study_therapeutic_areas", "eutct_code",
                        study_id, code, year)
 
+    # A study can list one site twice -- same hospital, two departments, and
+    # departamento is not stored -- so the bridge is deduplicated per study
+    # rather than left to collide.
+    seen_sites = set()
+    for raw in study_centers(record):
+        resolved = center_row(raw, center_index)
+        if resolved is None:
+            continue
+        key, row = resolved
+        if key not in center_ids:
+            con.execute("SAVEPOINT child")
+            try:
+                cursor = con.execute(
+                    "INSERT INTO centers ({}) VALUES ({})".format(
+                        ", ".join(row), ", ".join("?" * len(row))),
+                    list(row.values()))
+            except sqlite3.DatabaseError:
+                con.execute("ROLLBACK TO child")
+                report.record_anomaly("centers", row["center_key"], year,
+                                      study_id)
+                con.execute("RELEASE child")
+                continue
+            center_ids[key] = cursor.lastrowid
+            con.execute("RELEASE child")
+        if key in seen_sites:
+            continue
+        seen_sites.add(key)
+        _insert_bridge(con, report, "study_centers", "center_id",
+                       study_id, center_ids[key], year)
+
 
 def _insert_bridge(con, report, table, column, study_id, parent, year):
     con.execute("SAVEPOINT bridge")
@@ -183,55 +222,61 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
     sponsors = {}
     funder_ids = {}
     area_codes = set()
+    center_ids = {}
     template = None
     deferred = []
 
-    for path in paths:
-        year = path.stem
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                record = json.loads(line)
-                report.checked += 1
-                study_id = record.get("identificador")
+    # Pass one, over the whole corpus, before a single row is written. A
+    # centre entry cannot describe its own site: its name is one of several
+    # spellings, its region is often blank, and its postcode may be missing a
+    # digit only the rest of the corpus can supply. This is the only part of
+    # the load that has to happen in this order.
+    center_index = build_center_index(
+        raw for _, record in _iter_records(paths)
+        for raw in study_centers(record))
 
-                # Identity is the normalised key, display is the cleaned name,
-                # and the cache is keyed on the same thing the UNIQUE is, so
-                # two spellings of one sponsor reuse a row here exactly as
-                # they will in the loader.
-                promotor = sponsor_name(record)
-                key = sponsor_key(record)
-                if key not in sponsors:
-                    try:
-                        cursor = con.execute(
-                            "INSERT INTO sponsors (promotor_key, promotor) "
-                            "VALUES (?, ?)", (key, promotor))
-                        sponsors[key] = cursor.lastrowid
-                    except sqlite3.DatabaseError:
-                        report.record_anomaly(
-                            "sponsors.promotor", promotor, year, study_id)
-                        report.rejected += 1
-                        continue
+    for year, record in _iter_records(paths):
+        report.checked += 1
+        study_id = record.get("identificador")
 
-                row = study_row(record, sponsors[key])
-                for column, value in row.items():
-                    if value is None:
-                        report.nulls[column][year] += 1
+        # Identity is the normalised key, display is the cleaned name,
+        # and the cache is keyed on the same thing the UNIQUE is, so
+        # two spellings of one sponsor reuse a row here exactly as
+        # they will in the loader.
+        promotor = sponsor_name(record)
+        key = sponsor_key(record)
+        if key not in sponsors:
+            try:
+                cursor = con.execute(
+                    "INSERT INTO sponsors (promotor_key, promotor) "
+                    "VALUES (?, ?)", (key, promotor))
+                sponsors[key] = cursor.lastrowid
+            except sqlite3.DatabaseError:
+                report.record_anomaly(
+                    "sponsors.promotor", promotor, year, study_id)
+                report.rejected += 1
+                continue
 
-                con.execute("SAVEPOINT row")
-                try:
-                    _insert(con, row)
-                except sqlite3.DatabaseError:
-                    con.execute("ROLLBACK TO row")
-                    report.rejected += 1
-                    deferred.append((year, study_id, row))
-                else:
-                    report.accepted += 1
-                    if template is None:
-                        template = dict(row)
-                    _load_children(con, report, record, study_id, year,
-                                   funder_ids, area_codes)
-                finally:
-                    con.execute("RELEASE row")
+        row = study_row(record, sponsors[key])
+        for column, value in row.items():
+            if value is None:
+                report.nulls[column][year] += 1
+
+        con.execute("SAVEPOINT row")
+        try:
+            _insert(con, row)
+        except sqlite3.DatabaseError:
+            con.execute("ROLLBACK TO row")
+            report.rejected += 1
+            deferred.append((year, study_id, row))
+        else:
+            report.accepted += 1
+            if template is None:
+                template = dict(row)
+            _load_children(con, report, record, study_id, year,
+                           funder_ids, area_codes, center_ids, center_index)
+        finally:
+            con.execute("RELEASE row")
 
     # Probing needs a row known to satisfy every constraint, which only exists
     # once something has been accepted -- hence the second pass.

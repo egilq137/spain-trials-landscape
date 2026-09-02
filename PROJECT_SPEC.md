@@ -706,7 +706,8 @@ Measuring identity schemes over the whole corpus:
 
 **Decision: `centers` is keyed on (reference-or-name, `localidad`,
 `cod_postal`)** — 3,361 sites, 512 more rows than the coarse version, and the
-conflict all but disappears. Consequences, all of them simplifications:
+conflict all but disappears. (The loader builds **3,360**: this count grouped
+the five nameless entries above as a site, and they now create none.) Consequences, all of them simplifications:
 
   - **Geography moves back onto `centers`**, where it is now stable by
     construction. It does not repeat across 85,410 bridge rows.
@@ -729,10 +730,17 @@ that is its own project. All three stay in the raw cache if they are ever
 decoded. With `departamento` gone, `study_centers` carries nothing but the
 pairing.
 
-**NEW FINDING — 3 centre entries name no centre at all.** `nombre` is blank in
-3 of 85,410 entries, and those same 3 have no usable `referencia` either — in
-fact every field is blank except `situacion: '2'`. They are empty rows, not
-under-described sites, so there is nothing for identity to be built from.
+**NEW FINDING — 5 centre entries name no centre at all**, across 3 studies.
+`nombre` is blank in 3 of 85,410 entries, and those same 3 have no usable
+`referencia` either — in fact every field is blank except `situacion: '2'`,
+and all three belong to one study, `2016-004019-11`. Building the loader found
+**two more of a different shape**: `2015-004391-29` and `2012-004128-39` each
+list a site whose name is `'.'` or `'-'` and which carries an investigator but
+no hospital. Punctuation-only names fold away to nothing, so `match_key`
+returns `None` and they have no identity either — the same outcome by a
+different route, and the reason the rule is "identity is empty" rather than
+"the fields are blank". They are empty rows, not under-described sites, so
+there is nothing for identity to be built from.
 **Decision: they create no centre and no bridge row**, the same shape as the
 `'NA'` funder rule — absence of a bridge row already says the study reported no
 site there. Enforced in the schema by `CHECK (center_key <> '')`, so an empty

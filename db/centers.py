@@ -1,0 +1,190 @@
+"""Resolving 85,410 centre entries into 3,361 physical sites.
+
+Every other transform in this project is a pure function of one record. This
+one cannot be, and the reason is worth stating: a centre entry does not carry
+enough information to describe its own site. Its name is one of several
+spellings, its region is often blank, and its postcode may be missing a digit
+that only the rest of the corpus can supply. So the corpus is read once to
+build an index of what it collectively knows, and a second time to resolve each
+entry against it.
+
+`build_center_index` -> `center_row` follows the shape rules.py already uses
+for `build_postcode_evidence` -> `resolve_postcode`: the index is built by a
+pass and PASSED IN, never imported from a module global. The resolving
+function stays pure given its arguments, so it can be tested on a handful of
+hand-written entries instead of on 85,410 real ones.
+
+Three resolutions happen here, all of them "most frequent wins":
+
+  * **the name**, because the two commonest values in the whole field are one
+    hospital -- HOSPITAL UNIVERSITARI VALL D'HEBRON (2,667) and Hospital
+    Universitari Vall D Hebron (1,553)
+  * **provincia and ccaa**, because 149 sites disagree with themselves; 132 of
+    those only because one variant is blank, and the other 17 are
+    single-occurrence typos that lose to the majority by construction
+  * **the postcode**, delegated to rules.resolve_postcode
+
+Identity is the awkward part and is deliberately two-layered. A site is
+(reference-or-name, locality, postcode), but the postcode is the field being
+repaired, so it cannot also be part of the key used to repair it. The evidence
+key is therefore (reference-or-name, locality) -- dropping the postcode,
+keeping the locality, because without the locality Clinica Universidad de
+Navarra's Pamplona and Madrid campuses would vote on each other's postcodes,
+which is the exact merge the site-level key exists to prevent.
+"""
+
+import collections
+
+from db.rules import (
+    build_postcode_evidence,
+    clean_text,
+    fold,
+    is_placeholder,
+    match_key,
+    resolve_postcode,
+)
+
+CenterIndex = collections.namedtuple(
+    "CenterIndex", "postcodes names localities regions")
+
+# What one entry contributes, before any resolution. Kept small on purpose:
+# the index materialises one of these per centre entry, and there are 85,410.
+Entry = collections.namedtuple(
+    "Entry", "identity nombre localidad cod_postal provincia ccaa referencia")
+
+
+def read_entry(raw):
+    """One raw centro dict as the fields a site is built from.
+
+    Returns None when the entry names no site at all. Three of the 85,410 are
+    blank in every field but `situacion`, so there is nothing for identity to
+    be built from and nothing to store -- they create no centre and no bridge
+    row, the same shape as a placeholder funder.
+    """
+    referencia = clean_text(raw.get("referencia"))
+    if referencia is not None and is_placeholder(referencia):
+        # 'NR' in 119 entries covering 103 distinct hospitals. Deduplicating
+        # on it would merge them into one centre with one region.
+        referencia = None
+    nombre = clean_text(raw.get("nombre"))
+    identity = referencia if referencia is not None else match_key(nombre)
+    if identity is None:
+        return None
+    return Entry(identity=identity,
+                 nombre=nombre,
+                 localidad=clean_text(raw.get("localidad")),
+                 cod_postal=clean_text(raw.get("codPostal")),
+                 provincia=clean_text(raw.get("provincia")),
+                 ccaa=clean_text(raw.get("ccaa")),
+                 referencia=referencia)
+
+
+def evidence_key(entry):
+    """The group a postcode is repaired within: identity plus locality."""
+    return (entry.identity, fold(entry.localidad))
+
+
+def build_center_index(raw_entries):
+    """Everything the corpus collectively knows about its sites.
+
+    `raw_entries` is an iterable of raw centro dicts. Consumed once; the small
+    tuples it produces are kept, not the dicts.
+
+    Two sub-passes, in this order and not the other: postcodes must be
+    repaired before sites can be grouped, because the repaired postcode is
+    part of the site key. Only well-formed postcodes vote, so a broken value
+    can never confirm another.
+    """
+    entries = [entry for entry in map(read_entry, raw_entries)
+               if entry is not None]
+
+    postcodes = build_postcode_evidence(
+        (entry.cod_postal, evidence_key(entry), entry.localidad)
+        for entry in entries)
+
+    names = collections.defaultdict(collections.Counter)
+    localities = collections.defaultdict(collections.Counter)
+    regions = collections.defaultdict(collections.Counter)
+    for entry in entries:
+        key = _site_key(entry, postcodes)
+        if entry.nombre:
+            names[key][entry.nombre] += 1
+        if entry.localidad:
+            localities[key][entry.localidad] += 1
+        # Blanks do not vote: a site whose region is recorded once and blank
+        # 400 times has a region, and it is the one that was recorded.
+        for field, value in (("provincia", entry.provincia),
+                             ("ccaa", entry.ccaa)):
+            if value:
+                regions[key][(field, value)] += 1
+
+    return CenterIndex(postcodes=postcodes, names=names,
+                       localities=localities, regions=regions)
+
+
+def _site_key(entry, postcodes):
+    """(identity, folded locality, repaired postcode) -- the grouping key.
+
+    Folded, not display: the key must not split MADRID from Madrid. The
+    display spellings are resolved separately, per group, by most frequent.
+    """
+    resolution = resolve_postcode(
+        entry.cod_postal, evidence_key(entry), entry.localidad, postcodes)
+    return (entry.identity, fold(entry.localidad), resolution.postcode or "")
+
+
+def _most_frequent(counter, default=None):
+    """Most frequent value; ties broken alphabetically so a load is stable."""
+    if not counter:
+        return default
+    return min(counter.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def center_row(raw, index, manifest=None):
+    """(site key, row) for one raw centro dict, or None when it names no site.
+
+    The site key is what the loader deduplicates on; the row is what it
+    inserts. Every field on the row is resolved over the whole site rather
+    than taken from this entry, so two entries for one site produce identical
+    rows and the second is simply skipped.
+    """
+    entry = read_entry(raw)
+    if entry is None:
+        if manifest is not None:
+            manifest.applied("centers.nombre", "names no site -> no centre")
+        return None
+
+    key = _site_key(entry, index.postcodes)
+    if manifest is not None:
+        resolution = resolve_postcode(
+            entry.cod_postal, evidence_key(entry), entry.localidad,
+            index.postcodes)
+        if resolution.basis is not None:
+            manifest.applied("centers.cod_postal",
+                             "digit recovered ({})".format(resolution.basis))
+
+    regions = index.regions.get(key, {})
+    row = {
+        "center_key": entry.identity,
+        "referencia": entry.referencia,
+        "nombre": _most_frequent(index.names.get(key), entry.nombre),
+        # '' and not NULL: both are part of the UNIQUE, and SQL counts every
+        # NULL as distinct, so a NULL here would duplicate exactly the sites
+        # whose locality or postcode is unknown.
+        "localidad": _most_frequent(index.localities.get(key)) or "",
+        "cod_postal": key[2],
+        "provincia": _most_frequent(
+            {v: n for (f, v), n in regions.items() if f == "provincia"}),
+        "ccaa": _most_frequent(
+            {v: n for (f, v), n in regions.items() if f == "ccaa"}),
+    }
+    return key, row
+
+
+def study_centers(record):
+    """The raw centro dicts of one study, in source order.
+
+    centros.centro is a list in 11,847/11,847 records, never a bare object.
+    147 studies list none.
+    """
+    return (record.get("centros") or {}).get("centro") or []

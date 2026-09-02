@@ -304,9 +304,10 @@ CREATE TABLE centers (
     -- The identity part of the key: referencia when it is a real reference,
     -- otherwise rules.match_key of the name. Computed by the loader because
     -- the choice between the two is conditional. CHECK (<> '') is what stops
-    -- the 3 entirely blank centre entries - no reference, no name, every
-    -- field empty - from collapsing into one nameless centre that every study
-    -- reporting one would appear to share.
+    -- the 5 entries that name no site - 3 blank in every field but situacion,
+    -- 2 whose name is '.' or '-' - from collapsing into one nameless centre
+    -- that every study reporting one would appear to share. 3,360 sites load;
+    -- 3.2c's 3,361 counted those five as one.
     center_key TEXT NOT NULL CHECK (center_key <> ''),
     -- Kept alongside the key so a site can be traced back to what the
     -- registry sent. NULL for the 2,695 entries with none and the 119 'NR's.
