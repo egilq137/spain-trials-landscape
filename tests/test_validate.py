@@ -19,14 +19,19 @@ Success criteria:
     than crashing the run
   schema coupling: the rules enforced come from db/schema.sql, so loosening a
     constraint there changes the report without any edit here
+  dry run: the same run reports what the cleaning rules WOULD change, counted
+    by the code that does the changing rather than by a second pass that
+    re-tests the conditions -- and records seen is tracked apart from changes,
+    so "nothing changed" is distinguishable from "nothing was read"
 """
 
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from db.validate import DEFAULT_SCHEMA, validate
+from db.validate import DEFAULT_SCHEMA, print_report, validate
 from tests.test_transform import raw_record
 
 
@@ -247,6 +252,50 @@ class TestInterventions(ValidateTestCase):
         self.write_year(2019, [self.study("a")])
         report = self.run_validate()
         self.assertEqual((report.accepted, report.rows["interventions"]), (1, 0))
+
+
+class TestDryRun(ValidateTestCase):
+    """The tally reports what a real load would change, before it changes it."""
+
+    def test_counts_come_from_the_run_that_did_the_work(self):
+        # Not a second pass re-testing the conditions: the same call that
+        # nulls the acronym is the one that counts it.
+        self.write_year(2019, [self.study("a"), self.study("b")])
+        tally = self.run_validate().tally
+        self.assertEqual(tally.records, 2)
+        self.assertEqual(
+            tally.counts()[("studies.acronimo", "placeholder -> NULL")], 2)
+
+    def test_it_counts_every_table_not_just_studies(self):
+        self.write_year(2019, [self.study(
+            "a",
+            organismo={"promotor": "Sponsor", "financiador": "NA|"},
+            intervenciones={"intervencion": [
+                {"nombreComercial": "-", "viasAdministracion": "ORAL USE",
+                 "sustancias": "N/A|"}]})])
+        counts = self.run_validate().tally.counts()
+        for key in (("funders.nombre", "placeholder -> no funder"),
+                    ("substances.nombre", "placeholder -> no substance"),
+                    ("interventions.nombre_comercial", "placeholder -> NULL"),
+                    ("administration_routes.nombre", "mapped to canonical")):
+            with self.subTest(key=key):
+                self.assertEqual(counts[key], 1)
+
+    def test_a_clean_record_changes_nothing(self):
+        # The denominator matters: records seen is tracked apart from changes,
+        # so 'nothing changed' is distinguishable from 'nothing was read'.
+        self.write_year(2019, [self.study("a", acronimo="RECOVERY",
+                                          poblacion={"total": "120"})])
+        tally = self.run_validate().tally
+        self.assertEqual(tally.records, 1)
+        self.assertEqual(tally.total(), 0)
+
+    def test_the_report_is_printed_with_the_violations(self):
+        self.write_year(2019, [self.study("a")])
+        stream = io.StringIO()
+        print_report(self.run_validate(), stream)
+        self.assertIn("Cleaning rules tally", stream.getvalue())
+        self.assertIn("placeholder -> NULL", stream.getvalue())
 
 
 class TestSchemaCoupling(ValidateTestCase):

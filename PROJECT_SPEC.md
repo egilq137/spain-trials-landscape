@@ -1,7 +1,7 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules written as data in db/cleaning_rules.py, steps 1-4 of 6 done (placeholders and sentinels, administration routes, name normalisation, postcode repair by triangulation, and the cleaning-rules tally) and applied in db/transform.py. Next: db/schema.sql (2.3), which steps 5-6 are blocked on
-last updated: 2026-09-01
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2 complete through 2.4: profiling, the ERD revision (12 tables, 4 bridges), all six cleaning-rule steps in db/cleaning_rules.py + db/cleaning_rules_tally.py, the DDL in db/schema.sql written in four slices, and db/validate.py pushing all 11,847 records through it — 0 rejected, no constraint violations, every table populated and matching §3.2c. Next: db/loader.py (2.5), which writes the same rows to a file database
+last updated: 2026-09-02
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
 
@@ -1232,25 +1232,47 @@ test that fails when a refresh changes the data underneath.
       - The two `poblacion_total` sentinels are counted apart: "the registry
         declined to report" and "this is not a count" both load as NULL but
         are different facts.
-- [ ] 5. Wire the tally into `db/validate.py` as a dry run.
-- [ ] 6. Corpus-wide resolutions — most frequent centre name, most frequent
-      non-blank region. These need two passes over the corpus, so they are
-      loader work, not pure-function work. Postcode repair (3b) is already
-      built to this shape and is the template for the rest.
+- [x] 5. The tally is wired into `db/validate.py` as a dry run. Every row
+      builder gets the same `CleaningRulesTally`, so a validation run reports
+      what a real load *would* change before anything is written. Over the
+      corpus: **28,933 changes in 11,847 records**. The studies-only subtotal
+      is unchanged at 7,652, which is the check that wiring the other tables
+      in did not disturb what was already measured.
+      - The route rule is labelled "mapped to canonical", not "harmonised".
+        It fires on all 16,969 populated route values, and most differ from
+        their canonical form only by case — calling that a merge would
+        overstate what the map does. The real merges are a subset and are
+        visible in `ROUTE_CANONICAL` itself.
+      - Rules are tallied for every record the transform touches, including
+        one whose row is then rejected. The tally answers "what did the
+        cleaning rules do", which is a question about the transform, not
+        about the insert.
+- [x] 6. Corpus-wide resolutions — done in `db/centers.py`, which was the only
+      table that needed them. `build_center_index` reads the corpus once
+      (most frequent centre name, most frequent non-blank `provincia`/`ccaa`,
+      and the postcode evidence), and `center_row` resolves each entry
+      against the index it is passed. Same build/pass-in shape as postcode
+      repair (3b), which was the template as expected: the resolver stays
+      pure given its arguments and is unit-tested on hand-written entries.
 
 **2.3 — DDL (after profiling)**
-- [ ] `db/schema.sql` — rebuilt from what the profile shows. The reverted
-      version is available for comparison (`git show main:db/schema.sql`) but
-      is not a starting point; its constraints encode assumptions the profile
-      has not yet confirmed.
-- [ ] `tests/test_schema.py` — each constraint asserted to reject its bad
-      value, not merely that the script runs.
+- [x] `db/schema.sql` — rebuilt from what the profile shows, in four slices:
+      sponsors + studies, funders + therapeutic areas, centers, interventions.
+      12 tables, 4 bridges, `STRICT` throughout. The reverted version was kept
+      for comparison (`git show 0984446:db/schema.sql`) but not used as a
+      starting point; its constraints encoded assumptions the profile has
+      since contradicted — survival columns most of all.
+- [x] `tests/test_schema.py` — each constraint asserted to reject its bad
+      value, not merely that the script runs. 82 tests.
 
 **2.4 — Validation before load**
-- [ ] `db/validate.py` — pushes every cached record through the schema in an
+- [x] `db/validate.py` — pushes every cached record through the schema in an
       in-memory database and reports every constraint violation grouped with
-      counts, rather than stopping at the first. Checked in on this branch
-      (`b43a7a8`) against the reverted schema; needs rebasing onto the new one.
+      counts, rather than stopping at the first. Rebased onto the new schema
+      and extended to all 12 tables: **11,847 checked, 11,847 accepted, 0
+      rejected, no violations.** It also reports rows built per table, because
+      "no violations" over an empty table is an unexercised table rather than
+      a clean one — which is how a 54th administration route was caught.
 - Profiling and validation are complementary, not alternatives: profiling
   finds problems within a single field, validation finds problems that only
   exist across fields or across records — key collisions, broken uniqueness,

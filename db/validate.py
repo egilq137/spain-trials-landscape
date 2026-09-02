@@ -11,6 +11,17 @@ It inserts into a throwaway in-memory database built from db/schema.sql, so
 the rules it enforces ARE the schema's rules. Nothing here restates them, and
 the two cannot drift apart.
 
+It is also the dry run for the loader. Every row builder is given the same
+CleaningRulesTally, so a run reports what a real load WOULD change -- 'this
+would null 4,763 placeholder acronyms and recover 283 postcodes' -- before
+anything is written to a file. The counts come from the code that does the
+changing, not from a second pass that re-tests the conditions, which is the
+one way a tally can quietly stop describing the rules it claims to describe.
+
+Rules are tallied for every record the transform touches, including the rare
+one whose row is then rejected: the tally answers "what did the cleaning rules
+do", which is a question about the transform, not about the insert.
+
 Usage:
     python -m db.validate            # whole corpus
     python -m db.validate 2019 2024  # named years only
@@ -24,6 +35,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from db.centers import build_center_index, center_row, study_centers
+from db.cleaning_rules_tally import CleaningRulesTally
 from db.transform import (
     funders,
     intervention_rows,
@@ -62,6 +74,8 @@ class Report:
         # table -> rows built. Reported because "no violations" over an empty
         # table is not a clean run, it is an unexercised one.
         self.rows = {}
+        # What the cleaning rules would change if this were a real load.
+        self.tally = CleaningRulesTally()
 
     def record_anomaly(self, column, value, year, study_id):
         entry = self.anomalies[(column, repr(value))]
@@ -134,7 +148,7 @@ def _load_children(con, report, record, study_id, year, funder_ids,
     report says which of its children did not, and `rejected` stays a count of
     studies so it can still be read against `checked`.
     """
-    for key, name in funders(record):
+    for key, name in funders(record, report.tally):
         if key not in funder_ids:
             con.execute("SAVEPOINT child")
             try:
@@ -173,7 +187,7 @@ def _load_children(con, report, record, study_id, year, funder_ids,
     # rather than left to collide.
     seen_sites = set()
     for raw in study_centers(record):
-        resolved = center_row(raw, center_index)
+        resolved = center_row(raw, center_index, report.tally)
         if resolved is None:
             continue
         key, row = resolved
@@ -198,7 +212,7 @@ def _load_children(con, report, record, study_id, year, funder_ids,
         _insert_bridge(con, report, "study_centers", "center_id",
                        study_id, center_ids[key], year)
 
-    for intervention in intervention_rows(record):
+    for intervention in intervention_rows(record, report.tally):
         route_id = None
         if intervention.route is not None:
             route_id = _lookup(con, report, "administration_routes", "nombre",
@@ -314,7 +328,7 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
         # and the cache is keyed on the same thing the UNIQUE is, so
         # two spellings of one sponsor reuse a row here exactly as
         # they will in the loader.
-        promotor = sponsor_name(record)
+        promotor = sponsor_name(record, report.tally)
         key = sponsor_key(record)
         if key not in sponsors:
             try:
@@ -328,7 +342,7 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
                 report.rejected += 1
                 continue
 
-        row = study_row(record, sponsors[key])
+        row = study_row(record, sponsors[key], report.tally)
         for column, value in row.items():
             if value is None:
                 report.nulls[column][year] += 1
@@ -375,6 +389,13 @@ def print_report(report, stream=sys.stdout):
 
     out("checked {} studies: {} accepted, {} rejected".format(
         report.checked, report.accepted, report.rejected))
+    out()
+
+    # The dry run: what a real load would change, from the same code path that
+    # would change it. Printed before the violations because the two answer
+    # different questions -- this one is "what did we do to the data", the
+    # other is "what did the data do to the schema".
+    out(report.tally.report())
     out()
 
     if report.rows:

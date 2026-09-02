@@ -262,7 +262,12 @@ def route_name(raw, tally=None):
     if canonical is None:
         return text
     if tally is not None and canonical != text:
-        tally.applied("administration_routes.nombre", "harmonised")
+        # "mapped", not "harmonised": this fires for all 16,969 populated
+        # values, and most differ from their canonical form only by case.
+        # Calling that a merge would overstate what the map does -- the real
+        # merges (oral/oral use, the two misspellings) are a subset, and the
+        # map itself is where they are visible and counted.
+        tally.applied("administration_routes.nombre", "mapped to canonical")
     return canonical
 
 
