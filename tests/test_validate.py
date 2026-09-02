@@ -169,6 +169,51 @@ class TestSponsors(ValidateTestCase):
         self.assertIn(("sponsors.promotor", repr(None)), report.anomalies)
 
 
+class TestChildTables(ValidateTestCase):
+    AREA = {"eutct": "999999000429", "nombre_es": "Respiratorio",
+            "nombre_en": "Respiratory"}
+
+    def test_funders_and_areas_are_built_and_counted(self):
+        # An empty table reporting no violations is unexercised, not clean,
+        # so the row counts are part of the report.
+        self.write_year(2019, [
+            self.study("a", organismo={"promotor": "Sponsor",
+                                       "financiador": "ISCIII|Pfizer|"},
+                       areasTerapeuticas={"area": [self.AREA]}),
+            self.study("b", organismo={"promotor": "Sponsor",
+                                       "financiador": "ISCIII|"},
+                       areasTerapeuticas={"area": [self.AREA]}),
+        ])
+        rows = self.run_validate().rows
+        self.assertEqual(rows["funders"], 2)          # ISCIII reused
+        self.assertEqual(rows["study_funders"], 3)
+        self.assertEqual(rows["therapeutic_areas"], 1)
+        self.assertEqual(rows["study_therapeutic_areas"], 2)
+
+    def test_a_study_with_no_funder_still_loads(self):
+        # 5,004 CTIS-era studies have none, and 583 more name only 'NA'.
+        self.write_year(2019, [
+            self.study("a", organismo={"promotor": "Sponsor",
+                                       "financiador": "NA|"})])
+        report = self.run_validate()
+        self.assertEqual((report.accepted, report.rejected), (1, 0))
+        self.assertEqual(report.rows["study_funders"], 0)
+
+    def test_a_rejected_child_does_not_reject_its_study(self):
+        # One area with a blank code: the study is fine, the area is not.
+        self.write_year(2019, [
+            self.study("a", areasTerapeuticas={
+                "area": [{"eutct": "", "nombre_es": "x", "nombre_en": "y"},
+                         self.AREA]})])
+        report = self.run_validate()
+        self.assertEqual((report.accepted, report.rejected), (1, 0))
+        self.assertIn(("therapeutic_areas.eutct_code", repr(None)),
+                      report.anomalies)
+        # The study's other area still loaded: one bad child does not take
+        # its siblings with it.
+        self.assertEqual(report.rows["study_therapeutic_areas"], 1)
+
+
 class TestSchemaCoupling(ValidateTestCase):
     def test_report_follows_the_schema_file(self):
         # Loosening the constraint in a copy of the schema must change the

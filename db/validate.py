@@ -23,7 +23,13 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from db.transform import sponsor_key, sponsor_name, study_row
+from db.transform import (
+    funders,
+    sponsor_key,
+    sponsor_name,
+    study_row,
+    therapeutic_area_rows,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "detalle"
@@ -51,6 +57,9 @@ class Report:
         # column -> Counter of year -> number of NULLs
         self.nulls = defaultdict(Counter)
         self.unattributed = []
+        # table -> rows built. Reported because "no violations" over an empty
+        # table is not a clean run, it is an unexercised one.
+        self.rows = {}
 
     def record_anomaly(self, column, value, year, study_id):
         entry = self.anomalies[(column, repr(value))]
@@ -100,6 +109,68 @@ def _probe(con, row, template):
     return bad
 
 
+def _load_children(con, report, record, study_id, year, funder_ids,
+                   area_codes):
+    """The rows that hang off an accepted study: funders and areas.
+
+    Only reached once the study itself is in, because both bridges reference
+    it. Each row is attempted on its own savepoint, so one bad funder is
+    reported and skipped rather than taking the study's other children with
+    it -- the same reason the study loop does not stop at the first bad
+    record.
+
+    A rejected child does NOT count as a rejected study. The study loaded; the
+    report says which of its children did not, and `rejected` stays a count of
+    studies so it can still be read against `checked`.
+    """
+    for key, name in funders(record):
+        if key not in funder_ids:
+            con.execute("SAVEPOINT child")
+            try:
+                cursor = con.execute(
+                    "INSERT INTO funders (nombre_key, nombre) VALUES (?, ?)",
+                    (key, name))
+            except sqlite3.DatabaseError:
+                con.execute("ROLLBACK TO child")
+                report.record_anomaly("funders.nombre", name, year, study_id)
+                con.execute("RELEASE child")
+                continue
+            funder_ids[key] = cursor.lastrowid
+            con.execute("RELEASE child")
+        _insert_bridge(con, report, "study_funders", "funder_id",
+                       study_id, funder_ids[key], year)
+
+    for code, nombre_es, nombre_en in therapeutic_area_rows(record):
+        if code not in area_codes:
+            con.execute("SAVEPOINT child")
+            try:
+                con.execute("INSERT INTO therapeutic_areas VALUES (?, ?, ?)",
+                            (code, nombre_es, nombre_en))
+            except sqlite3.DatabaseError:
+                con.execute("ROLLBACK TO child")
+                report.record_anomaly("therapeutic_areas.eutct_code", code,
+                                      year, study_id)
+                con.execute("RELEASE child")
+                continue
+            area_codes.add(code)
+            con.execute("RELEASE child")
+        _insert_bridge(con, report, "study_therapeutic_areas", "eutct_code",
+                       study_id, code, year)
+
+
+def _insert_bridge(con, report, table, column, study_id, parent, year):
+    con.execute("SAVEPOINT bridge")
+    try:
+        con.execute(
+            "INSERT INTO {} (study_id, {}) VALUES (?, ?)".format(table, column),
+            (study_id, parent))
+    except sqlite3.DatabaseError:
+        con.execute("ROLLBACK TO bridge")
+        report.record_anomaly(table, parent, year, study_id)
+    finally:
+        con.execute("RELEASE bridge")
+
+
 def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
     """Push every cached record through the schema and report what it rejects."""
     paths = sorted(Path(raw_dir).glob("*.jsonl"))
@@ -110,6 +181,8 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
     con = open_schema(schema_path)
     report = Report()
     sponsors = {}
+    funder_ids = {}
+    area_codes = set()
     template = None
     deferred = []
 
@@ -155,6 +228,8 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
                     report.accepted += 1
                     if template is None:
                         template = dict(row)
+                    _load_children(con, report, record, study_id, year,
+                                   funder_ids, area_codes)
                 finally:
                     con.execute("RELEASE row")
 
@@ -167,6 +242,12 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
         for column, value in bad:
             report.record_anomaly(column, value, year, study_id)
 
+    tables = [row[0] for row in con.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+    report.rows = {
+        table: con.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+        for table in tables}
+
     con.close()
     return report
 
@@ -178,6 +259,12 @@ def print_report(report, stream=sys.stdout):
     out("checked {} studies: {} accepted, {} rejected".format(
         report.checked, report.accepted, report.rejected))
     out()
+
+    if report.rows:
+        out("rows built (a table at 0 is not validated, it is unexercised)")
+        for table, count in sorted(report.rows.items()):
+            out("  {:28s} {:>8,}".format(table, count))
+        out()
 
     if report.anomalies:
         out("constraint violations ({} distinct column/value pairs)".format(

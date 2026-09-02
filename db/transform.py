@@ -162,6 +162,62 @@ def sponsor_key(record):
     return match_key((record.get("organismo") or {}).get("promotor"))
 
 
+def funders(record, manifest=None):
+    """[(key, display name)] for one study, in source order.
+
+    `financiador` is pipe-delimited and the delimiter is inconsistent -- 5,280
+    values end with a trailing '|' and 1,563 do not -- so splitting and
+    discarding empties handles both without a rule about trailing separators.
+
+    Placeholders create no funder. 584 mentions are 'NA' and its spellings,
+    and 'NA' is the single most frequent funder name in the source: kept, it
+    would appear on the dashboard as an organisation that funded 572 trials.
+    A study with no real funder simply gets no bridge row, which already means
+    "none recorded".
+
+    Deduplicated by key, because 12 studies name one funder twice under two
+    spellings and the bridge's PRIMARY KEY (study_id, funder_id) refuses the
+    second. Deduplicating on the raw string would not catch those.
+    """
+    raw = (record.get("organismo") or {}).get("financiador") or ""
+    out = []
+    seen = set()
+    for part in raw.split("|"):
+        if not part.strip():
+            continue
+        if is_placeholder(part):
+            if manifest is not None:
+                manifest.applied("funders.nombre", "placeholder -> no funder")
+            continue
+        key, name = match_key(part), clean_text(part)
+        if key is None or key in seen:
+            if manifest is not None and key is not None:
+                manifest.applied("funders.nombre", "repeated within a study")
+            continue
+        seen.add(key)
+        if manifest is not None and name != part.strip():
+            manifest.applied("funders.nombre", "markup or spacing cleaned")
+        out.append((key, name))
+    return out
+
+
+def therapeutic_area_rows(record):
+    """[(eutct, nombre_es, nombre_en)] for one study.
+
+    The cleanest field in the source: a list in 11,847/11,847 records, every
+    study has at least one, all three fields present in 12,289/12,289 elements
+    with no blanks, and no study repeats a code. So there is nothing to
+    deduplicate and nothing to repair -- clean_text changes 0 of the 36,867
+    values here. It is applied anyway, so a refresh that introduces markup
+    meets the same rule as every other stored name rather than a special case.
+    """
+    areas = (record.get("areasTerapeuticas") or {}).get("area") or []
+    return [(clean_text(area.get("eutct")),
+             clean_text(area.get("nombre_es")),
+             clean_text(area.get("nombre_en")))
+            for area in areas]
+
+
 def study_row(record, sponsor_id, manifest=None):
     """One studies row. sponsor_id is passed in, not looked up.
 

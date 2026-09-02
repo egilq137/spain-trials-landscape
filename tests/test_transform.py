@@ -18,6 +18,15 @@ Success criteria per function:
     value, and every value that DOES change is changed by a named rule in
     db/rules.py -- '-1' as a string still reaches the schema and fails,
     because that is not the representation the rule was measured against
+  funders: the pipe-delimited field splits whether or not it ends with a
+    separator; placeholders create no funder at all, because absence of a
+    bridge row already means "none recorded"; and one funder named twice in
+    one study under two spellings yields one entry, since the bridge's
+    composite key would refuse the second
+  therapeutic_area_rows: every area in the list comes through with its code
+    and both names, in order, with nothing deduplicated -- no study repeats a
+    code, and 442 extra memberships across 363 studies are the reason this is
+    a bridge rather than a column
   study_row: every calendario/poblacion/proposito field lands in its column
     under the snake_case name; sponsor_id is the one passed in, never looked
     up; and NOTHING is derived from the calendario dates -- censoring and
@@ -32,6 +41,8 @@ from db.transform import (
     POBLACION_FLAGS,
     PROPOSITO_FLAGS,
     flag,
+    funders,
+    therapeutic_area_rows,
     integer,
     iso_date,
     sponsor_key,
@@ -210,6 +221,76 @@ class TestSponsorKey(unittest.TestCase):
     def test_blank_or_absent_becomes_none(self):
         self.assertIsNone(sponsor_key(raw_record(organismo={"promotor": " "})))
         self.assertIsNone(sponsor_key({}))
+
+
+class TestFunders(unittest.TestCase):
+    def funders_of(self, financiador):
+        return funders(raw_record(organismo={"promotor": "Someone",
+                                             "financiador": financiador}))
+
+    def test_splits_with_or_without_a_trailing_separator(self):
+        # 5,280 values end with '|' and 1,563 do not.
+        for raw in ("ISCIII|Pfizer|", "ISCIII|Pfizer"):
+            with self.subTest(raw=raw):
+                self.assertEqual([name for _, name in self.funders_of(raw)],
+                                 ["ISCIII", "Pfizer"])
+
+    def test_a_single_funder_needs_no_separator_handling(self):
+        self.assertEqual([name for _, name in self.funders_of("ISCIII|")],
+                         ["ISCIII"])
+
+    def test_placeholders_create_no_funder(self):
+        # 'NA' is the most frequent funder name in the source. Kept, it would
+        # be an organisation that funded 572 trials.
+        self.assertEqual(self.funders_of("NA|"), [])
+        self.assertEqual(self.funders_of("N/A|Not available|"), [])
+
+    def test_a_placeholder_does_not_suppress_a_real_funder(self):
+        self.assertEqual([name for _, name in self.funders_of("NA|ISCIII|")],
+                         ["ISCIII"])
+
+    def test_one_funder_named_twice_yields_one_entry(self):
+        # 12 studies do this. The bridge's PRIMARY KEY would refuse the second,
+        # and deduplicating on the raw string would not catch the respelling.
+        self.assertEqual(
+            [name for _, name in self.funders_of("ISCIII|isciii|")],
+            ["ISCIII"])
+
+    def test_identity_and_display_are_the_two_different_forms(self):
+        [(key, name)] = self.funders_of("  Merck Sharp &amp; Dohme  |")
+        self.assertEqual(name, "Merck Sharp & Dohme")
+        self.assertEqual(key, "merck sharp & dohme")
+
+    def test_blank_and_absent_yield_nothing(self):
+        self.assertEqual(self.funders_of(""), [])
+        self.assertEqual(self.funders_of("|||"), [])
+        self.assertEqual(funders({}), [])
+
+
+class TestTherapeuticAreaRows(unittest.TestCase):
+    AREA = {"eutct": "999999000429",
+            "nombre_es": "Enfermedades [C] - Tracto respiratorio [C08]",
+            "nombre_en": "Diseases [C] - Respiratory Tract Diseases [C08]"}
+
+    def test_each_area_keeps_its_code_and_both_names(self):
+        rows = therapeutic_area_rows(
+            raw_record(areasTerapeuticas={"area": [self.AREA]}))
+        self.assertEqual(rows, [(self.AREA["eutct"], self.AREA["nombre_es"],
+                                 self.AREA["nombre_en"])])
+
+    def test_several_areas_all_come_through(self):
+        # 363 studies list more than one; a column would lose 442 memberships.
+        second = dict(self.AREA, eutct="999999000431")
+        rows = therapeutic_area_rows(
+            raw_record(areasTerapeuticas={"area": [self.AREA, second]}))
+        self.assertEqual([code for code, _, _ in rows],
+                         ["999999000429", "999999000431"])
+
+    def test_a_missing_block_yields_nothing(self):
+        self.assertEqual(therapeutic_area_rows({}), [])
+        self.assertEqual(
+            therapeutic_area_rows(raw_record(areasTerapeuticas={"area": []})),
+            [])
 
 
 if __name__ == "__main__":
