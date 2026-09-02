@@ -1,26 +1,25 @@
-"""Check real REEC records against the schema without loading them.
+"""Check real REEC records against the schema without keeping the result.
 
 Why this is its own step rather than error handling inside the loader: a
 loader stops at the first bad row, so problems arrive one at a time, in file
 order, with no sense of whether a given one affects three studies or three
-thousand. This walks the whole corpus, collects every constraint the data
+thousand. This runs the whole corpus, collects every constraint the data
 violates, and reports them grouped with counts -- so the decisions get made
 once, against evidence, rather than reactively.
 
-It inserts into a throwaway in-memory database built from db/schema.sql, so
-the rules it enforces ARE the schema's rules. Nothing here restates them, and
-the two cannot drift apart.
+It does NOT have its own copy of the insert order. It calls db.loader.load
+against an in-memory database, passing an Observer that records failures
+instead of raising, so "validated" means "went through the code that loads
+it". A validator with its own INSERT sequence could only ever check the
+sequence it happened to share with the loader.
 
-It is also the dry run for the loader. Every row builder is given the same
-CleaningRulesTally, so a run reports what a real load WOULD change -- 'this
-would null 4,763 placeholder acronyms and recover 283 postcodes' -- before
-anything is written to a file. The counts come from the code that does the
-changing, not from a second pass that re-tests the conditions, which is the
-one way a tally can quietly stop describing the rules it claims to describe.
+The schema comes from db/schema.sql, so the rules enforced ARE the schema's
+rules; nothing here restates them and the two cannot drift apart.
 
-Rules are tallied for every record the transform touches, including the rare
-one whose row is then rejected: the tally answers "what did the cleaning rules
-do", which is a question about the transform, not about the insert.
+It is also the dry run for the loader. The same CleaningRulesTally the loader
+would fill is filled here, so a run reports what a real load WOULD change --
+'this would null 4,763 placeholder acronyms and recover 283 postcodes' --
+before anything is written to a file.
 
 Usage:
     python -m db.validate            # whole corpus
@@ -28,26 +27,15 @@ Usage:
 """
 
 import itertools
-import json
 import sqlite3
 import sys
 from collections import Counter, defaultdict
-from pathlib import Path
 
-from db.centers import build_center_index, center_row, study_centers
+from db import loader
 from db.cleaning_rules_tally import CleaningRulesTally
-from db.transform import (
-    funders,
-    intervention_rows,
-    sponsor_key,
-    sponsor_name,
-    study_row,
-    therapeutic_area_rows,
-)
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "detalle"
-DEFAULT_SCHEMA = REPO_ROOT / "db" / "schema.sql"
+DEFAULT_RAW_DIR = loader.DEFAULT_RAW_DIR
+DEFAULT_SCHEMA = loader.DEFAULT_SCHEMA
 
 # Set by the caller, never derived from the record itself.
 SKIP_PROBE_COLUMNS = ("identificador", "sponsor_id")
@@ -65,6 +53,9 @@ class Report:
         self.checked = 0
         self.accepted = 0
         self.rejected = 0
+        # Excluded by a declared rule before any insert, which is not the same
+        # as refused by the schema.
+        self.dropped = 0
         # (column, repr(value)) -> {"count", "years", "studies"}
         self.anomalies = defaultdict(
             lambda: {"count": 0, "years": Counter(), "studies": []})
@@ -85,19 +76,55 @@ class Report:
             entry["studies"].append(study_id)
 
 
+class _Collect(loader.Observer):
+    """The failure policy that turns a load into a validation run.
+
+    Records what the default Observer would raise on, and keeps the first
+    accepted studies row as the template the per-column probe needs.
+    """
+
+    def __init__(self, report):
+        self.report = report
+        self.template = None
+        self.deferred = []
+
+    def record_seen(self, year, record):
+        self.report.checked += 1
+
+    def planned(self, table, row, year, study_id):
+        if table == "studies":
+            for column, value in row.items():
+                if value is None:
+                    self.report.nulls[column][year] += 1
+
+    def written(self, table, row, year, study_id):
+        if table == "studies":
+            self.report.accepted += 1
+            if self.template is None:
+                self.template = dict(row)
+
+    def skipped(self, year, study_id, reason):
+        self.report.dropped += 1
+
+    def failed(self, label, value, year, study_id, row, error):
+        # A study that cannot load is deferred: which of its columns are at
+        # fault takes a template row, and none exists until something has
+        # been accepted.
+        if label == "studies":
+            self.report.rejected += 1
+            self.deferred.append((year, study_id, row))
+            return
+        # A sponsor that will not load takes its study with it, since
+        # studies.sponsor_id is NOT NULL. Anything else is a child row: the
+        # study loaded, and only the child is missing.
+        if label == "sponsors.promotor":
+            self.report.rejected += 1
+        self.report.record_anomaly(label, value, year, study_id)
+
+
 def open_schema(schema_path=DEFAULT_SCHEMA):
-    """An empty database with the real schema applied."""
-    con = sqlite3.connect(":memory:")
-    con.executescript(Path(schema_path).read_text(encoding="utf-8"))
-    con.execute("PRAGMA foreign_keys = ON")
-    return con
-
-
-def _insert(con, row):
-    con.execute(
-        "INSERT INTO studies ({}) VALUES ({})".format(
-            ",".join(row), ",".join("?" * len(row))),
-        list(row.values()))
+    """An empty in-memory database with the real schema applied."""
+    return loader.open_database(":memory:", schema_path)
 
 
 def _probe(con, row, template):
@@ -116,7 +143,10 @@ def _probe(con, row, template):
         candidate["identificador"] = "9999-{:06d}-99".format(next(_PROBE_IDS))
         con.execute("SAVEPOINT probe")
         try:
-            _insert(con, candidate)
+            con.execute(
+                "INSERT INTO studies ({}) VALUES ({})".format(
+                    ", ".join(candidate), ", ".join("?" * len(candidate))),
+                list(candidate.values()))
         except sqlite3.DatabaseError:
             bad.append((column, value))
         finally:
@@ -125,259 +155,23 @@ def _probe(con, row, template):
     return bad
 
 
-def _iter_records(paths):
-    """(year, record) over every cached line. Streamed, never materialised."""
-    for path in paths:
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                yield path.stem, json.loads(line)
-
-
-def _load_children(con, report, record, study_id, year, funder_ids,
-                   area_codes, center_ids, center_index, route_ids,
-                   substance_ids):
-    """The rows that hang off an accepted study: funders, areas and centres.
-
-    Only reached once the study itself is in, because both bridges reference
-    it. Each row is attempted on its own savepoint, so one bad funder is
-    reported and skipped rather than taking the study's other children with
-    it -- the same reason the study loop does not stop at the first bad
-    record.
-
-    A rejected child does NOT count as a rejected study. The study loaded; the
-    report says which of its children did not, and `rejected` stays a count of
-    studies so it can still be read against `checked`.
-    """
-    for key, name in funders(record, report.tally):
-        if key not in funder_ids:
-            con.execute("SAVEPOINT child")
-            try:
-                cursor = con.execute(
-                    "INSERT INTO funders (nombre_key, nombre) VALUES (?, ?)",
-                    (key, name))
-            except sqlite3.DatabaseError:
-                con.execute("ROLLBACK TO child")
-                report.record_anomaly("funders.nombre", name, year, study_id)
-                con.execute("RELEASE child")
-                continue
-            funder_ids[key] = cursor.lastrowid
-            con.execute("RELEASE child")
-        _insert_bridge(con, report, "study_funders", "funder_id",
-                       study_id, funder_ids[key], year)
-
-    for code, nombre_es, nombre_en in therapeutic_area_rows(record):
-        if code not in area_codes:
-            con.execute("SAVEPOINT child")
-            try:
-                con.execute("INSERT INTO therapeutic_areas VALUES (?, ?, ?)",
-                            (code, nombre_es, nombre_en))
-            except sqlite3.DatabaseError:
-                con.execute("ROLLBACK TO child")
-                report.record_anomaly("therapeutic_areas.eutct_code", code,
-                                      year, study_id)
-                con.execute("RELEASE child")
-                continue
-            area_codes.add(code)
-            con.execute("RELEASE child")
-        _insert_bridge(con, report, "study_therapeutic_areas", "eutct_code",
-                       study_id, code, year)
-
-    # A study can list one site twice -- same hospital, two departments, and
-    # departamento is not stored -- so the bridge is deduplicated per study
-    # rather than left to collide.
-    seen_sites = set()
-    for raw in study_centers(record):
-        resolved = center_row(raw, center_index, report.tally)
-        if resolved is None:
-            continue
-        key, row = resolved
-        if key not in center_ids:
-            con.execute("SAVEPOINT child")
-            try:
-                cursor = con.execute(
-                    "INSERT INTO centers ({}) VALUES ({})".format(
-                        ", ".join(row), ", ".join("?" * len(row))),
-                    list(row.values()))
-            except sqlite3.DatabaseError:
-                con.execute("ROLLBACK TO child")
-                report.record_anomaly("centers", row["center_key"], year,
-                                      study_id)
-                con.execute("RELEASE child")
-                continue
-            center_ids[key] = cursor.lastrowid
-            con.execute("RELEASE child")
-        if key in seen_sites:
-            continue
-        seen_sites.add(key)
-        _insert_bridge(con, report, "study_centers", "center_id",
-                       study_id, center_ids[key], year)
-
-    for intervention in intervention_rows(record, report.tally):
-        route_id = None
-        if intervention.route is not None:
-            route_id = _lookup(con, report, "administration_routes", "nombre",
-                               intervention.route, route_ids, year, study_id)
-            if route_id is None:
-                continue
-        con.execute("SAVEPOINT child")
-        try:
-            cursor = con.execute(
-                "INSERT INTO interventions (study_id, nombre_comercial, "
-                "codigo, huerfano, route_id) VALUES (?, ?, ?, ?, ?)",
-                (study_id, intervention.nombre_comercial, intervention.codigo,
-                 intervention.huerfano, route_id))
-        except sqlite3.DatabaseError:
-            con.execute("ROLLBACK TO child")
-            report.record_anomaly("interventions",
-                                  intervention.nombre_comercial, year,
-                                  study_id)
-            con.execute("RELEASE child")
-            continue
-        intervention_id = cursor.lastrowid
-        con.execute("RELEASE child")
-
-        for key, name in intervention.substances:
-            substance_id = _lookup(con, report, "substances", "nombre_key",
-                                   key, substance_ids, year, study_id, name)
-            if substance_id is None:
-                continue
-            con.execute("SAVEPOINT bridge")
-            try:
-                con.execute("INSERT INTO intervention_substances "
-                            "VALUES (?, ?)", (intervention_id, substance_id))
-            except sqlite3.DatabaseError:
-                con.execute("ROLLBACK TO bridge")
-                report.record_anomaly("intervention_substances", name, year,
-                                      study_id)
-            finally:
-                con.execute("RELEASE bridge")
-
-
-def _lookup(con, report, table, column, value, cache, year, study_id,
-            display=None):
-    """The id of a vocabulary row, inserting it the first time it is seen.
-
-    Returns None when the row will not load, so the caller can skip whatever
-    depended on it rather than the whole study failing.
-    """
-    if value in cache:
-        return cache[value]
-    columns = (column,) if display is None else (column, "nombre")
-    values = (value,) if display is None else (value, display)
-    con.execute("SAVEPOINT child")
-    try:
-        cursor = con.execute(
-            "INSERT INTO {} ({}) VALUES ({})".format(
-                table, ", ".join(columns), ", ".join("?" * len(columns))),
-            values)
-    except sqlite3.DatabaseError:
-        con.execute("ROLLBACK TO child")
-        report.record_anomaly(table, value, year, study_id)
-        con.execute("RELEASE child")
-        return None
-    cache[value] = cursor.lastrowid
-    con.execute("RELEASE child")
-    return cache[value]
-
-
-def _insert_bridge(con, report, table, column, study_id, parent, year):
-    con.execute("SAVEPOINT bridge")
-    try:
-        con.execute(
-            "INSERT INTO {} (study_id, {}) VALUES (?, ?)".format(table, column),
-            (study_id, parent))
-    except sqlite3.DatabaseError:
-        con.execute("ROLLBACK TO bridge")
-        report.record_anomaly(table, parent, year, study_id)
-    finally:
-        con.execute("RELEASE bridge")
-
-
 def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
-    """Push every cached record through the schema and report what it rejects."""
-    paths = sorted(Path(raw_dir).glob("*.jsonl"))
-    if years:
-        wanted = {str(y) for y in years}
-        paths = [p for p in paths if p.stem in wanted]
-
+    """Run a load into a throwaway database and report what it could not do."""
     con = open_schema(schema_path)
     report = Report()
-    sponsors = {}
-    funder_ids = {}
-    area_codes = set()
-    center_ids = {}
-    route_ids = {}
-    substance_ids = {}
-    template = None
-    deferred = []
+    collect = _Collect(report)
 
-    # Pass one, over the whole corpus, before a single row is written. A
-    # centre entry cannot describe its own site: its name is one of several
-    # spellings, its region is often blank, and its postcode may be missing a
-    # digit only the rest of the corpus can supply. This is the only part of
-    # the load that has to happen in this order.
-    center_index = build_center_index(
-        raw for _, record in _iter_records(paths)
-        for raw in study_centers(record))
-
-    for year, record in _iter_records(paths):
-        report.checked += 1
-        study_id = record.get("identificador")
-
-        # Identity is the normalised key, display is the cleaned name,
-        # and the cache is keyed on the same thing the UNIQUE is, so
-        # two spellings of one sponsor reuse a row here exactly as
-        # they will in the loader.
-        promotor = sponsor_name(record, report.tally)
-        key = sponsor_key(record)
-        if key not in sponsors:
-            try:
-                cursor = con.execute(
-                    "INSERT INTO sponsors (promotor_key, promotor) "
-                    "VALUES (?, ?)", (key, promotor))
-                sponsors[key] = cursor.lastrowid
-            except sqlite3.DatabaseError:
-                report.record_anomaly(
-                    "sponsors.promotor", promotor, year, study_id)
-                report.rejected += 1
-                continue
-
-        row = study_row(record, sponsors[key], report.tally)
-        for column, value in row.items():
-            if value is None:
-                report.nulls[column][year] += 1
-
-        con.execute("SAVEPOINT row")
-        try:
-            _insert(con, row)
-        except sqlite3.DatabaseError:
-            con.execute("ROLLBACK TO row")
-            report.rejected += 1
-            deferred.append((year, study_id, row))
-        else:
-            report.accepted += 1
-            if template is None:
-                template = dict(row)
-            _load_children(con, report, record, study_id, year,
-                           funder_ids, area_codes, center_ids, center_index,
-                           route_ids, substance_ids)
-        finally:
-            con.execute("RELEASE row")
+    report.rows = loader.load(con, raw_dir=raw_dir, years=years,
+                              tally=report.tally, observer=collect)
 
     # Probing needs a row known to satisfy every constraint, which only exists
     # once something has been accepted -- hence the second pass.
-    for year, study_id, row in deferred:
-        bad = _probe(con, row, template) if template else []
+    for year, study_id, row in collect.deferred:
+        bad = _probe(con, row, collect.template) if collect.template else []
         if not bad:
             report.unattributed.append((year, study_id))
         for column, value in bad:
             report.record_anomaly(column, value, year, study_id)
-
-    tables = [row[0] for row in con.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
-    report.rows = {
-        table: con.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
-        for table in tables}
 
     con.close()
     return report
@@ -387,8 +181,9 @@ def print_report(report, stream=sys.stdout):
     def out(text=""):
         print(text, file=stream)
 
-    out("checked {} studies: {} accepted, {} rejected".format(
-        report.checked, report.accepted, report.rejected))
+    out("checked {} studies: {} accepted, {} rejected, {} dropped by rule"
+        .format(report.checked, report.accepted, report.rejected,
+                report.dropped))
     out()
 
     # The dry run: what a real load would change, from the same code path that

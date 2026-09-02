@@ -90,6 +90,9 @@ class TestTransformCounting(unittest.TestCase):
     def counts(self, **overrides):
         tally = CleaningRulesTally()
         record = raw_record(**overrides)
+        # db.loader owns the record loop, so it owns the denominator: the
+        # transforms count changes, not records.
+        tally.saw_record()
         sponsor_name(record, tally)
         study_row(record, 1, tally)
         return tally
@@ -159,6 +162,7 @@ class TestTallyAgainstCorpus(unittest.TestCase):
                 records.extend(json.loads(line) for line in handle)
         cls.tally = CleaningRulesTally()
         for record in records:
+            cls.tally.saw_record()
             sponsor_name(record, cls.tally)
             study_row(record, 1, cls.tally)
 

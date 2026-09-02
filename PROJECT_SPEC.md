@@ -1,6 +1,6 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2 complete through 2.4: profiling, the ERD revision (12 tables, 4 bridges), all six cleaning-rule steps in db/cleaning_rules.py + db/cleaning_rules_tally.py, the DDL in db/schema.sql written in four slices, and db/validate.py pushing all 11,847 records through it — 0 rejected, no constraint violations, every table populated and matching §3.2c. Next: db/loader.py (2.5), which writes the same rows to a file database
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. **Phase 2 complete**: profiling, the ERD revision (12 tables, 4 bridges), all six cleaning-rule steps, the DDL written in four slices, validation over the whole corpus (0 rejected, no violations), and db/loader.py + run_pipeline.py rebuilding data/trials.db from the cache in 9 seconds — 11,843 studies after the 4 impossible-date drops, every row count matching §3.2c. 408 tests. Next: Phase 3, the first analysis and chart (volume per year / the CTIS break)
 last updated: 2026-09-02
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
@@ -1279,17 +1279,37 @@ test that fails when a refresh changes the data underneath.
   foreign-key integrity.
 
 **2.5 — Loader**
-- [ ] `db/loader.py` — raw JSON/JSONL → rows → `INSERT`s. Takes the DB
-      connection and `raw_dir` as arguments (same explicit-dependency pattern
-      as `ingestion/cache.py`, so it stays testable against
-      `sqlite3.connect(":memory:")`). Handles: the two date formats,
-      `"0"`/`"1"` strings → booleans, the `.centro[]`/`.intervencion[]`
-      nesting, pipe-splitting the four multi-valued fields, blank
-      `departamento` → `''` not `NULL`, and dropping the four records whose
-      end date precedes their authorization date. Derives no survival or
-      censoring columns — see §3.2c
-- [ ] Wire into `run_pipeline.py` as the composition root, so the whole DB
-      rebuilds from `data/raw/` in one command
+- [x] `db/loader.py` — raw JSONL → rows → `INSERT`s, taking the connection and
+      `raw_dir` as arguments. **It is the only module that writes rows:**
+      `db/validate.py` now calls it against an in-memory database with an
+      `Observer` that records failures instead of raising, so "validated"
+      means "went through the code that loads it". A validator with its own
+      INSERT sequence can only check the sequence it happens to share with
+      the loader, and the two drift the first time either learns something.
+      - Failure policy is injected, not decided: the default `Observer`
+        raises on the first refused row, because by then validation has
+        already been over the same corpus and a failure means something
+        changed.
+      - Drops the four impossible-date studies, and the tally says so. That
+        also removes every row **only** they referenced — 2 sponsors (Ixaka
+        Limited, VHIO), 1 funder and 1 centre — so four row counts are one or
+        two below §3.2c's cache figures by design.
+      - Derives no survival or censoring columns (§3.2c).
+      - **Performance, and a real bug:** the whole write pass runs in one
+        explicit transaction. Without it the per-row `SAVEPOINT` is the
+        outermost savepoint, so every `RELEASE` commits and every commit
+        fsyncs — invisible against `:memory:`, and the difference between
+        **9 seconds and over 10 minutes** against a file.
+- [x] Wired into `run_pipeline.py` as the composition root: `python
+      run_pipeline.py build` rebuilds `data/trials.db` from `data/raw/` in 9
+      seconds, `validate` runs the dry run. Ingestion is deliberately NOT
+      wired in — it costs ~4 hours of API calls and `data/raw/` is the
+      durable copy, so a database rebuild must not be able to touch it.
+      `build` also checks the row counts against the figures profiling
+      predicted, and exits non-zero if they differ: a load that silently
+      drops a table still "succeeds", and this is the cheapest thing that
+      notices. It earned its place on the first run, catching the
+      dropped-study cascade above.
 
 **2.6 — Tests + verify**
 - [ ] Unit tests following the existing `tests/` pattern (stdlib

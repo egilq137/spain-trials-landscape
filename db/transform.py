@@ -361,8 +361,6 @@ def study_row(record, sponsor_id, tally=None):
     calendario = record.get("calendario") or {}
     poblacion = record.get("poblacion") or {}
     proposito = record.get("proposito") or {}
-    if tally is not None:
-        tally.saw_record()
 
     raw_acronym = record.get("acronimo")
     row = {
