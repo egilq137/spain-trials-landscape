@@ -33,6 +33,7 @@ from pathlib import Path
 
 from db.centers import build_center_index, center_row, study_centers
 from db.cleaning_rules import IMPOSSIBLE_DATE_STUDIES
+from db.names import best_name, build_name_index
 from db.transform import (
     funders,
     intervention_rows,
@@ -115,11 +116,12 @@ class _Load:
     the schema's UNIQUE would force them to.
     """
 
-    def __init__(self, con, tally, observer, center_index):
+    def __init__(self, con, tally, observer, center_index, name_index):
         self.con = con
         self.tally = tally
         self.observer = observer
         self.center_index = center_index
+        self.name_index = name_index
         # Prefixed, because the methods below are named for the tables and
         # an instance attribute of the same name would shadow them.
         self._sponsor_ids = {}
@@ -157,7 +159,10 @@ class _Load:
         key = sponsor_key(record)
         if key in self._sponsor_ids:
             return self._sponsor_ids[key]
-        name = sponsor_name(record, self.tally)
+        # The corpus's preferred spelling, not this record's: PROJECT_SPEC
+        # 3.2c asks for the most frequent cleaned spelling, and first-seen
+        # was storing a postal address as Pfizer's name.
+        name = best_name(key, self.name_index, sponsor_name(record, self.tally))
         rowid = self._insert("sponsors",
                              {"promotor_key": key, "promotor": name},
                              year, study_id, "sponsors.promotor", name)
@@ -177,6 +182,7 @@ class _Load:
     def funders(self, record, year, study_id):
         for key, name in funders(record, self.tally):
             if key not in self._funder_ids:
+                name = best_name(key, self.name_index, name)
                 rowid = self._insert("funders",
                                      {"nombre_key": key, "nombre": name},
                                      year, study_id, "funders.nombre", name)
@@ -265,6 +271,15 @@ class _Load:
         return rowid
 
 
+def _organisation_names(record):
+    """Every raw promotor and financiador value in one record."""
+    organismo = record.get("organismo") or {}
+    yield organismo.get("promotor")
+    for part in (organismo.get("financiador") or "").split("|"):
+        if part.strip():
+            yield part
+
+
 def load(con, raw_dir=DEFAULT_RAW_DIR, years=None, tally=None, observer=None):
     """Fill `con` from the JSONL cache. Returns {table: rows written}.
 
@@ -280,13 +295,19 @@ def load(con, raw_dir=DEFAULT_RAW_DIR, years=None, tally=None, observer=None):
     # entries rather than from any one of them.
     index = build_center_index(
         raw for _, record in iter_records(paths) for raw in study_centers(record))
+    # The same pass answers "what is this organisation called?", which no
+    # single record knows either: the first spelling met is not the one the
+    # corpus prefers, and for Pfizer it was a postal address.
+    names = build_name_index(
+        value for _, record in iter_records(paths)
+        for value in _organisation_names(record))
 
     # One explicit transaction around the whole write pass. Without it the
     # per-row SAVEPOINT is the OUTERMOST savepoint, so every RELEASE commits
     # and every commit fsyncs -- invisible against :memory:, and the
     # difference between seconds and ten minutes against a file.
     con.execute("BEGIN")
-    state = _Load(con, tally, observer, index)
+    state = _Load(con, tally, observer, index, names)
     for year, record in iter_records(paths):
         observer.record_seen(year, record)
         if tally is not None:

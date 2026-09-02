@@ -1,4 +1,4 @@
-"""Resolving 85,410 centre entries into 3,306 physical sites.
+"""Resolving 85,410 centre entries into 3,294 physical sites.
 
 Every other transform in this project is a pure function of one record. This
 one cannot be, and the reason is worth stating: a centre entry does not carry
@@ -40,6 +40,7 @@ which is the exact merge the site-level key exists to prevent.
 """
 
 import collections
+import re
 
 from db.cleaning_rules import (
     build_postcode_evidence,
@@ -87,6 +88,35 @@ def read_entry(raw):
                  referencia=referencia)
 
 
+# Spanish, Catalan/Valencian, Galician and Balearic articles. Official
+# municipality registers write the article last -- `Coruña, A`, `Palmas de
+# Gran Canaria, Las`, `Hospitalet de Llobregat, L'` -- while almost everyone
+# writing prose puts it first. Both forms are in this corpus, for 24 places
+# over 2,684 entries, and 2,461 of those join an existing front-article
+# spelling once the two are compared as one.
+ARTICLES = ("a", "o", "as", "os", "la", "las", "el", "los", "les", "els",
+            "l", "es", "sa", "ses")
+
+# The article has to be its OWN token and introduced by a comma or a bracket,
+# which is how the inversion is written. Without that, `barcelona` matches as
+# `barcelon` + `a` and every place in Spain dissolves.
+# Case-insensitive because this runs on two different forms: the folded key,
+# which is lowercase, and the display spellings, which are not -- and the
+# display is where `Hospitalet de Llobregat, L'` has to be recognised.
+INVERTED = re.compile(r"^(.+?)\s*[,\(\[]\s*(" + "|".join(ARTICLES) +
+                      r")\s*['´’]?\s*[\)\]]?$", re.IGNORECASE)
+
+
+def uninvert(name):
+    """`Coruña, A` -> `A Coruña`. Anything else unchanged.
+
+    Applied to the comparison form, so the display keeps whichever spelling
+    the registry actually used most.
+    """
+    match = INVERTED.match(name)
+    return "{} {}".format(match.group(2), match.group(1)) if match else name
+
+
 def place_key(localidad):
     """How two spellings of one place are compared.
 
@@ -94,8 +124,13 @@ def place_key(localidad):
     way every other name in this project is compared. `fold` alone left
     `Hospitalet de Llobregat, L'` apart from `HOSPITALET DE LLOBREGAT (L´)`
     over a comma, a bracket and an apostrophe style.
+
+    Then the article is un-inverted, so `Coruña, A` and `A Coruña` are one
+    place. That has to happen while the words are still separated, which is
+    why it runs on the folded form rather than on `match_key`'s output.
     """
-    return match_key(localidad) or ""
+    folded = fold(clean_text(localidad) or "")
+    return match_key(uninvert(folded)) or ""
 
 
 def evidence_key(entry):
@@ -187,7 +222,12 @@ def _best_spelling(counter, default=None):
         return default
     quiet = collections.Counter({value: n for value, n in counter.items()
                                  if not value.isupper()})
-    return _most_frequent(quiet or counter, default)
+    # And prefer the reading order over the register order: `A Coruña` rather
+    # than `Coruña, A`. Both are real spellings and the second is what the
+    # official municipality register uses, but a chart is read as prose.
+    natural = collections.Counter({value: n for value, n in (quiet or counter).items()
+                                   if not INVERTED.match(value)})
+    return _most_frequent(natural or quiet or counter, default)
 
 
 def center_row(raw, index, tally=None):

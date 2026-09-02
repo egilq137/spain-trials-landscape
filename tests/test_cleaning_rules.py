@@ -552,9 +552,9 @@ class TestAgainstCorpus(unittest.TestCase):
         # Sponsors and funders are keyed by organisation_key, which cuts a
         # descriptive clause on top of match_key; centres are not, because a
         # hospital is never described that way.
-        for kind, key, expected in (("sponsor", organisation_key, 2968),
+        for kind, key, expected in (("sponsor", organisation_key, 2960),
                                     ("centre", match_key, 2520),
-                                    ("funder", organisation_key, 2216)):
+                                    ("funder", organisation_key, 2209)):
             with self.subTest(kind=kind):
                 keys = {key(v) for v in self._names(kind)
                         if not is_placeholder(v)}

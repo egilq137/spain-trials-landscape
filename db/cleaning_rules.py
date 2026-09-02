@@ -454,6 +454,12 @@ ORGANISATION_CLAUSES = (
     "por delegacion de",
     "por encargo de",
     "en nombre de",
+    # 'care of'. `Genentech Inc. c/o F. Hoffmann-La Roche Ltd` names Genentech
+    # and then says who to reach them through -- the same shape as `que
+    # representa en España a`, not an address. 27 mentions across Genentech,
+    # BeiGene and Kiniksa.
+    "c/o",
+    "c o ",
     "por cuenta de",
     "en calidad de",
     "a subsidiary of",
@@ -464,6 +470,22 @@ ORGANISATION_CLAUSES = (
 )
 
 
+# A postal address tacked onto a company name. `Pfizer Inc., 235 East 42nd
+# Street, New York, NY 10017` appears in 15 spellings over 85 mentions, all of
+# them the same company as the plain `Pfizer Inc.` -- the address is what
+# splits them, since no two writers punctuate a street the same way.
+#
+# The street word must be preceded by a NUMBER, which is what makes this safe:
+# `Duke Street Bio Limited` is a real company name containing "Street" and
+# must survive. Matching the word `calle` on its own would be worse still --
+# it is inside `Calleja` and `Calles`, which are surnames, and two sponsors
+# here are people.
+ADDRESS = re.compile(
+    r"[,\s]\s*\d+[a-z]*\s+(?:[\w'’.-]+\s+){0,3}"
+    r"(street|st\b|road|rd\b|avenue|ave\b|boulevard|blvd\b|drive|lane|"
+    r"calle|avenida|avda|paseo|carrer|via)\b")
+
+
 def organisation_key(text):
     """`match_key`, with any descriptive clause cut off the end.
 
@@ -471,14 +493,21 @@ def organisation_key(text):
     this way, and the markers are Spanish and English organisational language
     that has no business deciding whether two hospitals are the same site.
 
-    The clause is cut at the EARLIEST marker, and only when something is left
-    in front of it -- a value that begins with one names nobody and is left
-    alone for the schema to refuse.
+    A trailing postal address is cut the same way and for the same reason: it
+    describes where the company is rather than who it is, and no two writers
+    punctuate a street identically.
+
+    Both are cut at the EARLIEST marker, and only when something is left in
+    front of it -- a value that begins with one names nobody and is left alone
+    for the schema to refuse.
     """
     key = _spaced_key(text)
     if key is None:
         return None
     cuts = [key.find(marker) for marker in ORGANISATION_CLAUSES]
+    address = ADDRESS.search(key)
+    if address and address.start() > 0:
+        cuts.append(address.start())
     earliest = min((c for c in cuts if c > 0), default=None)
     if earliest is not None:
         key = key[:earliest].strip() or key

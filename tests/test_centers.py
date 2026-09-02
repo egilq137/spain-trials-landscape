@@ -21,7 +21,7 @@ Success criteria per function:
     provincia and ccaa are NULL, which is the honest value for "never
     reported"
   against the corpus: the resolutions reproduce the counts in PROJECT_SPEC
-    3.2c -- 3,306 sites, and 283 postcodes recovered in the tier order the
+    3.2c -- 3,294 sites, and 283 postcodes recovered in the tier order the
     triangulation rule claims
 """
 
@@ -225,14 +225,14 @@ class TestAgainstCorpus(unittest.TestCase):
         self.assertEqual(
             sum(1 for e in self.entries if read_entry(e) is None), 5)
 
-    def test_the_site_grain_is_still_3306(self):
+    def test_the_site_grain_is_still_3294(self):
         # 3,361 when 3.2c measured it: that count treated the five nameless
         # entries as a site, and punctuation-insensitive identity has since
         # merged 19 more name-keyed sites that differ only by a full stop, a
         # bracket, or a mojibake apostrophe.
         keys = {center_row(e, self.index)[0] for e in self.entries
                 if read_entry(e) is not None}
-        self.assertEqual(len(keys), 3306)
+        self.assertEqual(len(keys), 3294)
 
     def test_postcode_repairs_land_in_the_tiers_the_rule_claims(self):
         tally = CleaningRulesTally()

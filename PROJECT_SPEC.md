@@ -322,11 +322,11 @@ its markers are phrases and need word boundaries to match against.
 
 | | before | after |
 |---|---|---|
-| sponsors | 3,336 | **2,968** |
-| funders | 2,712 → 2,401 | **2,216** |
+| sponsors | 3,336 | **2,960** |
+| funders | 2,712 → 2,401 | **2,209** |
 | centre names | 2,580 | **2,520** |
 | substances | 3,364 | **3,305** |
-| centre *sites* | 3,361 | **3,306** |
+| centre *sites* | 3,361 | **3,294** |
 
 **Why this is still normalisation and not entity resolution.** Every merge was
 checked, not assumed: for sponsors, funders and substances, all 211 punctuation
@@ -359,6 +359,33 @@ shared tokens and ranking by trial count — the top ~40 groups cover most of
 the ranking error and the long tail is single-trial sponsors that cannot move
 an answer — but each merge changes what "top sponsor" *means*, so the map
 belongs in `analysis/` with its counts visible.
+
+**The display name is the corpus's preferred spelling, not the first one
+met.** §3.2c has said since the sponsors profile that `promotor` holds "the
+most frequent cleaned spelling"; the loader was storing whichever spelling it
+happened to see first, which is a different thing and which named a sponsor of
+223 trials `Pfizer Inc., 235 East 42nd Street, New York, NY 10017`. Resolved
+in `db/names.py` by a corpus pass, the same shape as centres, and preferring a
+spelling the key rules did not have to cut — a value they trimmed was carrying
+commentary as well as a name.
+
+**A postal address is cut like a descriptive clause, for the same reason.**
+`Pfizer Inc., 235 East 42nd Street, New York, NY 10017` appears in 15
+spellings over 119 mentions, all of them the same company as the plain
+`Pfizer Inc.` — the address is what splits them, because no two writers
+punctuate a street the same way. Cutting it merges Pfizer into one sponsor of
+347 mentions, plus ViiV Healthcare.
+
+`c/o` joins the clause list rather than the address rule: `Genentech Inc. c/o
+F. Hoffmann-La Roche Ltd` names Genentech and then says who to reach them
+through, which is the `que representa en España a` shape. Merges Genentech
+(23 mentions) and BeiGene (4).
+
+**The address rule requires a NUMBER before the street word, and that is what
+makes it safe.** `Duke Street Bio Limited` is a real company whose name
+contains "Street". Matching the word `calle` alone would be worse: it sits
+inside `Calleja` and `Calles`, and two sponsors in this corpus are people with
+those surnames.
 
 **Explicitly out of scope — entity resolution.** `Novartis Farmacéutica, S.A.`
 (260) and `Novartis Pharma AG` (188) are distinct legal entities in one
@@ -842,11 +869,25 @@ the most frequent **non-shouting** spelling — `Donostia-San Sebastián` rather
 than `DONOSTIA-SAN SEBASTIÁN`. It never invents one: the 134 localities the
 registry only ever wrote in capitals stay in capitals.
 
-**Still split, and left alone:** `Coruña, A` vs `A Coruña`, `Roca del Vallès,
-La` vs `La Roca del Vallès` — the Spanish convention of moving the article to
-the end. That is word order, not spelling, and fixing it means either sorting
-tokens (which would merge genuinely different names) or a list of articles.
-Roughly a dozen places, none of them large.
+**The article inversion is handled too, with a list rather than by sorting
+tokens.** Official municipality registers write the article last — `Coruña,
+A`, `Palmas de Gran Canaria, Las`, `Hospitalet de Llobregat, L'` — and prose
+puts it first. Both forms are here: **24 places over 2,684 entries, of which
+2,461 join an existing front-article spelling** once compared as one.
+`uninvert` moves a trailing article to the front before the key is built,
+using an enumerated list of Spanish, Catalan, Galician and Balearic articles.
+
+The article must be its own token *and* introduced by a comma or a bracket,
+which is how the inversion is actually written — without that guard,
+`barcelona` matches as `barcelon` + `a` and every place in Spain dissolves.
+That was not hypothetical: the first version of the regex did exactly that.
+
+Display prefers the reading order, so a chart shows `A Coruña` rather than
+`Coruña, A`. Both are real spellings and the second is the official register
+form, but a chart is read as prose. 11 places are still shown inverted because
+the corpus never wrote them any other way — the rule falls back rather than
+inventing a spelling, exactly as it does for the 134 ALL-CAPS-only localities.
+Sites: 3,306 → **3,294**.
 
 **NEW FINDING — 5 centre entries name no centre at all**, across 3 studies.
 `nombre` is blank in 3 of 85,410 entries, and those same 3 have no usable

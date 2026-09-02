@@ -32,9 +32,9 @@ from db.cleaning_rules_tally import CleaningRulesTally
 # contains; these count what a load keeps.
 EXPECTED_ROWS = {
     "studies": 11843,          # 11,847 cached, 4 dropped for impossible dates
-    "sponsors": 2967,          # 2,968 in the cache
-    "funders": 2215,           # 2,216
-    "centers": 3305,           # 3,306
+    "sponsors": 2959,          # 2,960 in the cache
+    "funders": 2208,           # 2,209
+    "centers": 3293,           # 3,294
     "therapeutic_areas": 55,
     "administration_routes": 53,
 }
