@@ -1,7 +1,7 @@
 -- Spain clinical trials landscape - relational schema (SQLite)
 --
--- Slices 1-2: sponsors, studies, funders, therapeutic areas. Later slices
--- append centers and interventions.
+-- Slices 1-3: sponsors, studies, funders, therapeutic areas, centers. The
+-- last slice appends interventions.
 --
 -- Written from db/profile.py's reports over all 11,847 cached records. The
 -- evidence behind every decision is in PROJECT_SPEC.md 3.2c and
@@ -30,8 +30,10 @@ PRAGMA foreign_keys = ON;
 
 -- Dropped children-first, so no statement removes a table another still
 -- references.
+DROP TABLE IF EXISTS study_centers;
 DROP TABLE IF EXISTS study_therapeutic_areas;
 DROP TABLE IF EXISTS study_funders;
+DROP TABLE IF EXISTS centers;
 DROP TABLE IF EXISTS therapeutic_areas;
 DROP TABLE IF EXISTS funders;
 DROP TABLE IF EXISTS studies;
@@ -264,3 +266,93 @@ CREATE TABLE study_therapeutic_areas (
 -- Same reasoning as above: the PK covers "areas of this study", this covers
 -- "studies in this area" - which is the therapeutic-landscape question.
 CREATE INDEX idx_study_therapeutic_areas_eutct ON study_therapeutic_areas(eutct_code);
+
+
+-- ---------------------------------------------------------------------------
+-- centers - one row per physical site, not per registry reference
+-- ---------------------------------------------------------------------------
+-- A centre is keyed on (reference-or-name, localidad, cod_postal). Measured
+-- over 85,410 entries, that grain is what makes the geography stable:
+--
+--   identity                        sites   (study, centre) pairs disagreeing
+--   referencia only                 2,849   1,616
+--   referencia + postcode           3,114     488
+--   referencia + locality           3,228     661
+--   reference-or-name + both        3,361      11
+--
+-- referencia alone is too coarse in both directions. It is missing from 2,695
+-- entries, and 'NR' appears in 119 covering 103 distinct hospitals, so
+-- placeholders must fall through to the name. And one reference can cover
+-- several real sites: Clinica Universidad de Navarra reports Pamplona and
+-- Madrid under ORG-100007650, Institut Catala d'Oncologia reports Badalona,
+-- Hospitalet and Girona under ORG-100030394.
+--
+-- Consequences, all simplifications: geography lives here rather than
+-- repeating across 85,410 bridge rows, study_centers is a plain pair, and the
+-- 545 Madrid trials at CUN stay in Madrid without any resolution step.
+--
+-- Dropped: tipo and situacion (undocumented codes the manual describes
+-- wrongly, used by no question), departamento (8,268 free-text values mixing
+-- languages and casing), domicilio and investigador (named-individual and
+-- street-level data). All remain in data/raw/.
+CREATE TABLE centers (
+    center_id  INTEGER PRIMARY KEY,
+    -- The identity part of the key: referencia when it is a real reference,
+    -- otherwise rules.match_key of the name. Computed by the loader because
+    -- the choice between the two is conditional. CHECK (<> '') is what stops
+    -- the 3 entirely blank centre entries - no reference, no name, every
+    -- field empty - from collapsing into one nameless centre that every study
+    -- reporting one would appear to share.
+    center_key TEXT NOT NULL CHECK (center_key <> ''),
+    -- Kept alongside the key so a site can be traced back to what the
+    -- registry sent. NULL for the 2,695 entries with none and the 119 'NR's.
+    referencia TEXT             CHECK (referencia <> ''),
+    -- The most frequent cleaned spelling, resolved over the corpus: the two
+    -- commonest name values are one hospital, HOSPITAL UNIVERSITARI VALL
+    -- D'HEBRON (2,667) and Hospital Universitari Vall D Hebron (1,553).
+    nombre     TEXT NOT NULL    CHECK (nombre <> ''),
+
+    -- Geography. The two key parts are '' when blank and never NULL: SQL
+    -- treats every NULL as distinct, so a NULL here would defeat the UNIQUE
+    -- below and duplicate exactly the sites whose locality is unknown.
+    localidad  TEXT NOT NULL,
+    -- TEXT, never INTEGER: 25,477 values have a leading zero, 290 are missing
+    -- a digit, and 11 are not postcodes at all ('08006.', '3584 AE',
+    -- 'Madrid'). No format CHECK, deliberately - the 7 postcodes the
+    -- triangulation rule cannot resolve are stored raw on purpose, and a
+    -- CHECK would turn a documented gap into a load failure.
+    cod_postal TEXT NOT NULL,
+    -- Not part of the key, so these use NULL rather than '' for "never
+    -- reported". Resolved per site by most frequent non-blank value; 149
+    -- sites disagree, 132 only because one variant is blank.
+    -- provincia is a clean vocabulary containing wrong assignments - 258 rows
+    -- name a province the postcode contradicts - so province-level
+    -- aggregation derives the province from the postcode prefix in analysis/,
+    -- where the assumption can be stated. Do not group by this column.
+    provincia  TEXT             CHECK (provincia <> ''),
+    ccaa       TEXT             CHECK (ccaa      <> ''),
+
+    -- The identity rule itself. One constraint over three present columns,
+    -- rather than partial indexes: the conditional part (reference or name)
+    -- is already resolved into center_key by the loader, so the schema has a
+    -- single unambiguous key to enforce.
+    UNIQUE (center_key, localidad, cod_postal)
+) STRICT;
+
+-- Bridge: one row per (study, site). 147 studies list no centre at all and
+-- simply have no rows here; the rest average 7.2 sites, maximum 93.
+-- Nothing else belongs on it - with the site grain above, every attribute
+-- that used to vary per pairing is a property of the site.
+CREATE TABLE study_centers (
+    study_id  TEXT    NOT NULL REFERENCES studies(identificador) ON DELETE CASCADE,
+    center_id INTEGER NOT NULL REFERENCES centers(center_id)     ON DELETE CASCADE,
+    PRIMARY KEY (study_id, center_id)
+) STRICT;
+
+-- "Which studies ran at this hospital" - the geography question, and the
+-- direction the PK's index cannot answer.
+CREATE INDEX idx_study_centers_center_id ON study_centers(center_id);
+
+-- No index on ccaa or cod_postal: geography moved onto centers, which is
+-- 3,361 rows. A region rollup scans that in full whatever the plan, and the
+-- 85,410-row version this replaces is what needed one.

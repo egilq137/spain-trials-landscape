@@ -721,7 +721,27 @@ conflict all but disappears. Consequences, all of them simplifications:
     17 are single-occurrence typos — `ORG-100028551` is Salamanca 1,122 times
     and Madrid once — which lose to the majority by construction.
 
-**PROVISIONAL — drop `tipo`, `situacion` and `departamento`.** Recorded as
+**SETTLED — `tipo`, `situacion` and `departamento` are dropped.** The leaning
+below was confirmed when the DDL was written. `tipo` and `situacion` are
+undocumented codes the manual describes wrongly and no §3.3 question uses;
+`departamento`'s 8,268 values were never groupable without a mapping exercise
+that is its own project. All three stay in the raw cache if they are ever
+decoded. With `departamento` gone, `study_centers` carries nothing but the
+pairing.
+
+**NEW FINDING — 3 centre entries name no centre at all.** `nombre` is blank in
+3 of 85,410 entries, and those same 3 have no usable `referencia` either — in
+fact every field is blank except `situacion: '2'`. They are empty rows, not
+under-described sites, so there is nothing for identity to be built from.
+**Decision: they create no centre and no bridge row**, the same shape as the
+`'NA'` funder rule — absence of a bridge row already says the study reported no
+site there. Enforced in the schema by `CHECK (center_key <> '')`, so an empty
+entry is refused rather than collapsing into a single nameless centre that
+every such study would then appear to share. Excluding them, `nombre` is
+non-blank in every remaining entry, which is what justifies its `NOT NULL`.
+
+**PROVISIONAL (superseded by the above) — drop `tipo`, `situacion` and
+`departamento`.** Recorded as
 leaning, not settled. `tipo` and `situacion` are cheap: undocumented codes the
 manual describes wrongly, absent from every §3.3 question, still in the raw
 cache if decoded later. `departamento` costs the "which hospital service runs

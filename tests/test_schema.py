@@ -1,4 +1,4 @@
-"""Tests for db/schema.sql -- slices 1-2.
+"""Tests for db/schema.sql -- slices 1-3.
 
 Every constraint is asserted to REJECT its bad value. A test that only runs
 the script proves the SQL parses, which is not what the constraints are for:
@@ -39,10 +39,26 @@ Slice 2 -- funders and therapeutic_areas, and their bridges:
     None of the 55 codes carries a second name pair, so a code cannot be
     inserted twice under a different name
   bridges: a pairing cannot name a study or a lookup that does not exist,
-    cannot be recorded twice, and disappears when either parent does. Both
-    are many-to-many for a measured reason -- 271 studies list more than one
-    funder, 363 more than one therapeutic area -- so the multi-valued case is
-    tested, not assumed
+    cannot be recorded twice, and disappears when either parent does. All
+    three are many-to-many for a measured reason -- 271 studies list more
+    than one funder, 363 more than one therapeutic area, and studies average
+    7.2 sites -- so the multi-valued case is tested, not assumed
+
+Slice 3 -- centers and study_centers:
+  identity: a centre is a physical site, so one registry reference at two
+    localities or two postcodes is two rows. That is the whole reason the key
+    has three parts, and it is what keeps 545 Clinica Universidad de Navarra
+    trials in Madrid instead of Navarra
+  center_key: never blank. 3 entries in the corpus are entirely empty, and
+    without this they would collapse into one nameless centre that every
+    study reporting one would appear to share
+  '' versus NULL: the two key parts store '' when blank, because SQL counts
+    every NULL as distinct -- a NULL localidad would duplicate exactly the
+    sites whose locality is unknown. Non-key geography uses NULL, which is
+    the honest value for "never reported"
+  cod_postal: TEXT, and deliberately unconstrained in format. 7 postcodes the
+    triangulation rule cannot resolve load raw, so a format CHECK would turn
+    a documented gap into a load failure
 """
 
 import sqlite3
@@ -393,6 +409,108 @@ class TherapeuticAreasTestCase(SchemaTestCase):
                 self.add_area(**kwargs)
 
 
+class CentersTestCase(SchemaTestCase):
+    def add_center(self, **overrides):
+        row = {
+            "center_key": "ORG-100007650",
+            "referencia": "ORG-100007650",
+            "nombre": "Clínica Universidad de Navarra",
+            "localidad": "Pamplona",
+            "cod_postal": "31008",
+            "provincia": "Navarra",
+            "ccaa": "Comunidad Foral de Navarra",
+        }
+        row.update(overrides)
+        return self.con.execute(
+            "INSERT INTO centers ({}) VALUES ({})".format(
+                ", ".join(row), ", ".join("?" * len(row))),
+            list(row.values())).lastrowid
+
+    def test_a_valid_site_loads_and_is_given_an_id(self):
+        center_id = self.add_center()
+        self.assertEqual(
+            self.con.execute("SELECT localidad FROM centers WHERE center_id = ?",
+                             (center_id,)).fetchone()[0],
+            "Pamplona")
+
+    def test_one_reference_at_two_localities_is_two_sites(self):
+        # ORG-100007650 is Pamplona 1,400 times and Madrid 545 times. One row
+        # would put those 545 trials in Navarra.
+        self.add_center()
+        self.add_center(localidad="Madrid", cod_postal="28027",
+                        provincia="Madrid", ccaa="Comunidad de Madrid")
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM centers").fetchone()[0], 2)
+
+    def test_one_reference_at_two_postcodes_is_two_sites(self):
+        self.add_center()
+        self.add_center(cod_postal="31009")
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM centers").fetchone()[0], 2)
+
+    def test_the_same_site_cannot_load_twice(self):
+        self.add_center()
+        with self.assertRaises(sqlite3.IntegrityError):
+            # A different display spelling is still the same site.
+            self.add_center(nombre="CLINICA UNIVERSIDAD DE NAVARRA")
+
+    def test_two_unnamed_localities_still_collapse_to_one_site(self):
+        # The reason localidad stores '' and not NULL: with NULL, SQL would
+        # call these two rows distinct and duplicate the site.
+        self.add_center(localidad="", cod_postal="")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_center(localidad="", cod_postal="")
+
+    def test_an_entry_naming_no_site_is_refused(self):
+        # 3 corpus entries are blank in every field but situacion. Without
+        # this they would become one nameless centre shared by every study
+        # that reported one.
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_center(center_key="")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_center(center_key=None)
+
+    def test_a_site_always_has_a_name(self):
+        for bad in (None, ""):
+            with self.subTest(nombre=bad), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.add_center(nombre=bad)
+
+    def test_a_site_without_a_registry_reference_is_allowed(self):
+        # 2,695 entries have none and 119 say 'NR'; both load as NULL and the
+        # name carries identity instead.
+        self.add_center(center_key="clinica mon salut", referencia=None,
+                        nombre="CLINICA MON SALUT")
+
+    def test_reference_and_region_are_null_when_absent_never_blank(self):
+        for column in ("referencia", "provincia", "ccaa"):
+            with self.subTest(column=column):
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.add_center(**{column: ""})
+                self.add_center(center_key="site " + column,
+                                **{column: None})
+
+    def test_the_key_columns_reject_null(self):
+        for column in ("localidad", "cod_postal"):
+            with self.subTest(column=column), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.add_center(**{column: None})
+
+    def test_a_damaged_postcode_still_loads(self):
+        # No format CHECK: 7 four-digit codes cannot be triangulated and 11
+        # values are not postcodes at all. They are stored as sent.
+        for bad in ("3010", "08006.", "3584 AE", "Madrid", ""):
+            with self.subTest(cod_postal=bad):
+                self.add_center(center_key="site " + repr(bad),
+                                cod_postal=bad)
+
+    def test_a_leading_zero_survives_because_the_column_is_text(self):
+        self.add_center(cod_postal="08036")
+        self.assertEqual(
+            self.con.execute(
+                "SELECT cod_postal FROM centers").fetchone()[0], "08036")
+
+
 class BridgeTestCase(SchemaTestCase):
     """Both bridges have the same shape, so both get the same tests.
 
@@ -412,10 +530,16 @@ class BridgeTestCase(SchemaTestCase):
             "INSERT INTO therapeutic_areas VALUES "
             "('C14', 'Cardiovasculares', 'Cardiovascular Diseases'), "
             "('C04', 'Cancer', 'Cancer')")
+        self.con.execute(
+            "INSERT INTO centers (center_id, center_key, nombre, localidad, "
+            "cod_postal) VALUES "
+            "(1, 'ORG-100007650', 'CUN', 'Pamplona', '31008'), "
+            "(2, 'ORG-100007650', 'CUN', 'Madrid', '28027')")
 
     BRIDGES = (
         ("study_funders", "funder_id", 1, 2, 999),
         ("study_therapeutic_areas", "eutct_code", "C14", "C04", "C99"),
+        ("study_centers", "center_id", 1, 2, 999),
     )
 
     def link(self, table, column, study, parent):
@@ -477,15 +601,21 @@ class BridgeTestCase(SchemaTestCase):
                         "SELECT COUNT(*) FROM {}".format(table)).fetchone()[0],
                     0)
 
+    # bridge -> the parent table and the column its own key is named by.
+    PARENTS = {
+        "study_funders": ("funders", "funder_id"),
+        "study_therapeutic_areas": ("therapeutic_areas", "eutct_code"),
+        "study_centers": ("centers", "center_id"),
+    }
+
     def test_deleting_a_parent_takes_its_pairings_with_it(self):
-        self.link("study_funders", "funder_id", "2019-000302-29", 1)
-        self.con.execute("DELETE FROM funders WHERE funder_id = 1")
-        self.link("study_therapeutic_areas", "eutct_code", "2019-000302-29",
-                  "C14")
-        self.con.execute(
-            "DELETE FROM therapeutic_areas WHERE eutct_code = 'C14'")
-        for table, _, _, _, _ in self.BRIDGES:
+        for table, column, first, _, _ in self.BRIDGES:
             with self.subTest(table=table):
+                parent_table, parent_column = self.PARENTS[table]
+                self.link(table, column, "2019-000302-29", first)
+                self.con.execute(
+                    "DELETE FROM {} WHERE {} = ?".format(
+                        parent_table, parent_column), (first,))
                 self.assertEqual(
                     self.con.execute(
                         "SELECT COUNT(*) FROM {}".format(table)).fetchone()[0],
