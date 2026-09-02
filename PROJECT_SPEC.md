@@ -1,7 +1,7 @@
 ---
 title: Madrid Data Scientist Portfolio — Project Spec
-status: Phase 1 (ingestion) complete — 11,847/11,847 studies. Phase 2.2 (profiling) complete for all six tables and the ERD revised from it (12 tables, 4 bridges, down from 15 and 6). Cleaning rules being written as data in db/rules.py, step 1 of 6 done. Next: route rules, then the DDL
-last updated: 2026-09-01
+status: Phase 1 (ingestion) complete — 11,847/11,847 studies. **Phase 2 complete**: profiling, the ERD revision (12 tables, 4 bridges), all six cleaning-rule steps, the DDL written in four slices, validation over the whole corpus (0 rejected, no violations), and db/loader.py + run_pipeline.py rebuilding data/trials.db from the cache in 9 seconds — 11,843 studies after the 4 impossible-date drops, every row count matching §3.2c. 408 tests. Next: Phase 3, the first analysis and chart (volume per year / the CTIS break)
+last updated: 2026-09-02
 repo: https://github.com/egilq137/spain-trials-landscape
 ---
 
@@ -220,9 +220,36 @@ industry-vs-academic share inflates. Full list: `docs/profiles/sponsors-variants
 one sponsor split by markup alone. Case-folding cannot fix it; it needs
 decoding. Worth re-checking on every other free-text field.
 
-**Decision — normalise in the loader, enforce in the schema.** The rule, in
-order: HTML unescape; Unicode NFD and drop combining marks; casefold; collapse
-internal whitespace; strip surrounding whitespace and trailing `. , ; : -`.
+**Decision — normalise in the loader, enforce in the schema.** Implemented as
+two functions in `db/cleaning_rules.py`, because a name is used for two things and the
+two rules are not the same one applied twice:
+
+  - `clean_text` — the form that is **stored and shown**. Reverses damage and
+    only damage: markup decoded, invisible characters dropped, spacing
+    collapsed. Case, accents and punctuation are content and survive.
+  - `match_key` — the form that decides **identity**. `clean_text`, then
+    apostrophe styles unified, then Unicode NFD with combining marks dropped,
+    casefolded, and edge punctuation stripped.
+
+Over the corpus this takes 3,742 distinct cleaned sponsor spellings to 3,336
+identities, 3,245 centre names to 2,580, and 2,717 funder names to 2,401.
+
+**Three refinements the implementation forced, each found by measuring:**
+
+  - **Escaping is sometimes doubled.** Ten centre names carry
+    `D&amp;#39;oncologia`, which needs one pass to reach `D&#39;oncologia` and
+    a second to reach `D'oncologia`. Decoding therefore repeats to a fixed
+    point, capped at three passes so a bad row cannot hang the loader.
+  - **Invisible characters split values.** A byte-order mark arrived glued to
+    a postcode (`&#65279;09`). Unicode category `Cf` is dropped after decoding
+    — it cannot be seen, so it can only ever create a spurious second row.
+  - **Apostrophe style is not accent noise.** Catalan and Valencian names are
+    full of elisions — `Vall d'Hebron`, `L'Hospitalet`, `Institut Català
+    d'Oncologia` — written with three different characters. U+00B4 ACUTE
+    ACCENT is a standalone character, not a combining mark, so NFD leaves it
+    and case-folding cannot merge `d'hebron` with `d´hebron`. Unified in
+    `match_key` only: which apostrophe the registry typed is not damage.
+    Merges 5 further centre names and 3 localities.
 
   - **Why the loader and not somewhere else.** Not ingestion: the raw cache is
     the durable copy and must stay byte-faithful to what the registry sent.
@@ -238,10 +265,127 @@ internal whitespace; strip surrounding whitespace and trailing `. , ; : -`.
 
 **Decision — `sponsors` keeps two columns, not one.** `promotor_key` holds the
 normalised form and carries the `UNIQUE` constraint; `promotor` holds the most
-frequent raw spelling, for display. Storing only the normalised form would put
-`astrazeneca ab` on the dashboard; storing only the raw form cannot enforce
-identity. This is a change from the reverted DDL, which had a single
+frequent **cleaned** spelling, for display. Storing only the normalised form
+would put `astrazeneca ab` on the dashboard; storing only the raw form cannot
+enforce identity. This is a change from the reverted DDL, which had a single
 `promotor TEXT NOT NULL UNIQUE`.
+
+**Correction — display is the cleaned mode, not the raw mode.** An earlier
+draft of this section said `promotor` holds "the most frequent raw spelling".
+That is wrong, and the largest sponsor is the counterexample: the most frequent
+raw spelling is `Merck Sharp &amp; Dohme LLC` (150), ahead of the correct
+`Merck Sharp & Dohme LLC` (55). Taking the raw mode would ship markup to the
+dashboard. Cleaned, the two merge into one sponsor with 205 trials, which also
+moves it up the ranking — decoding is not cosmetic, it changes the answer.
+
+**REVISION — identity ignores punctuation everywhere in the string, and cuts
+a descriptive clause.** The rule above was written to fold "case, accents,
+spacing and markup". It folded punctuation only at the *edges* of a value,
+which left two large classes of split intact. Both were found by reading the
+loaded `sponsors` table rather than by profiling, which is why they survived
+to Phase 2.5.
+
+  - **Internal punctuation.** `Novartis Farmacéutica, S.A.` and `Novartis
+    Farmacéutica S.A.` were two sponsors over one comma; so were `Pfizer Inc.`
+    / `Pfizer, Inc.` and `Gilead Sciences, Inc.` / `Gilead Sciences Inc.`
+    Punctuation is replaced with a space rather than deleted, so
+    `Merck & Co.,Inc` does not become `merck & coinc` — the comma was doing a
+    separator's job.
+  - **Descriptive clauses.** 98 sponsor and funder values are sentences, not
+    names: `Roche Farma S.A (Soc.Unipersonal) que realiza el ensayo en España
+    y que actúa como representante de F.Hoffmann-La Roche Ltd`. Two such
+    values differ by whichever words the writer chose, so one sponsor splits
+    into as many rows as there are phrasings. `organisation_key` cuts at the
+    earliest of 15 enumerated markers (`que realiza`, `como representante`,
+    `subsidiary of`, `en nombre de` …), counted in the corpus rather than
+    imagined. Applied to sponsors and funders only — a hospital or a molecule
+    is never described this way.
+
+A third change belongs with them, and it subsumes an intermediate version of
+itself. Removing the dots from `S.A.` leaves `s a`, where the same abbreviation
+written without them leaves `sa` — so spacing had to go too. And once that was
+being fixed, `Astra Zeneca` / `AstraZeneca` and `Pharma Mar` / `PharmaMar` are
+the same problem: **the space is style as much as the comma is.** The identity
+key therefore has no spaces at all. It stops being readable (`astrazenecaab`),
+which is fine — it is compared, never shown, and the display column is what a
+reader sees.
+
+Checked the same way: 15 sponsor groups and 13 funder groups merge and every
+one is a single organisation, including `Boehringer Ingelhei m España` (a
+space inside a word) and `BTI Biotechnology Institute I mas D` for `IMASD` —
+Spanish `I+D`, spelled out. 3 substances merge, all spacing inside a formula
+(`CD34+CELLS` / `CD34+ CELLS`). The 11 centre identities it merges are hyphen
+spacing, `S L` / `SL`, and `SUMMA 112` / `SUMMA112`.
+
+The clause cut in `organisation_key` runs *before* spaces are removed, because
+its markers are phrases and need word boundaries to match against.
+
+| | before | after |
+|---|---|---|
+| sponsors | 3,336 | **2,960** |
+| funders | 2,712 → 2,401 | **2,209** |
+| centre names | 2,580 | **2,520** |
+| substances | 3,364 | **3,305** |
+| centre *sites* | 3,361 | **3,294** |
+
+**Why this is still normalisation and not entity resolution.** Every merge was
+checked, not assumed: for sponsors, funders and substances, all 211 punctuation
+groups contain names that are identical once punctuation, spacing and accents
+are removed — zero differ by a letter. For centres, all 19 newly merged
+identities were read individually: `Dr.` vs `Dr`, an acronym in brackets,
+`((iensa)` with a typo'd bracket, and `d'hebron` / `d/hebron` / `d¿hebron`,
+where the third is a mojibake apostrophe.
+
+**What was deliberately NOT done, and it is the obvious next step to reach
+for.** Stripping the legal form (`S.A.`, `AG`, `Ltd`, `GmbH`) merges far more
+— and merges *wrongly*. It puts `F. Hoffmann-La Roche AG` with
+`F. Hoffmann-La Roche Ltd`, and `Novartis Pharma AG` with `Novartis Pharma
+GmbH`, which are different companies. Tested and rejected on that evidence.
+**The clause is commentary; the legal form is part of the name.**
+
+**Where this stops, on the worked example.** `Roche Farma` went from 18 rows
+to 7. The 7 that remain differ only in how the legal form is *spelled* —
+`S.A.`, `S.A.U.`, `S.A. (Soc Unipersonal)`, `(Soc uni.)`, `(Soc Unip)`,
+`S.A.(S.A.U.)`, and bare `Roche Farma`. Merging those needs the knowledge that
+`S.A.U.` and `S.A. (Sociedad Unipersonal)` are the same designation, which is
+legal-form vocabulary rather than typography. That is the line: everything
+above is *how a string was typed*, and this is *what a designation means*.
+
+**Still split, and staying that way until `analysis/` decides:** `Lilly S.A.`
+(90) vs `Eli Lilly & Co.` (96), `AstraZeneca AB` (345) vs `AstraZeneca UK
+Limited` (1), `Roche Farma S.A.` vs `F. Hoffmann-La Roche AG`. These are
+corporate families, not spellings. Candidates can be generated by blocking on
+shared tokens and ranking by trial count — the top ~40 groups cover most of
+the ranking error and the long tail is single-trial sponsors that cannot move
+an answer — but each merge changes what "top sponsor" *means*, so the map
+belongs in `analysis/` with its counts visible.
+
+**The display name is the corpus's preferred spelling, not the first one
+met.** §3.2c has said since the sponsors profile that `promotor` holds "the
+most frequent cleaned spelling"; the loader was storing whichever spelling it
+happened to see first, which is a different thing and which named a sponsor of
+223 trials `Pfizer Inc., 235 East 42nd Street, New York, NY 10017`. Resolved
+in `db/names.py` by a corpus pass, the same shape as centres, and preferring a
+spelling the key rules did not have to cut — a value they trimmed was carrying
+commentary as well as a name.
+
+**A postal address is cut like a descriptive clause, for the same reason.**
+`Pfizer Inc., 235 East 42nd Street, New York, NY 10017` appears in 15
+spellings over 119 mentions, all of them the same company as the plain
+`Pfizer Inc.` — the address is what splits them, because no two writers
+punctuate a street the same way. Cutting it merges Pfizer into one sponsor of
+347 mentions, plus ViiV Healthcare.
+
+`c/o` joins the clause list rather than the address rule: `Genentech Inc. c/o
+F. Hoffmann-La Roche Ltd` names Genentech and then says who to reach them
+through, which is the `que representa en España a` shape. Merges Genentech
+(23 mentions) and BeiGene (4).
+
+**The address rule requires a NUMBER before the street word, and that is what
+makes it safe.** `Duke Street Bio Limited` is a real company whose name
+contains "Street". Matching the word `calle` alone would be worse: it sits
+inside `Calleja` and `Calles`, and two sponsors in this corpus are people with
+those surnames.
 
 **Explicitly out of scope — entity resolution.** `Novartis Farmacéutica, S.A.`
 (260) and `Novartis Pharma AG` (188) are distinct legal entities in one
@@ -555,14 +699,85 @@ values** — the 17 autonomous communities plus Ceuta and Melilla — at 99.5%
 present. `provincia` has exactly **52** — the 50 provinces plus both autonomous
 cities — at 97.3%. Madrid is 22,148 entries, second to Cataluña's 23,317.
 
-**`codPostal` has lost leading zeros — 290 entries are 4 digits.** Spanish
-postcodes are always 5, the first two being the province, so `'3010'` is
-Alicante's `'03010'` with the zero stripped somewhere upstream. **Decision:
-zero-pad 4-digit numeric values to 5 at load**, which is an enumerable
-correction rather than a guess. 11 further entries are malformed in other ways
-(`'08006.'`, 6-10 characters); left raw, too few and too varied for a rule.
-This settles the column type independently of the earlier leading-zero
-argument: `TEXT`, never `INTEGER`.
+**`codPostal` is missing a digit in 290 entries — but not necessarily the
+leading zero.** Spanish postcodes are always 5 digits, the first two being the
+province. 290 of 85,163 non-blank entries are 4 digits, so one digit is gone.
+
+**Superseded decision, kept because the mistake is instructive.** The first
+version of this rule zero-padded — `'3010'` → `'03010'` — and justified it with
+"every padded value lands in provinces 01–09, exactly the ones whose postcodes
+begin with a zero." **That is not evidence.** Zero-padding always produces a
+`0X` prefix, whatever digit was really lost; deleting any digit of Madrid's
+`28046` also yields a 4-digit value. The check confirmed the function, not the
+hypothesis.
+
+**Decision — triangulate the missing digit from the rest of the row.** A
+*candidate* is any 5-digit code that becomes the observed value when one digit
+is deleted (46 of them for a typical value). Candidates are then filtered
+against what the corpus already knows, strongest evidence first:
+
+| tier | evidence | rows |
+|---|---|---|
+| 1 | the **same centre** reports a candidate elsewhere in the corpus | 226 |
+| 2 | the **same locality** reports a candidate | 47 |
+| 3 | no candidate seen, but the zero-padded value's province is one the locality uses — confirms the province, not the code | 10 |
+| — | no evidence, a tie, or a contradicted province: **left raw** | 7 |
+
+Triangulation agrees with zero-padding on 282 of the 283 rows it resolves, so
+the old rule was mostly right — but right by luck, and the one disagreement is
+the proof: **`'1108'` in Cádiz is `'11008'`, not `'01108'`**, which is Álava.
+Blind padding moved a clinic 700 km.
+
+Two further properties, both tested: a recovered postcode is always exactly one
+deletion from what the registry sent, so the rule can only ever restore a
+dropped digit and never substitute a commoner code; and a 4-digit postcode
+never votes on another, so one broken value cannot confirm the next.
+
+**It also deleted a hand-maintained exception list.** The zero-padding version
+needed `POSTCODE_NOT_A_LOST_ZERO`, enumerating `('1108','cadiz')` and
+`('3016','murcia')` as special cases found by eye. Both now fall out of the
+evidence — the first resolved to the right answer, the second left raw because
+Murcia uses 30xxx and padding would have claimed Alicante. **A rule that
+dissolves its own exception list is usually the right rule.**
+
+11 further entries are malformed in other ways (`'08006.'`, `'3584 AE'`,
+`'Madrid'`, 6–10 characters); left raw, too few and too varied. This settles
+the column type independently of the leading-zero argument: `TEXT`, never
+`INTEGER`.
+
+**Architecture — this is the one rule that cannot be a pure function.** It has
+to have read the whole corpus before it can resolve a single value, so the
+evidence index is built by a separate pass and *passed in* rather than imported
+from a module global (`build_postcode_evidence` → `resolve_postcode`). The
+function stays pure given its arguments and is unit-tested on a handful of
+hand-written rows. This is why postcode repair belongs with the other
+corpus-wide resolutions in the loader (step 6), not with the pure rules —
+the user's correction relocated it as well as fixing it.
+
+The evidence key drops the postcode (that is the field being recovered) but
+**keeps the locality**: without it, Clínica Universidad de Navarra's Pamplona
+and Madrid campuses would vote on each other's postcodes, the same merge the
+site-level centre key exists to prevent.
+
+
+**NEW FINDING — `provincia` is a clean vocabulary containing wrong values.**
+The two are different claims, and only the first was made earlier in this
+section. Checked against the postcode prefix across all 85,152 centre rows
+carrying a numeric postcode, 2,302 disagree with the modal province for their
+prefix. 2,044 of those are blank, leaving **258 rows (0.3%) where `provincia`
+names the wrong province** — 65 rows put `HOSPITAL GENERAL UNIVERSITARIO DE
+ALICANTE` in Murcia, 22 put a Sant Joan d'Alacant hospital in Las Palmas, 15
+put Almería's Hospital Virgen del Mar in Segovia, and 134 put Barcelona-prefix
+postcodes in Gerona.
+
+**Decision: no rule, but province-level aggregation uses the postcode prefix,
+not `provincia`.** Repairing the column would mean deriving a province from a
+postcode, which is a derivation and belongs in `analysis/` where the assumption
+can be stated — the same line drawn for route grouping and sponsor entity
+resolution. This is also a small correction to the sentence above calling
+`ccaa`/`provincia` "clean coded vocabularies and good news for the choropleth":
+the *vocabulary* is clean, the *assignment* is not, and the choropleth should
+be built on the postcode.
 
 **`departamento` is free text and must stay that way.** 75% present, **8,268
 distinct values** across 64,047 entries, mixing languages and casing —
@@ -600,7 +815,8 @@ Measuring identity schemes over the whole corpus:
 
 **Decision: `centers` is keyed on (reference-or-name, `localidad`,
 `cod_postal`)** — 3,361 sites, 512 more rows than the coarse version, and the
-conflict all but disappears. Consequences, all of them simplifications:
+conflict all but disappears. (The loader builds **3,360**: this count grouped
+the five nameless entries above as a site, and they now create none.) Consequences, all of them simplifications:
 
   - **Geography moves back onto `centers`**, where it is now stable by
     construction. It does not repeat across 85,410 bridge rows.
@@ -615,7 +831,84 @@ conflict all but disappears. Consequences, all of them simplifications:
     17 are single-occurrence typos — `ORG-100028551` is Salamanca 1,122 times
     and Madrid once — which lose to the majority by construction.
 
-**PROVISIONAL — drop `tipo`, `situacion` and `departamento`.** Recorded as
+**SETTLED — `tipo`, `situacion` and `departamento` are dropped.** The leaning
+below was confirmed when the DDL was written. `tipo` and `situacion` are
+undocumented codes the manual describes wrongly and no §3.3 question uses;
+`departamento`'s 8,268 values were never groupable without a mapping exercise
+that is its own project. All three stay in the raw cache if they are ever
+decoded. With `departamento` gone, `study_centers` carries nothing but the
+pairing.
+
+**REVISION — the locality's spelling is resolved across the corpus, and
+compared the way every other name is.** Two separate problems, found by
+looking at what `GROUP BY localidad` returns.
+
+  - **Display was resolved per site.** Every site picked its own most frequent
+    spelling, so `BARCELONA` (140 sites), `Barcelona` (335) and `barcelona`
+    (1) all persisted, and a trials-by-city chart drew three bars for one
+    city. The spelling is now resolved once per *place* over the whole corpus:
+    823 distinct stored localities become 674, and the top of the chart reads
+    Madrid, Barcelona, Valencia, Sevilla, Málaga, Badalona.
+  - **The comparison was weaker than the one used for every other name.**
+    `_site_key` folded the locality, while `match_key` had moved on to
+    ignoring punctuation and spacing — so `Hospitalet de Llobregat, L'` and
+    `HOSPITALET DE LLOBREGAT (L´)` were two places, and 26 sites were split
+    across them despite sharing a registry reference AND a postcode. Locality
+    now goes through `match_key` like any other name. Sites: 3,336 → **3,306**.
+
+**Why most frequent rather than storing the folded form.** Folding is enough
+to group by and wrong to store: it gives `malaga`, `cordoba`, `a coruna`,
+`pamplona/iruna`. Spanish and Basque place names carry their accents as part
+of the name, and this project already settled the same question for sponsors
+— *storing only the normalised form would put `astrazeneca ab` on the
+dashboard*. **Normalise for comparison, preserve for display.**
+
+One refinement the frequency rule needed: for 29 localities the most frequent
+spelling is ALL CAPS while a mixed-case spelling exists, so the display picks
+the most frequent **non-shouting** spelling — `Donostia-San Sebastián` rather
+than `DONOSTIA-SAN SEBASTIÁN`. It never invents one: the 134 localities the
+registry only ever wrote in capitals stay in capitals.
+
+**The article inversion is handled too, with a list rather than by sorting
+tokens.** Official municipality registers write the article last — `Coruña,
+A`, `Palmas de Gran Canaria, Las`, `Hospitalet de Llobregat, L'` — and prose
+puts it first. Both forms are here: **24 places over 2,684 entries, of which
+2,461 join an existing front-article spelling** once compared as one.
+`uninvert` moves a trailing article to the front before the key is built,
+using an enumerated list of Spanish, Catalan, Galician and Balearic articles.
+
+The article must be its own token *and* introduced by a comma or a bracket,
+which is how the inversion is actually written — without that guard,
+`barcelona` matches as `barcelon` + `a` and every place in Spain dissolves.
+That was not hypothetical: the first version of the regex did exactly that.
+
+Display prefers the reading order, so a chart shows `A Coruña` rather than
+`Coruña, A`. Both are real spellings and the second is the official register
+form, but a chart is read as prose. 11 places are still shown inverted because
+the corpus never wrote them any other way — the rule falls back rather than
+inventing a spelling, exactly as it does for the 134 ALL-CAPS-only localities.
+Sites: 3,306 → **3,294**.
+
+**NEW FINDING — 5 centre entries name no centre at all**, across 3 studies.
+`nombre` is blank in 3 of 85,410 entries, and those same 3 have no usable
+`referencia` either — in fact every field is blank except `situacion: '2'`,
+and all three belong to one study, `2016-004019-11`. Building the loader found
+**two more of a different shape**: `2015-004391-29` and `2012-004128-39` each
+list a site whose name is `'.'` or `'-'` and which carries an investigator but
+no hospital. Punctuation-only names fold away to nothing, so `match_key`
+returns `None` and they have no identity either — the same outcome by a
+different route, and the reason the rule is "identity is empty" rather than
+"the fields are blank". They are empty rows, not under-described sites, so
+there is nothing for identity to be built from.
+**Decision: they create no centre and no bridge row**, the same shape as the
+`'NA'` funder rule — absence of a bridge row already says the study reported no
+site there. Enforced in the schema by `CHECK (center_key <> '')`, so an empty
+entry is refused rather than collapsing into a single nameless centre that
+every such study would then appear to share. Excluding them, `nombre` is
+non-blank in every remaining entry, which is what justifies its `NOT NULL`.
+
+**PROVISIONAL (superseded by the above) — drop `tipo`, `situacion` and
+`departamento`.** Recorded as
 leaning, not settled. `tipo` and `situacion` are cheap: undocumented codes the
 manual describes wrongly, absent from every §3.3 question, still in the raw
 cache if decoded later. `departamento` costs the "which hospital service runs
@@ -716,23 +1009,33 @@ Two separable problems, which belong in different places:
     mapping lives in one place, and `nombre` is kept so any later question can
     regroup from the original.
 
-**TODO — the two-group scheme does not fit the data.** Oral and intravenous
-cover only 78.9%:
+**Settled — harmonise, but do not bucket.** `db/cleaning_rules.py` reduces the 129 raw
+values to **53 canonical routes** via `ROUTE_CANONICAL`, plus a small
+`ROUTE_NOT_A_ROUTE` set for the 299 rows (1.7%) that name no route at all —
+`unknown use`, `other use`, `route of administration not applicable`.
 
-| bucket | rows | share |
-|---|---|---|
-| oral | 7,342 | 42.5% |
-| intravenous | 6,279 | 36.4% |
-| **subcutaneous** | **1,786** | **10.3%** |
-| intramuscular | 356 | 2.1% |
-| topical / ocular | 308 | 1.8% |
-| inhalation | 249 | 1.4% |
-| unclassified | 948 | 5.5% |
+**No coarse grouping is stored.** An earlier draft added an
+oral/intravenous/subcutaneous/other bucket column; it is gone. Merging
+`oral use` into `oral` is mechanical, but deciding that intramuscular counts
+as "other" is a judgement about what a question is asking — the same line
+already drawn for sponsor entity resolution. The canonical routes are the
+grouping; anything coarser belongs in `analysis/`, where it can be stated and
+varied per question rather than frozen in a column.
 
-Subcutaneous alone is 10.3% and is clinically distinct from both — folding it
-into either would be wrong, and dropping it silently discards a fifth of the
-field. Recommend **oral / intravenous / subcutaneous / other**, with `other`
-honest about what it holds. Decide the buckets before the loader is written.
+Two properties of the maps, both enforced by tests:
+
+  - **No fallthrough.** Every one of the 129 values must appear in exactly one
+    of the two maps. An unmapped value fails a test rather than being silently
+    absorbed — which is how `-1` stayed invisible for so long.
+  - **No dead entries.** A key matching nothing is a typo, or a rule for data
+    that no longer exists. Either way it should not sit there unnoticed.
+
+Four entries are marked INFERRED because the source does not literally say the
+route: bare `infusion`, `solution for infusion` and `concentrate for solution
+for infusion` are read as intravenous, and `intravascular`/`subdermal` as
+their common equivalents. `solution for injection` and friends name a *form*,
+not a route, so they become `injection, route unspecified` rather than being
+guessed at.
 
 **Correction to the finding above: a single route value can name two routes.**
 16 distinct values across 256 rows do — `intravenous bolus injection/iv
@@ -744,6 +1047,25 @@ grouping map has to decide what each compound value becomes.
 **`sustancias` is genuinely multi-valued and keeps its bridge:** 12,389
 elements with one substance, 512 with two, 182 with three, up to 7. That is
 the one intervention bridge the data supports.
+
+**Correction, measured when the DDL was written: the tail is far longer than
+"up to 7".** Splitting all 13,236 populated values gives **15,130 substance
+mentions**, and the per-element counts run 8, 9, 10 … up to **45** — one
+element lists 45 substances, two list 27, three list 23. The head of the
+distribution above is right and the tail was cut off. It changes nothing
+structurally (the bridge already handles any number) but it does mean a
+"substances per intervention" statistic has a long right tail and should be
+reported as a median, not a mean.
+
+**`sustancias` needs the same name normalisation as every other name field,
+and needs it more.** Profiled per substance rather than per pipe-joined
+string: 15,130 mentions, of which **884 are placeholders** (`N/A`, `NA`, `Not
+available` — the same enumerated list, and they create no substance and no
+bridge row). The rest give **4,244 distinct cleaned spellings collapsing to
+3,364 identities — 880 merge, 20.7%**, the highest rate of any name field in
+this project (sponsors 10.8%, centres 20.5%, funders 11.7%). So `substances`
+takes the same `nombre_key` + `nombre` pair, on measured evidence rather than
+by analogy.
 
 **`sustancias` and `viasAdministracion` never co-occur — the source swapped one
 for the other.** Not one element has both:
@@ -766,6 +1088,37 @@ elements.** Keeping both stores 27,949 duplicated values to preserve 2,997
 genuine differences. **Decision: drop `nombreCientifico`** — the duplication is
 not worth a column, and the commercial name is the one an analysis would
 display.
+
+**REVISION — `sustancias` carries 520 placeholder mentions, not 884, and the
+missed ones were the biggest.** The first pass matched the enumerated
+`PLACEHOLDERS` list, which was built from `acronimo` and `financiador` and so
+was Spanish-shaped. Reading the loaded `substances` table by frequency found
+`Not Applicable` (115) and `Not yet assigned` (90) sitting in the **top eight
+substances, above most real drugs**, plus 43 further spellings of the same
+statement — `not assigned`, `not yet defined`, `not yet established`, `none
+yet`, `to be determined`, `INN not yet proposed`, `TBC`.
+
+**Why the registry writes them.** A trial can be authorised before its drug
+has an INN — an International Nonproprietary Name, the generic name a
+substance is finally known by — so the registry writes a sentence saying so
+where the name will go. That is a real fact about early-phase trials, and it
+belongs in the same bucket as `'NA'`: absence of a bridge row already says it.
+
+**Enumerated, and the candidate sweep is the argument for enumerating.** The
+word net used to *find* these also matched real drugs: `none` catches
+finerenone, eplerenone and drospirenone; `nan` catches nanocolloid and every
+recombinant protein; `available` catches `Best Available Treatment`, a real
+comparator arm; and any short-string rule would delete PRGF, 5-FU, IL-2, BCG,
+RUTI and V160. Patterns find candidates; only the list decides.
+
+Each of the 45 additions was checked against **every** field
+`is_placeholder` touches, not just the one that prompted it — `not applicable`
+turns out to be an intervention name 10 times and a funder once, `No` a funder
+11 times. `tbc` is the one to re-check on a refresh: it means "to be
+confirmed" here, but TBC is also the Spanish abbreviation for tuberculosis.
+
+Effect: substances 3,352 → **3,308**, intervention_substances 14,127 →
+**13,651**, funders 2,232 → **2,230**, acronyms 4,763 → **4,765**.
 
 **`formaFarmaceutica` is dropped, both language columns.** No §3.3 question
 uses dosage form, and the field is in poor shape: **56.4% placeholder, with the
@@ -1017,7 +1370,7 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
   `docs/profiles/` — they summarise the 208MB cache, which is gitignored, so
   nobody could regenerate them from a clone.
 - [x] `sponsors` — profiled, decisions recorded in §3.2c: normalise names in
-      the loader, key on the normalised form, keep the most frequent raw
+      the loader, key on the normalised form, keep the most frequent cleaned
       spelling for display. Entity resolution stays out of the database.
 - [x] Fill rates broken down **by year, not corpus-wide**. Averaging across
       2017–2026 blends two regimes either side of the January 2023 CTIS
@@ -1032,36 +1385,121 @@ through 2026. Phase 2 (transformation + SQLite schema) is next.
   then write the DDL from §3.2c.
 - Each table's findings go into §3.2c before its DDL is written.
 
+**2.2b — Cleaning rules as data (`db/cleaning_rules.py`)**
+Six steps, so each rule lands with the count that justifies it and a corpus
+test that fails when a refresh changes the data underneath.
+- [x] 1. Placeholders and sentinels — `PLACEHOLDERS`, `FLAG_UNKNOWN`,
+      `TOTAL_UNKNOWN`, `TOTAL_NOT_A_COUNT`, `IMPOSSIBLE_DATE_STUDIES`.
+- [x] 2. Administration routes — 129 raw values to 53 canonical routes plus 5
+      that name no route. No coarse grouping: the canonical routes are the
+      grouping, and bucketing is a question-dependent choice for `analysis/`.
+- [x] 3. Name normalisation — `clean_text` / `match_key`, and the sentinel
+      appliers `clean_flag` / `clean_total` wired into `db/transform.py`,
+      which is where every rule so far gets its first caller. Verified over
+      the corpus: 54 flag NULLs, 2,202 total NULLs, 10,036 acronym NULLs,
+      3,742 sponsor spellings to 3,336 identities.
+- [x] 3b. Postcode repair by triangulation (§3.2c) — replaces the zero-padding
+      rule, which was assuming the answer rather than deriving it. 283 of 290
+      resolved from the corpus, 7 left raw. Strictly this is step 6 work:
+      it is the only rule that must read the whole corpus first, so its
+      evidence index is built by a pass in the loader and passed in.
+- [x] 4. The cleaning-rules tally (`db/cleaning_rules_tally.py`) — counts every rule application
+      by (field, rule), so a load reports what it changed rather than only
+      that it succeeded. Over the corpus: 7,652 changes in 11,847 records —
+      4,763 placeholder acronyms, 2,201 unreported totals, 585 sponsor names
+      cleaned of markup or spacing, 54 `-1` flags across 12 columns, 1 total
+      that was never a count.
+      - **Counts come from each rule's output, never from re-testing its
+        condition.** `is_placeholder` is not called twice. A tally that
+        re-runs the test can drift away from the rule it claims to describe,
+        which is the one failure mode a tally must not have; a corpus test
+        asserts the counted flag totals are the same dict as
+        `cleaning_rules.FLAGS_WITH_UNKNOWN`.
+      - **It counts, it does not log.** Per-row provenance would be a table
+        the size of the database, and `data/raw/` already holds every original
+        value. Records seen is tracked separately from changes made, so the
+        report has a denominator.
+      - The two `poblacion_total` sentinels are counted apart: "the registry
+        declined to report" and "this is not a count" both load as NULL but
+        are different facts.
+- [x] 5. The tally is wired into `db/validate.py` as a dry run. Every row
+      builder gets the same `CleaningRulesTally`, so a validation run reports
+      what a real load *would* change before anything is written. Over the
+      corpus: **28,933 changes in 11,847 records**. The studies-only subtotal
+      is unchanged at 7,652, which is the check that wiring the other tables
+      in did not disturb what was already measured.
+      - The route rule is labelled "mapped to canonical", not "harmonised".
+        It fires on all 16,969 populated route values, and most differ from
+        their canonical form only by case — calling that a merge would
+        overstate what the map does. The real merges are a subset and are
+        visible in `ROUTE_CANONICAL` itself.
+      - Rules are tallied for every record the transform touches, including
+        one whose row is then rejected. The tally answers "what did the
+        cleaning rules do", which is a question about the transform, not
+        about the insert.
+- [x] 6. Corpus-wide resolutions — done in `db/centers.py`, which was the only
+      table that needed them. `build_center_index` reads the corpus once
+      (most frequent centre name, most frequent non-blank `provincia`/`ccaa`,
+      and the postcode evidence), and `center_row` resolves each entry
+      against the index it is passed. Same build/pass-in shape as postcode
+      repair (3b), which was the template as expected: the resolver stays
+      pure given its arguments and is unit-tested on hand-written entries.
+
 **2.3 — DDL (after profiling)**
-- [ ] `db/schema.sql` — rebuilt from what the profile shows. The reverted
-      version is available for comparison (`git show main:db/schema.sql`) but
-      is not a starting point; its constraints encode assumptions the profile
-      has not yet confirmed.
-- [ ] `tests/test_schema.py` — each constraint asserted to reject its bad
-      value, not merely that the script runs.
+- [x] `db/schema.sql` — rebuilt from what the profile shows, in four slices:
+      sponsors + studies, funders + therapeutic areas, centers, interventions.
+      12 tables, 4 bridges, `STRICT` throughout. The reverted version was kept
+      for comparison (`git show 0984446:db/schema.sql`) but not used as a
+      starting point; its constraints encoded assumptions the profile has
+      since contradicted — survival columns most of all.
+- [x] `tests/test_schema.py` — each constraint asserted to reject its bad
+      value, not merely that the script runs. 82 tests.
 
 **2.4 — Validation before load**
-- [ ] `db/validate.py` — pushes every cached record through the schema in an
+- [x] `db/validate.py` — pushes every cached record through the schema in an
       in-memory database and reports every constraint violation grouped with
-      counts, rather than stopping at the first. Checked in on this branch
-      (`b43a7a8`) against the reverted schema; needs rebasing onto the new one.
+      counts, rather than stopping at the first. Rebased onto the new schema
+      and extended to all 12 tables: **11,847 checked, 11,847 accepted, 0
+      rejected, no violations.** It also reports rows built per table, because
+      "no violations" over an empty table is an unexercised table rather than
+      a clean one — which is how a 54th administration route was caught.
 - Profiling and validation are complementary, not alternatives: profiling
   finds problems within a single field, validation finds problems that only
   exist across fields or across records — key collisions, broken uniqueness,
   foreign-key integrity.
 
 **2.5 — Loader**
-- [ ] `db/loader.py` — raw JSON/JSONL → rows → `INSERT`s. Takes the DB
-      connection and `raw_dir` as arguments (same explicit-dependency pattern
-      as `ingestion/cache.py`, so it stays testable against
-      `sqlite3.connect(":memory:")`). Handles: the two date formats,
-      `"0"`/`"1"` strings → booleans, the `.centro[]`/`.intervencion[]`
-      nesting, pipe-splitting the four multi-valued fields, blank
-      `departamento` → `''` not `NULL`, and dropping the four records whose
-      end date precedes their authorization date. Derives no survival or
-      censoring columns — see §3.2c
-- [ ] Wire into `run_pipeline.py` as the composition root, so the whole DB
-      rebuilds from `data/raw/` in one command
+- [x] `db/loader.py` — raw JSONL → rows → `INSERT`s, taking the connection and
+      `raw_dir` as arguments. **It is the only module that writes rows:**
+      `db/validate.py` now calls it against an in-memory database with an
+      `Observer` that records failures instead of raising, so "validated"
+      means "went through the code that loads it". A validator with its own
+      INSERT sequence can only check the sequence it happens to share with
+      the loader, and the two drift the first time either learns something.
+      - Failure policy is injected, not decided: the default `Observer`
+        raises on the first refused row, because by then validation has
+        already been over the same corpus and a failure means something
+        changed.
+      - Drops the four impossible-date studies, and the tally says so. That
+        also removes every row **only** they referenced — 2 sponsors (Ixaka
+        Limited, VHIO), 1 funder and 1 centre — so four row counts are one or
+        two below §3.2c's cache figures by design.
+      - Derives no survival or censoring columns (§3.2c).
+      - **Performance, and a real bug:** the whole write pass runs in one
+        explicit transaction. Without it the per-row `SAVEPOINT` is the
+        outermost savepoint, so every `RELEASE` commits and every commit
+        fsyncs — invisible against `:memory:`, and the difference between
+        **9 seconds and over 10 minutes** against a file.
+- [x] Wired into `run_pipeline.py` as the composition root: `python
+      run_pipeline.py build` rebuilds `data/trials.db` from `data/raw/` in 9
+      seconds, `validate` runs the dry run. Ingestion is deliberately NOT
+      wired in — it costs ~4 hours of API calls and `data/raw/` is the
+      durable copy, so a database rebuild must not be able to touch it.
+      `build` also checks the row counts against the figures profiling
+      predicted, and exits non-zero if they differ: a load that silently
+      drops a table still "succeeds", and this is the cheapest thing that
+      notices. It earned its place on the first run, catching the
+      dropped-study cascade above.
 
 **2.6 — Tests + verify**
 - [ ] Unit tests following the existing `tests/` pattern (stdlib

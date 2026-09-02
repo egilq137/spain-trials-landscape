@@ -19,14 +19,19 @@ Success criteria:
     than crashing the run
   schema coupling: the rules enforced come from db/schema.sql, so loosening a
     constraint there changes the report without any edit here
+  dry run: the same run reports what the cleaning rules WOULD change, counted
+    by the code that does the changing rather than by a second pass that
+    re-tests the conditions -- and records seen is tracked apart from changes,
+    so "nothing changed" is distinguishable from "nothing was read"
 """
 
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from db.validate import DEFAULT_SCHEMA, validate
+from db.validate import DEFAULT_SCHEMA, print_report, validate
 from tests.test_transform import raw_record
 
 
@@ -47,6 +52,7 @@ class ValidateTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.raw_dir = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        self._labels = {}
 
     def write_year(self, year, records):
         path = self.raw_dir / "{}.jsonl".format(year)
@@ -58,8 +64,19 @@ class ValidateTestCase(unittest.TestCase):
         return validate(raw_dir=self.raw_dir, schema_path=DEFAULT_SCHEMA,
                         **kwargs)
 
-    def study(self, study_id, **overrides):
-        return raw_record(identificador=study_id, **overrides)
+    def study_id(self, label):
+        """A valid EudraCT identifier for a readable label.
+
+        The schema accepts only the two real identifier formats, so a fixture
+        cannot use 'a' or 'bad' as an id. Labels stay in the test where they
+        say what is wrong with a record; this maps each to a distinct valid
+        id, stable within one test.
+        """
+        return "2019-{:06d}-29".format(
+            self._labels.setdefault(label, len(self._labels) + 1))
+
+    def study(self, label, **overrides):
+        return raw_record(identificador=self.study_id(label), **overrides)
 
 
 class TestCleanCorpus(ValidateTestCase):
@@ -80,7 +97,7 @@ class TestAttribution(ValidateTestCase):
         self.assertEqual(report.rejected, 1)
         entry = report.anomalies[("urgencia", repr("-1"))]
         self.assertEqual(entry["count"], 1)
-        self.assertEqual(entry["studies"], ["bad"])
+        self.assertEqual(entry["studies"], [self.study_id("bad")])
 
     def test_reports_every_broken_constraint_in_one_row(self):
         # SQLite raises on the first constraint only; without the per-column
@@ -157,6 +174,130 @@ class TestSponsors(ValidateTestCase):
         self.assertIn(("sponsors.promotor", repr(None)), report.anomalies)
 
 
+class TestChildTables(ValidateTestCase):
+    AREA = {"eutct": "999999000429", "nombre_es": "Respiratorio",
+            "nombre_en": "Respiratory"}
+
+    def test_funders_and_areas_are_built_and_counted(self):
+        # An empty table reporting no violations is unexercised, not clean,
+        # so the row counts are part of the report.
+        self.write_year(2019, [
+            self.study("a", organismo={"promotor": "Sponsor",
+                                       "financiador": "ISCIII|Pfizer|"},
+                       areasTerapeuticas={"area": [self.AREA]}),
+            self.study("b", organismo={"promotor": "Sponsor",
+                                       "financiador": "ISCIII|"},
+                       areasTerapeuticas={"area": [self.AREA]}),
+        ])
+        rows = self.run_validate().rows
+        self.assertEqual(rows["funders"], 2)          # ISCIII reused
+        self.assertEqual(rows["study_funders"], 3)
+        self.assertEqual(rows["therapeutic_areas"], 1)
+        self.assertEqual(rows["study_therapeutic_areas"], 2)
+
+    def test_a_study_with_no_funder_still_loads(self):
+        # 5,004 CTIS-era studies have none, and 583 more name only 'NA'.
+        self.write_year(2019, [
+            self.study("a", organismo={"promotor": "Sponsor",
+                                       "financiador": "NA|"})])
+        report = self.run_validate()
+        self.assertEqual((report.accepted, report.rejected), (1, 0))
+        self.assertEqual(report.rows["study_funders"], 0)
+
+    def test_a_rejected_child_does_not_reject_its_study(self):
+        # One area with a blank code: the study is fine, the area is not.
+        self.write_year(2019, [
+            self.study("a", areasTerapeuticas={
+                "area": [{"eutct": "", "nombre_es": "x", "nombre_en": "y"},
+                         self.AREA]})])
+        report = self.run_validate()
+        self.assertEqual((report.accepted, report.rejected), (1, 0))
+        self.assertIn(("therapeutic_areas.eutct_code", repr(None)),
+                      report.anomalies)
+        # The study's other area still loaded: one bad child does not take
+        # its siblings with it.
+        self.assertEqual(report.rows["study_therapeutic_areas"], 1)
+
+
+class TestInterventions(ValidateTestCase):
+    def intervention(self, **overrides):
+        element = {"nombreComercial": "KEYTRUDA", "codigo": "SUB0661",
+                   "huerfano": "0", "viasAdministracion": "ORAL USE",
+                   "sustancias": "PACLITAXEL|"}
+        element.update(overrides)
+        return {"intervencion": [element]}
+
+    def test_routes_and_substances_are_created_once_and_reused(self):
+        self.write_year(2019, [
+            self.study("a", intervenciones=self.intervention()),
+            self.study("b", intervenciones=self.intervention(
+                nombreComercial="OPDIVO")),
+        ])
+        rows = self.run_validate().rows
+        self.assertEqual(rows["interventions"], 2)
+        self.assertEqual(rows["administration_routes"], 1)
+        self.assertEqual(rows["substances"], 1)
+        self.assertEqual(rows["intervention_substances"], 2)
+
+    def test_an_intervention_with_neither_route_nor_substance_still_loads(self):
+        # 442 elements have neither, and no element ever has both.
+        self.write_year(2019, [self.study("a", intervenciones=self.intervention(
+            viasAdministracion="", sustancias=""))])
+        report = self.run_validate()
+        self.assertEqual(report.rows["interventions"], 1)
+        self.assertEqual(report.rows["administration_routes"], 0)
+
+    def test_a_study_with_no_intervenciones_block_loads(self):
+        # The block is absent from 1,514 studies rather than empty.
+        self.write_year(2019, [self.study("a")])
+        report = self.run_validate()
+        self.assertEqual((report.accepted, report.rows["interventions"]), (1, 0))
+
+
+class TestDryRun(ValidateTestCase):
+    """The tally reports what a real load would change, before it changes it."""
+
+    def test_counts_come_from_the_run_that_did_the_work(self):
+        # Not a second pass re-testing the conditions: the same call that
+        # nulls the acronym is the one that counts it.
+        self.write_year(2019, [self.study("a"), self.study("b")])
+        tally = self.run_validate().tally
+        self.assertEqual(tally.records, 2)
+        self.assertEqual(
+            tally.counts()[("studies.acronimo", "placeholder -> NULL")], 2)
+
+    def test_it_counts_every_table_not_just_studies(self):
+        self.write_year(2019, [self.study(
+            "a",
+            organismo={"promotor": "Sponsor", "financiador": "NA|"},
+            intervenciones={"intervencion": [
+                {"nombreComercial": "-", "viasAdministracion": "ORAL USE",
+                 "sustancias": "N/A|"}]})])
+        counts = self.run_validate().tally.counts()
+        for key in (("funders.nombre", "placeholder -> no funder"),
+                    ("substances.nombre", "placeholder -> no substance"),
+                    ("interventions.nombre_comercial", "placeholder -> NULL"),
+                    ("administration_routes.nombre", "mapped to canonical")):
+            with self.subTest(key=key):
+                self.assertEqual(counts[key], 1)
+
+    def test_a_clean_record_changes_nothing(self):
+        # The denominator matters: records seen is tracked apart from changes,
+        # so 'nothing changed' is distinguishable from 'nothing was read'.
+        self.write_year(2019, [self.study("a", acronimo="RECOVERY",
+                                          poblacion={"total": "120"})])
+        tally = self.run_validate().tally
+        self.assertEqual(tally.records, 1)
+        self.assertEqual(tally.total(), 0)
+
+    def test_the_report_is_printed_with_the_violations(self):
+        self.write_year(2019, [self.study("a")])
+        stream = io.StringIO()
+        print_report(self.run_validate(), stream)
+        self.assertIn("Cleaning rules tally", stream.getvalue())
+        self.assertIn("placeholder -> NULL", stream.getvalue())
+
+
 class TestSchemaCoupling(ValidateTestCase):
     def test_report_follows_the_schema_file(self):
         # Loosening the constraint in a copy of the schema must change the
@@ -168,7 +309,7 @@ class TestSchemaCoupling(ValidateTestCase):
 
         loosened = Path(self._tmp.name) / "loosened.sql"
         ddl = DEFAULT_SCHEMA.read_text(encoding="utf-8").replace(
-            "urgencia                    INTEGER NOT NULL CHECK (urgencia          IN (0, 1))",
+            "urgencia                    INTEGER          CHECK (urgencia          IN (0, 1))",
             "urgencia                    INTEGER")
         loosened.write_text(ddl, encoding="utf-8")
         self.assertNotEqual(ddl, DEFAULT_SCHEMA.read_text(encoding="utf-8"))
