@@ -47,6 +47,7 @@ class ValidateTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.raw_dir = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
+        self._labels = {}
 
     def write_year(self, year, records):
         path = self.raw_dir / "{}.jsonl".format(year)
@@ -58,8 +59,19 @@ class ValidateTestCase(unittest.TestCase):
         return validate(raw_dir=self.raw_dir, schema_path=DEFAULT_SCHEMA,
                         **kwargs)
 
-    def study(self, study_id, **overrides):
-        return raw_record(identificador=study_id, **overrides)
+    def study_id(self, label):
+        """A valid EudraCT identifier for a readable label.
+
+        The schema accepts only the two real identifier formats, so a fixture
+        cannot use 'a' or 'bad' as an id. Labels stay in the test where they
+        say what is wrong with a record; this maps each to a distinct valid
+        id, stable within one test.
+        """
+        return "2019-{:06d}-29".format(
+            self._labels.setdefault(label, len(self._labels) + 1))
+
+    def study(self, label, **overrides):
+        return raw_record(identificador=self.study_id(label), **overrides)
 
 
 class TestCleanCorpus(ValidateTestCase):
@@ -80,7 +92,7 @@ class TestAttribution(ValidateTestCase):
         self.assertEqual(report.rejected, 1)
         entry = report.anomalies[("urgencia", repr("-1"))]
         self.assertEqual(entry["count"], 1)
-        self.assertEqual(entry["studies"], ["bad"])
+        self.assertEqual(entry["studies"], [self.study_id("bad")])
 
     def test_reports_every_broken_constraint_in_one_row(self):
         # SQLite raises on the first constraint only; without the per-column
@@ -168,7 +180,7 @@ class TestSchemaCoupling(ValidateTestCase):
 
         loosened = Path(self._tmp.name) / "loosened.sql"
         ddl = DEFAULT_SCHEMA.read_text(encoding="utf-8").replace(
-            "urgencia                    INTEGER NOT NULL CHECK (urgencia          IN (0, 1))",
+            "urgencia                    INTEGER          CHECK (urgencia          IN (0, 1))",
             "urgencia                    INTEGER")
         loosened.write_text(ddl, encoding="utf-8")
         self.assertNotEqual(ddl, DEFAULT_SCHEMA.read_text(encoding="utf-8"))

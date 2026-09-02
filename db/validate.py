@@ -16,13 +16,14 @@ Usage:
     python -m db.validate 2019 2024  # named years only
 """
 
+import itertools
 import json
 import sqlite3
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from db.transform import sponsor_name, study_row
+from db.transform import sponsor_key, sponsor_name, study_row
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RAW_DIR = REPO_ROOT / "data" / "raw" / "detalle"
@@ -30,6 +31,11 @@ DEFAULT_SCHEMA = REPO_ROOT / "db" / "schema.sql"
 
 # Set by the caller, never derived from the record itself.
 SKIP_PROBE_COLUMNS = ("identificador", "sponsor_id")
+
+# The probe needs a fresh primary key per attempt, and it has to satisfy the
+# identifier format check like any other row -- year 9999 cannot collide with
+# a real EudraCT id, and the shape is the real one.
+_PROBE_IDS = itertools.count()
 
 
 class Report:
@@ -82,7 +88,7 @@ def _probe(con, row, template):
             continue
         candidate = dict(template)
         candidate[column] = value
-        candidate["identificador"] = "__probe__" + column
+        candidate["identificador"] = "9999-{:06d}-99".format(next(_PROBE_IDS))
         con.execute("SAVEPOINT probe")
         try:
             _insert(con, candidate)
@@ -115,20 +121,25 @@ def validate(raw_dir=DEFAULT_RAW_DIR, schema_path=DEFAULT_SCHEMA, years=None):
                 report.checked += 1
                 study_id = record.get("identificador")
 
+                # Identity is the normalised key, display is the cleaned name,
+                # and the cache is keyed on the same thing the UNIQUE is, so
+                # two spellings of one sponsor reuse a row here exactly as
+                # they will in the loader.
                 promotor = sponsor_name(record)
-                if promotor not in sponsors:
+                key = sponsor_key(record)
+                if key not in sponsors:
                     try:
                         cursor = con.execute(
-                            "INSERT INTO sponsors (promotor) VALUES (?)",
-                            (promotor,))
-                        sponsors[promotor] = cursor.lastrowid
+                            "INSERT INTO sponsors (promotor_key, promotor) "
+                            "VALUES (?, ?)", (key, promotor))
+                        sponsors[key] = cursor.lastrowid
                     except sqlite3.DatabaseError:
                         report.record_anomaly(
                             "sponsors.promotor", promotor, year, study_id)
                         report.rejected += 1
                         continue
 
-                row = study_row(record, sponsors[promotor])
+                row = study_row(record, sponsors[key])
                 for column, value in row.items():
                     if value is None:
                         report.nulls[column][year] += 1

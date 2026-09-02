@@ -60,6 +60,10 @@ POBLACION_FLAGS = {
 }
 
 # raw proposito key -> column name. These are camelCase in the source.
+# The eight data-source flags are deliberately absent: seven are 0 in all
+# 11,847 records, and otrasFuentes varies but means "other" relative to seven
+# categories nobody ever ticks, so it cannot be read on its own
+# (PROJECT_SPEC 3.2c). db/schema.sql has no columns for them.
 PROPOSITO_FLAGS = {
     "faseUno": "fase_uno",
     "faseDos": "fase_dos",
@@ -77,14 +81,6 @@ PROPOSITO_FLAGS = {
     "farmacogenetica": "farmacogenetica",
     "farmacogenomica": "farmacogenomica",
     "farmacoeconomica": "farmacoeconomica",
-    "atencionPrimaria": "atencion_primaria",
-    "atencionPersonalizada": "atencion_personalizada",
-    "hospitalizacion": "hospitalizacion",
-    "medico": "medico",
-    "farmaceutico": "farmaceutico",
-    "historialClinico": "historial_clinico",
-    "basesDatos": "bases_datos",
-    "otrasFuentes": "otras_fuentes",
 }
 
 # raw calendario key -> column name. fechaClasificacion and fechaFinPrevista
