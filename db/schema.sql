@@ -1,7 +1,7 @@
 -- Spain clinical trials landscape - relational schema (SQLite)
 --
--- Slices 1-3: sponsors, studies, funders, therapeutic areas, centers. The
--- last slice appends interventions.
+-- All four slices: sponsors, studies, funders, therapeutic areas, centers,
+-- interventions.
 --
 -- Written from db/profile.py's reports over all 11,847 cached records. The
 -- evidence behind every decision is in PROJECT_SPEC.md 3.2c and
@@ -30,9 +30,13 @@ PRAGMA foreign_keys = ON;
 
 -- Dropped children-first, so no statement removes a table another still
 -- references.
+DROP TABLE IF EXISTS intervention_substances;
 DROP TABLE IF EXISTS study_centers;
 DROP TABLE IF EXISTS study_therapeutic_areas;
 DROP TABLE IF EXISTS study_funders;
+DROP TABLE IF EXISTS interventions;
+DROP TABLE IF EXISTS substances;
+DROP TABLE IF EXISTS administration_routes;
 DROP TABLE IF EXISTS centers;
 DROP TABLE IF EXISTS therapeutic_areas;
 DROP TABLE IF EXISTS funders;
@@ -356,3 +360,118 @@ CREATE INDEX idx_study_centers_center_id ON study_centers(center_id);
 -- No index on ccaa or cod_postal: geography moved onto centers, which is
 -- 3,361 rows. A region rollup scans that in full whatever the plan, and the
 -- 85,410-row version this replaces is what needed one.
+
+
+-- ---------------------------------------------------------------------------
+-- administration_routes - the 53 canonical routes
+-- ---------------------------------------------------------------------------
+-- A lookup with a plain foreign key from interventions, NOT a bridge. The
+-- source pipe-delimits the field, implying a list, but 0 of 17,268 populated
+-- elements carry two: the delimiter models a relationship the data never uses.
+--
+-- The 129 raw values reach 53 canonical routes through rules.ROUTE_CANONICAL,
+-- which merges phrasing ('oral' / 'oral use'), real misspellings
+-- ('intravenious infusion', 466 rows) and forms that name their route
+-- unambiguously. Every raw value must appear in exactly one of the two route
+-- maps; tests/test_rules.py fails on a fallthrough or a dead entry.
+--
+-- No grupo column. Merging 'oral use' into 'oral' is mechanical; deciding
+-- that intramuscular counts as "other" is a judgement about what a question
+-- is asking, so the coarse buckets live in analysis/ where they can vary per
+-- question. The 53 routes ARE the grouping the database stores.
+--
+-- Two canonical values name a gap rather than a route, and are stored because
+-- naming the gap is more honest than a NULL that could mean anything:
+-- 'injection, route unspecified' (a dosage form, not a route) and 'multiple
+-- routes' (16 values over 256 rows that genuinely name two, e.g. 'oral and
+-- iv'). The 299 rows saying 'unknown use' or 'other use' name no route at all
+-- and get no route_id - rules.ROUTE_NOT_A_ROUTE.
+CREATE TABLE administration_routes (
+    route_id INTEGER PRIMARY KEY,
+    nombre   TEXT NOT NULL UNIQUE CHECK (nombre <> '')
+) STRICT;
+
+
+-- ---------------------------------------------------------------------------
+-- substances - active ingredients, from the pipe-delimited sustancias field
+-- ---------------------------------------------------------------------------
+-- Same two-column identity pattern as sponsors, funders and centers, and here
+-- on the strongest evidence of the four: profiled per substance rather than
+-- per pipe-joined string, 15,130 mentions give 4,244 distinct cleaned
+-- spellings against 3,364 identities, so 880 merge - 20.7%.
+--
+-- 884 mentions are placeholders ('N/A', 'NA', 'Not available'). They create no
+-- substance and no bridge row, the same rule as funders and empty centres.
+CREATE TABLE substances (
+    substance_id INTEGER PRIMARY KEY,
+    nombre_key   TEXT NOT NULL UNIQUE CHECK (nombre_key <> ''),
+    nombre       TEXT NOT NULL        CHECK (nombre     <> '')
+) STRICT;
+
+
+-- ---------------------------------------------------------------------------
+-- interventions - one row per intervention element, a child of studies
+-- ---------------------------------------------------------------------------
+-- Not deduplicated into a lookup plus a bridge, unlike every other repeated
+-- name in this schema. An element carries its own codigo, huerfano and route,
+-- so two studies using KEYTRUDA are describing their own arm rather than
+-- referencing a shared object; and 11,259 distinct commercial names over
+-- 30,946 elements is a drug-identity problem that would need its own
+-- evidence. Rows here belong to their study and cascade with it.
+--
+-- The block is genuinely optional, unlike centros: intervenciones is ABSENT
+-- from 1,514 studies, and 1,516 end up with no intervention. The rest average
+-- 3.0, maximum 98.
+--
+-- Dropped: atcs (empty in all 30,946 elements, taking a planned lookup and
+-- bridge with it), nombreCientifico (identical to nombreComercial in 90.3% of
+-- elements - 27,949 duplicated values to preserve 2,997 differences),
+-- formaFarmaceutica in both languages (no question uses dosage form, 56.4%
+-- placeholder, and the two language columns are swapped for exactly that
+-- value), and tipo, which the AEMPS manual documents and the endpoint does
+-- not return.
+CREATE TABLE interventions (
+    intervention_id  INTEGER PRIMARY KEY,
+    study_id         TEXT NOT NULL REFERENCES studies(identificador)
+                         ON DELETE CASCADE,
+    -- 100% present, but '-' appears 1,922 times and 'NA' 283, so placeholders
+    -- load as NULL and the column is nullable.
+    nombre_comercial TEXT    CHECK (nombre_comercial <> ''),
+    -- 78.7% present, and improving: 52% through 2021, 100% from 2024.
+    codigo           TEXT    CHECK (codigo <> ''),
+    -- A string '0'/'1' in the source like enfermedadRara, not an integer like
+    -- the studies flags. 25 blanks, so nullable; 2,447 orphan-designated.
+    huerfano         INTEGER CHECK (huerfano IN (0, 1)),
+    -- Nullable, and mostly NULL: the field is populated in 17,268 of 30,946
+    -- elements and only from 2022 onward. RESTRICT rather than CASCADE - a
+    -- route is a shared vocabulary entry, so deleting one should fail loudly
+    -- rather than quietly delete the interventions using it.
+    route_id         INTEGER REFERENCES administration_routes(route_id)
+                         ON DELETE RESTRICT
+) STRICT;
+
+-- The child side of both foreign keys, neither indexed by SQLite on its own.
+CREATE INDEX idx_interventions_study_id ON interventions(study_id);
+CREATE INDEX idx_interventions_route_id ON interventions(route_id);
+
+-- Bridge, and the one the intervention data actually supports: 512 elements
+-- list two substances, 182 three, and the tail runs to 45.
+CREATE TABLE intervention_substances (
+    intervention_id INTEGER NOT NULL REFERENCES interventions(intervention_id)
+                        ON DELETE CASCADE,
+    substance_id    INTEGER NOT NULL REFERENCES substances(substance_id)
+                        ON DELETE CASCADE,
+    PRIMARY KEY (intervention_id, substance_id)
+) STRICT;
+
+-- "Which trials used this substance" - the reverse of the PK's leading column.
+CREATE INDEX idx_intervention_substances_substance_id
+    ON intervention_substances(substance_id);
+
+-- A note the schema cannot express, and the one most likely to be forgotten:
+-- sustancias and viasAdministracion NEVER co-occur. Not one element of 30,946
+-- has both - substances run 97-98% through 2021 then 0% from 2024, routes 0%
+-- through 2021 then 96-100% from 2023. The source swapped one for the other at
+-- the CTIS transition. So neither column covers the corpus, and a substance is
+-- not a route: this is a real loss of comparability across the break, not a
+-- rename. Any analysis of either is confined to one side of it.

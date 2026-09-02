@@ -881,6 +881,25 @@ grouping map has to decide what each compound value becomes.
 elements with one substance, 512 with two, 182 with three, up to 7. That is
 the one intervention bridge the data supports.
 
+**Correction, measured when the DDL was written: the tail is far longer than
+"up to 7".** Splitting all 13,236 populated values gives **15,130 substance
+mentions**, and the per-element counts run 8, 9, 10 … up to **45** — one
+element lists 45 substances, two list 27, three list 23. The head of the
+distribution above is right and the tail was cut off. It changes nothing
+structurally (the bridge already handles any number) but it does mean a
+"substances per intervention" statistic has a long right tail and should be
+reported as a median, not a mean.
+
+**`sustancias` needs the same name normalisation as every other name field,
+and needs it more.** Profiled per substance rather than per pipe-joined
+string: 15,130 mentions, of which **884 are placeholders** (`N/A`, `NA`, `Not
+available` — the same enumerated list, and they create no substance and no
+bridge row). The rest give **4,244 distinct cleaned spellings collapsing to
+3,364 identities — 880 merge, 20.7%**, the highest rate of any name field in
+this project (sponsors 10.8%, centres 20.5%, funders 11.7%). So `substances`
+takes the same `nombre_key` + `nombre` pair, on measured evidence rather than
+by analogy.
+
 **`sustancias` and `viasAdministracion` never co-occur — the source swapped one
 for the other.** Not one element has both:
 

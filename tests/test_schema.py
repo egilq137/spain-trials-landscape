@@ -59,6 +59,22 @@ Slice 3 -- centers and study_centers:
   cod_postal: TEXT, and deliberately unconstrained in format. 7 postcodes the
     triangulation rule cannot resolve load raw, so a format CHECK would turn
     a documented gap into a load failure
+
+Slice 4 -- interventions, routes and substances:
+  routes: a lookup reached by a plain foreign key, not a bridge. 0 of 17,268
+    populated elements carry two routes, so a many-to-many would model a
+    relationship the source cannot express
+  route deletion is RESTRICT, not CASCADE: a route is shared vocabulary, so
+    removing one must fail rather than silently delete every intervention
+    using it. This is the one place the two differ in this schema and the
+    test says which is which
+  interventions: a child of studies, not a deduplicated lookup. An element
+    carries its own codigo, huerfano and route, and cascades with its study
+  optional everywhere: nombre_comercial ('-' 1,922 times), codigo (78.7%),
+    huerfano (25 blanks) and route_id (55.8%) are all nullable, and all
+    reject '' -- absent is a fact, empty string is a skipped rule
+  intervention_substances: the one intervention bridge the data supports,
+    with a tail running to 45 substances on one element
 """
 
 import sqlite3
@@ -628,6 +644,233 @@ class BridgeTestCase(SchemaTestCase):
             "SELECT name FROM sqlite_master WHERE type = 'index'")}
         self.assertIn("idx_study_funders_funder_id", names)
         self.assertIn("idx_study_therapeutic_areas_eutct", names)
+
+
+class InterventionFixture:
+    """One study, two routes and two substances to hang interventions off.
+
+    A mixin rather than a base test case: subclassing a TestCase would re-run
+    its tests against the subclass's setUp, which is how the substances tests
+    first "failed" -- they were re-running the intervention tests with an
+    extra row already inserted.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.insert_study(identificador="2019-000302-29")
+        self.con.execute(
+            "INSERT INTO administration_routes (route_id, nombre) "
+            "VALUES (1, 'intravenous'), (2, 'multiple routes')")
+        self.con.execute(
+            "INSERT INTO substances (substance_id, nombre_key, nombre) "
+            "VALUES (1, 'paclitaxel', 'PACLITAXEL'), "
+            "(2, 'pembrolizumab', 'Pembrolizumab')")
+
+    def add_intervention(self, **overrides):
+        row = {
+            "study_id": "2019-000302-29",
+            "nombre_comercial": "KEYTRUDA 25 mg/mL concentrate for solution",
+            "codigo": "SUB06614MIG",
+            "huerfano": 0,
+            "route_id": 1,
+        }
+        row.update(overrides)
+        return self.con.execute(
+            "INSERT INTO interventions ({}) VALUES ({})".format(
+                ", ".join(row), ", ".join("?" * len(row))),
+            list(row.values())).lastrowid
+
+
+class InterventionsTestCase(InterventionFixture, SchemaTestCase):
+    def test_a_valid_intervention_loads(self):
+        self.assertEqual(
+            self.con.execute(
+                "SELECT codigo FROM interventions WHERE intervention_id = ?",
+                (self.add_intervention(),)).fetchone()[0],
+            "SUB06614MIG")
+
+    def test_a_study_may_have_many(self):
+        # 30,946 elements over 11,847 studies, maximum 98.
+        for code in ("A", "B", "C"):
+            self.add_intervention(codigo=code)
+        self.assertEqual(
+            self.con.execute(
+                "SELECT COUNT(*) FROM interventions").fetchone()[0], 3)
+
+    def test_an_intervention_cannot_name_a_study_that_does_not_exist(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_intervention(study_id="2019-000999-11")
+
+    def test_the_study_is_required(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_intervention(study_id=None)
+
+    def test_deleting_a_study_takes_its_interventions_with_it(self):
+        self.add_intervention()
+        self.con.execute("DELETE FROM studies WHERE identificador = ?",
+                         ("2019-000302-29",))
+        self.assertEqual(
+            self.con.execute(
+                "SELECT COUNT(*) FROM interventions").fetchone()[0], 0)
+
+    def test_every_optional_field_accepts_null(self):
+        # 1,514 studies have no intervenciones block at all, and within the
+        # block each of these is missing from a large share of elements.
+        self.add_intervention(nombre_comercial=None, codigo=None,
+                              huerfano=None, route_id=None)
+
+    def test_no_optional_field_accepts_blank(self):
+        # Placeholders and blanks load as NULL, so '' means a skipped rule.
+        for column in ("nombre_comercial", "codigo"):
+            with self.subTest(column=column), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.add_intervention(**{column: ""})
+
+    def test_the_orphan_flag_takes_only_zero_one_or_null(self):
+        for bad in (-1, 2, "yes"):
+            with self.subTest(huerfano=bad), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.add_intervention(huerfano=bad)
+
+    def test_an_intervention_cannot_name_a_route_that_does_not_exist(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_intervention(route_id=99)
+
+    def test_a_route_in_use_cannot_be_deleted(self):
+        # RESTRICT, not CASCADE: a route is shared vocabulary, so removing one
+        # must fail rather than delete every intervention that used it.
+        self.add_intervention(route_id=1)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.con.execute(
+                "DELETE FROM administration_routes WHERE route_id = 1")
+        self.assertEqual(
+            self.con.execute(
+                "SELECT COUNT(*) FROM interventions").fetchone()[0], 1)
+
+    def test_the_foreign_key_indexes_exist(self):
+        names = {row[0] for row in self.con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'")}
+        self.assertIn("idx_interventions_study_id", names)
+        self.assertIn("idx_interventions_route_id", names)
+
+
+class AdministrationRoutesTestCase(SchemaTestCase):
+    def add_route(self, name="intravenous"):
+        return self.con.execute(
+            "INSERT INTO administration_routes (nombre) VALUES (?)",
+            (name,)).lastrowid
+
+    def test_a_route_loads_once_only(self):
+        self.add_route()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_route()
+
+    def test_the_two_canonical_values_that_name_a_gap_are_ordinary_rows(self):
+        # Storing them beats a NULL that could mean anything: 'injection,
+        # route unspecified' names a form, 'multiple routes' names 256 rows
+        # that genuinely carry two.
+        self.add_route("injection, route unspecified")
+        self.add_route("multiple routes")
+        self.assertEqual(
+            self.con.execute(
+                "SELECT COUNT(*) FROM administration_routes").fetchone()[0], 2)
+
+    def test_the_name_is_required_and_never_blank(self):
+        for bad in (None, ""):
+            with self.subTest(nombre=bad), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.add_route(bad)
+
+
+class SubstancesTestCase(SchemaTestCase):
+    def add_substance(self, key="paclitaxel", name="PACLITAXEL"):
+        return self.con.execute(
+            "INSERT INTO substances (nombre_key, nombre) VALUES (?, ?)",
+            (key, name)).lastrowid
+
+    def test_two_spellings_of_one_substance_cannot_both_load(self):
+        # 880 of 4,244 cleaned spellings merge - 20.7%, the highest rate of
+        # any name field in this schema.
+        self.add_substance()
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_substance("paclitaxel", "Paclitaxel")
+
+    def test_neither_name_may_be_null_or_blank(self):
+        for column in ("nombre_key", "nombre"):
+            with self.subTest(column=column), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.con.execute(
+                    "INSERT INTO substances ({}) VALUES (?)".format(column),
+                    ("something",))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_substance("", "PACLITAXEL")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.add_substance("paclitaxel", "")
+
+
+class InterventionSubstancesTestCase(InterventionFixture, SchemaTestCase):
+    def setUp(self):
+        super().setUp()
+        self.intervention_id = self.add_intervention()
+
+    def link(self, substance_id, intervention_id="use the fixture"):
+        # Not `intervention_id or self.intervention_id`: that would turn a
+        # deliberate None back into the valid id and quietly pass the test
+        # that checks NULL is refused.
+        if intervention_id == "use the fixture":
+            intervention_id = self.intervention_id
+        self.con.execute(
+            "INSERT INTO intervention_substances VALUES (?, ?)",
+            (intervention_id, substance_id))
+
+    def test_an_intervention_may_list_several_substances(self):
+        # 512 elements list two, 182 three, and one lists 45.
+        self.link(1)
+        self.link(2)
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM intervention_substances"
+                             ).fetchone()[0], 2)
+
+    def test_the_same_substance_cannot_be_listed_twice(self):
+        self.link(1)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.link(1)
+
+    def test_neither_side_may_be_missing_or_unknown(self):
+        for intervention_id, substance_id in (
+                (self.intervention_id, 99), (999, 1),
+                (self.intervention_id, None), (None, 1)):
+            with self.subTest(intervention=intervention_id,
+                              substance=substance_id), \
+                    self.assertRaises(sqlite3.IntegrityError):
+                self.link(substance_id, intervention_id=intervention_id)
+
+    def test_deleting_either_parent_takes_the_pairing_with_it(self):
+        self.link(1)
+        self.con.execute("DELETE FROM substances WHERE substance_id = 1")
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM intervention_substances"
+                             ).fetchone()[0], 0)
+        self.link(2)
+        self.con.execute("DELETE FROM interventions WHERE intervention_id = ?",
+                         (self.intervention_id,))
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM intervention_substances"
+                             ).fetchone()[0], 0)
+
+    def test_deleting_a_study_reaches_the_pairings_two_levels_down(self):
+        # studies -> interventions -> intervention_substances, both CASCADE.
+        self.link(1)
+        self.con.execute("DELETE FROM studies WHERE identificador = ?",
+                         ("2019-000302-29",))
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM intervention_substances"
+                             ).fetchone()[0], 0)
+
+    def test_the_reverse_lookup_index_exists(self):
+        names = {row[0] for row in self.con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'")}
+        self.assertIn("idx_intervention_substances_substance_id", names)
 
 
 if __name__ == "__main__":
