@@ -1296,8 +1296,8 @@ named-individual fields are dropped, and for the specific reasons given in
   over time. *Answered, first half.* The coded `areasTerapeuticas.area[]`
   needs no text mining: 55 EUTCT areas cover **all** 11,834 studies from 2013,
   with no unclassified remainder. **Cancer takes 4,239 trials — 35.8% of the
-  corpus, 4.5× the next area** (nervous system, 937), and the top twelve areas
-  hold 10,108 of the 12,276 memberships. Three things qualify that ranking and
+  corpus, 4.5× the next area** (nervous system, 937), and the top sixteen
+  areas hold 10,923 of the 12,276 memberships. Three things qualify that ranking and
   all three are on the chart: 363 trials list more than one area and are
   counted in each, since the source names no primary one, so the bars total
   12,276 over 11,834 trials; 247 trials (2.1%) carry one of the two codes that
@@ -1305,6 +1305,19 @@ named-individual fields are dropped, and for the specific reasons given in
   dropped; and the vocabulary's top level is useless as a grouping here —
   branch C (Diseases) holds 11,066 of 12,276 memberships, so collapsing to it
   draws one bar. The leaf level is where the variation is.
+
+  **Sixteen bars, not twelve, and the reason is a finding in itself.** The
+  first cut at twelve landed mid-slope — rank 12 holds 282 trials and rank 13
+  holds 265 — and swept four substantial areas into Other, which then carried
+  15.6% of all memberships. The four are eye diseases (265), bacterial
+  infections (230), **mental disorders (170)** and female urogenital and
+  pregnancy (150). Mental disorders is the one that matters: it is the whole
+  of psychiatry the chart names, and a therapeutic landscape of Spanish trials
+  showing no mental health at all was an artefact of where the line was drawn,
+  not a fact about the data. At sixteen, nothing above 150 trials is hidden
+  and Other falls to 1,106 trials over 37 areas. It is still a cut — the tail
+  is a smooth slope with no natural break — and the three remaining psychiatry
+  areas (37 trials between them) are still in it.
 
   *And the second half.* Share of each year's trials, top four areas, drawn as
   four lines and **not** as a 100% stack — a stack asserts the parts make a
@@ -1324,6 +1337,18 @@ named-individual fields are dropped, and for the specific reasons given in
   The denominator is `analysis.volume.trials_per_year`'s own output rather
   than a second count, so the two charts cannot quote different totals for the
   same year.
+
+  A third view of the same data, for the dashboard: the ranking again, with a
+  year slider and a play button (`race_figure`). Two decisions in it. The bars
+  are **shares, not counts** — the corpus is 714 trials in 2014 and 1,027 in
+  2020, so a race on counts would show every bar growing and shrinking for
+  reasons that have nothing to do with the mix. And the rows keep the overall
+  ranking order rather than **re-sorting per frame**, the way a bar-chart race
+  usually does: re-ranking looks livelier and makes the one thing this chart
+  is for — watching one area move against a fixed backdrop — harder, because
+  the reader has to find the bar again before they can see it has moved. The
+  x axis is fixed across frames for the same reason; on an autoscaling axis
+  the longest bar fills the width every year and nothing appears to move.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
@@ -1714,6 +1739,8 @@ and would have to be in the model.
 - [x] Therapeutic landscape, part 1: which conditions dominate
       (`analysis/therapeutic.py`)
 - [x] Therapeutic landscape, part 2: how the mix shifts over time
+- [x] Therapeutic landscape, part 3: the ranking animated by year — the first
+      interactive piece, and a rehearsal for the dashboard's controls
 - [ ] Phase distribution
 - [ ] Sponsor structure
 - [ ] Geography (choropleth)

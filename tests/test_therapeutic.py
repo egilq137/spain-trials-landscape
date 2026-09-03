@@ -22,7 +22,13 @@ Success criteria:
     chart's own, and an area with no trials in a year is 0% not a hole
   trend_figure: one line per area in fixed palette order, a dot on the last
     point only, a legend, and a value at the end of every line
-  against the database: 55 areas, 12,276 memberships over 11,834 trials
+  yearly_shares: one frame per year, the same bars in the same order in
+    every frame, shares of that year's trials; the Other label counts the
+    same areas in every frame, so it does not flicker as the animation runs
+  race_figure: a frame per year named by it, a fixed x range so the bars are
+    comparable across frames, and the year on the chart
+  against the database: 55 areas, 12,276 memberships over 11,834 trials, and
+    mental health on the chart rather than swept into Other
 """
 
 import sqlite3
@@ -31,16 +37,20 @@ from pathlib import Path
 
 from analysis.therapeutic import (
     PALETTE,
+    TOP_AREAS,
     Area,
+    Share,
     Trend,
     area_counts_by_year,
     area_trends,
     figure,
     leaf,
+    race_figure,
     ranked_areas,
     top_areas,
     trend_figure,
     trials_per_area,
+    yearly_shares,
 )
 from analysis import volume
 from tests.test_loader import LoaderTestCase
@@ -216,6 +226,12 @@ class TestAreaCountsByYear(AreaLoaderTestCase):
         self.assertEqual(area_counts_by_year(con, ["C04"]),
                          [(2015, "C04", 1)])
 
+    def test_no_codes_means_every_area(self):
+        con = self.con_with([
+            ("04-03-2015", [("C04", "Cancer"), ("C14", "Cardiovascular")])])
+        self.assertEqual(sorted(area_counts_by_year(con)),
+                         [(2015, "C04", 1), (2015, "C14", 1)])
+
     def test_it_counts_only_the_areas_asked_for(self):
         con = self.con_with([
             ("04-03-2015", [("C04", "Cancer"), ("C14", "Cardiovascular")])])
@@ -290,6 +306,89 @@ class TestTrendFigure(unittest.TestCase):
         self.assertIn("2014", self.fig.layout.title.subtitle.text)
 
 
+class TestYearlyShares(unittest.TestCase):
+    TOTALS = [(2013, 200), (2014, 100)]
+    AREAS = [("C04", "Diseases [C] - Cancer [C04]")]
+    COUNTS = [(2013, "C04", 50), (2013, "999999000486", 20),
+              (2013, "C14", 10), (2013, "C10", 4),
+              (2014, "C04", 40), (2014, "999999999999", 3)]
+
+    def frames(self):
+        return yearly_shares(self.COUNTS, self.TOTALS, self.AREAS)
+
+    def test_one_frame_per_year_in_year_order(self):
+        self.assertEqual([year for year, _ in self.frames()], [2013, 2014])
+
+    def test_the_bars_are_shares_of_that_years_trials(self):
+        # 50 of 200 and 40 of 100: the same area, a bigger share of a
+        # smaller year. Counting trials instead would show it shrinking.
+        self.assertEqual([bars[0] for _, bars in self.frames()],
+                         [Share("Cancer [C04]", 25.0, True),
+                          Share("Cancer [C04]", 40.0, True)])
+
+    def test_both_absence_codes_land_in_one_bar(self):
+        first, second = (bars for _, bars in self.frames())
+        self.assertEqual(first[1], Share("Not specified", 10.0, False))
+        self.assertEqual(second[1], Share("Not specified", 3.0, False))
+
+    def test_other_gathers_every_area_outside_the_top(self):
+        # C14 and C10 in 2013: 14 of 200.
+        self.assertEqual(self.frames()[0][1][2],
+                         Share("Other (2 areas)", 7.0, False))
+
+    def test_the_other_label_is_the_same_in_every_frame(self):
+        # Counted over the whole corpus, not per year. Per year it would
+        # read '2 areas' then '0 areas' and flicker as the animation ran.
+        self.assertEqual({bars[-1].label for _, bars in self.frames()},
+                         {"Other (2 areas)"})
+
+    def test_every_frame_has_the_same_bars_in_the_same_order(self):
+        self.assertEqual(*[[bar.label for bar in bars]
+                           for _, bars in self.frames()])
+
+
+class TestRaceFigure(unittest.TestCase):
+    FRAMES = [(2013, [Share("Cancer [C04]", 25.0, True),
+                      Share("Not specified", 10.0, False)]),
+              (2014, [Share("Cancer [C04]", 40.0, True),
+                      Share("Not specified", 3.0, False)])]
+
+    def setUp(self):
+        self.fig = race_figure(self.FRAMES, data_cut="2014-08-26")
+
+    def test_a_frame_per_year_named_by_it(self):
+        self.assertEqual([frame.name for frame in self.fig.frames],
+                         ["2013", "2014"])
+
+    def test_the_figure_opens_on_the_first_year(self):
+        self.assertEqual(self.fig.data[0].text, ("10.0%", "25.0%"))
+
+    def test_the_x_range_is_fixed_across_frames(self):
+        # The point of the whole chart. On an autoscaling axis the longest
+        # bar fills the width in every frame, and nothing appears to move.
+        self.assertAlmostEqual(self.fig.layout.xaxis.range[1], 40.0 * 1.12)
+        # No frame overrides it, so the range set above holds all the way
+        # through the animation.
+        self.assertEqual([frame.layout.xaxis.range
+                          for frame in self.fig.frames], [None, None])
+
+    def test_every_frame_carries_its_year(self):
+        self.assertEqual([frame.layout.annotations[0].text
+                          for frame in self.fig.frames], ["2013", "2014"])
+
+    def test_the_non_areas_stay_hatched_in_every_frame(self):
+        for frame in self.fig.frames:
+            self.assertEqual(frame.data[0].marker.pattern.shape, ("/", ""))
+
+    def test_it_ships_a_slider_step_per_year_and_a_play_button(self):
+        self.assertEqual(
+            [step.label for step in self.fig.layout.sliders[0].steps],
+            ["2013", "2014"])
+        self.assertEqual(
+            [button.label for button in self.fig.layout.updatemenus[0].buttons],
+            ["Play", "Pause"])
+
+
 @requires_database
 class TestAgainstDatabase(unittest.TestCase):
     """Re-measures the corpus figures the module's docstring quotes."""
@@ -321,10 +420,20 @@ class TestAgainstDatabase(unittest.TestCase):
         self.assertEqual((leaf(name), trials), ("Cancer [C04]", 4239))
         self.assertGreater(trials, 4 * self.rows[1][2])
 
-    def test_the_folding_leaves_41_areas_in_the_tail(self):
+    def test_the_folding_leaves_37_areas_in_the_tail(self):
         bars = ranked_areas(self.rows)
+        self.assertEqual(len(bars), TOP_AREAS + 2)
         self.assertEqual(bars[-2:], [Area("Not specified", 247, False),
-                                     Area("Other (41 areas)", 1921, False)])
+                                     Area("Other (37 areas)", 1106, False)])
+
+    def test_mental_health_has_a_bar_of_its_own(self):
+        # The reason TOP_AREAS is 16. At 12 this area fell into Other and the
+        # chart showed no mental health at all, which is a fact about where
+        # the cut was drawn and not about Spanish trials. F03 is the whole of
+        # psychiatry the chart names: the three other F areas hold 37 trials
+        # between them and stay in the tail.
+        bars = {bar.label: bar.trials for bar in ranked_areas(self.rows)}
+        self.assertEqual(bars["Mental Disorders [F03]"], 170)
 
     def test_the_trends_hold_the_two_findings_the_spec_quotes(self):
         areas = top_areas(self.rows)
