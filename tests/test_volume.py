@@ -13,13 +13,16 @@ Success criteria:
     cannot invent it, and the caller should know that before plotting a line
   against the database: the series reproduces the PROJECT_SPEC 3.2d crosstab
     -- 14 years, 11,834 studies, the 9 pre-2013 records excluded
+  figure: draws exactly the series it is handed, hatches only the partial
+    year, states both exclusions in words as well as in marks, and puts the
+    CTIS mandate on the axis between 2022 and 2023 rather than in a legend
 """
 
 import sqlite3
 import unittest
 from pathlib import Path
 
-from analysis.volume import coverage, trials_per_year
+from analysis.volume import Coverage, coverage, figure, trials_per_year
 from tests.test_loader import LoaderTestCase
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "trials.db"
@@ -85,6 +88,48 @@ class TestCoverage(VolumeTestCase):
         # date whichever year the chart happens to start at.
         con = self.con_with(["12-05-2011", "26-08-2026"])
         self.assertEqual(coverage(con, since=2020).data_cut, "2026-08-26")
+
+
+class TestFigure(unittest.TestCase):
+    """The chart is a pure function of the series, so it is testable.
+
+    Nothing here checks that it looks good -- that needs eyes, and it got
+    them. These pin the claims the chart makes about the data, which is the
+    part that can silently stop being true when the query changes.
+    """
+
+    SERIES = [(2021, 90), (2022, 100), (2023, 80), (2024, 40)]
+    COVER = Coverage(data_cut="2024-08-26", excluded=7)
+
+    def setUp(self):
+        self.fig = figure(self.SERIES, self.COVER)
+
+    def test_it_draws_the_series_it_was_given(self):
+        bars, = self.fig.data
+        self.assertEqual(list(bars.x), [2021, 2022, 2023, 2024])
+        self.assertEqual(list(bars.y), [90, 100, 80, 40])
+
+    def test_only_the_partial_year_is_hatched(self):
+        # The hatch is per-bar rather than a second trace, so a shifted data
+        # cut cannot leave it on the wrong bar.
+        self.assertEqual(self.fig.data[0].marker.pattern.shape,
+                         ("", "", "", "/"))
+
+    def test_the_mandate_is_a_line_between_the_two_years(self):
+        # Between 2022 and 2023, not on either bar: the boundary is a date,
+        # and no bar belongs to both sides of it.
+        self.assertEqual([shape.x0 for shape in self.fig.layout.shapes],
+                         [2022.5])
+
+    def test_both_exclusions_are_stated_in_words(self):
+        # A hatch is a hint; the reader is told in a sentence as well.
+        subtitle = self.fig.layout.title.subtitle.text
+        self.assertIn("2024-08-26", subtitle)
+        self.assertIn("7 trials", subtitle)
+        self.assertIn("before 2013", subtitle)
+
+    def test_one_series_carries_no_legend(self):
+        self.assertFalse(self.fig.layout.showlegend)
 
 
 @requires_database
