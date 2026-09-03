@@ -34,9 +34,10 @@ ROUTE_GROUP = {
     # because they enter by the mouth, which is the distinction a landscape
     # count is drawing. Pharmacologically they are not oral: they cross the
     # oral mucosa and skip the first pass through the liver, so a
-    # bioavailability question would have to separate them again. 22 rows, so
-    # the choice moves nothing either way -- it is stated because it is the
-    # kind of thing that stops being harmless once someone reuses the map.
+    # bioavailability question would have to separate them again. DECIDED: no
+    # pharmacological analysis follows from this map -- the only question it
+    # answers is how the medication was given -- so the merge stands. Anyone
+    # asking a PK question needs the canonical routes, not these groups.
     "oral": "oral",
     "sublingual": "oral",
     "buccal": "oral",
