@@ -1224,6 +1224,32 @@ for the regime split". The threshold is not the problem the note thought it
 was: `fecha_autorizacion_aemps` is the honest answer to "when was this trial
 authorised", and `es_ctis` is not an answer to that question at all.
 
+#### The seven wrong provinces, and why the postcode is not the arbiter
+
+Phase 4 addendum, from building the regional map. `centers.provincia` was
+known to disagree with the postcode in 258 raw entries; resolved to sites,
+**7 of the 3,006 centres** that have both a well-formed postcode and a
+province disagree with the majority province of everything sharing their
+postcode prefix.
+
+Reading all seven overturns the rule this spec previously recommended.
+**In three of them the postcode is the wrong field, not the province.**
+`28006` is a Madrid postcode on a centre whose name, locality and province
+all say Barcelona; `31003` is Pamplona on a Sevilla clinic; and `08908` is
+L'Hospitalet's postcode on the Institut Català d'Oncologia's Girona campus,
+which reports three campuses under one registry reference. Deriving the
+province from the postcode prefix would have corrected four rows and
+corrupted three, one of them carrying **193 trials**.
+
+The locality settles every case: it agrees with the site name in all seven,
+and with the majority of sibling rows at the same postcode. The seven are
+enumerated with their evidence in `analysis/geography.py`
+(`CENTER_CORRECTIONS`, plus `CHECKED_UNCHANGED` for the ICO row that needs no
+change), keyed on the schema's UNIQUE rather than on `center_id`, which is a
+rowid handed out at load time. A corpus-backed test asserts every key still
+matches exactly one centre, so a typo in a hand-written table cannot sit
+there doing nothing quietly.
+
 #### Coverage begins in 2013; this is not left truncation
 
 `fecha_registro` runs from **2017-11-02** to 2026-07-29, while
@@ -1352,7 +1378,26 @@ named-individual fields are dropped, and for the specific reasons given in
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
-  map; Madrid-specific angle for the target audience).
+  map; Madrid-specific angle for the target audience). *Answered at region
+  level.* **The map measures participation, not ownership**: trials are
+  multi-site (45,319 trial-region pairs over 11,653 located trials, ~3.9
+  regions each; only 19.5% run in a single region), so a region's number is
+  "trials with at least one site here" and the regions overlap. **Cataluña
+  takes part in 79.0% of Spanish trials since 2013 (9,346), Madrid in 75.2%
+  (8,895)**, then Andalucía 48.8%, Comunitat Valenciana 43.8%, Galicia 27.2%.
+  La Rioja 0.9%, Ceuta 6 trials, Melilla 5. 181 trials are not on the map --
+  149 report no centre at all, 32 only centres whose region was never
+  recorded -- and they stay in the denominator rather than being dropped.
+
+  Two things this settles for later questions. **Regions, not provinces**:
+  `centers.ccaa` is a clean 19-value vocabulary matching Eurostat NUTS 2 one
+  for one, while `centers.provincia` carries the known assignment errors.
+  And **multi-site participation absorbs per-centre error** -- the whole
+  correction table below moves exactly one trial at region grain, because a
+  trial with sites in nine regions survives one of them being mislabelled.
+  Errors that look alarming per centre may be irrelevant to the statistic
+  actually being computed, and the way to find out is to compute it both
+  ways.
 - **Trial duration (survival analysis):** time-to-completion via Kaplan-Meier,
   stratified by phase / sponsor type / therapeutic area / pre- vs. post-CTIS,
   compared with the log-rank test; multivariate Cox proportional hazards model
@@ -1743,7 +1788,10 @@ and would have to be in the model.
       interactive piece, and a rehearsal for the dashboard's controls
 - [ ] Phase distribution
 - [ ] Sponsor structure
-- [ ] Geography (choropleth)
+- [x] Geography (choropleth) -- region level, `analysis/geography.py`,
+      geometry vendored in `data/geo/` with its licence
+- [ ] Geography, optional follow-up: province level, which is where the
+      provincia errors actually bite (one row carries 193 trials)
 - [ ] Survival analysis (Kaplan-Meier → log-rank → Cox PH → assumption check) —
       last, since it depends on the DB being fully trustworthy
 - [ ] Results-reporting compliance
