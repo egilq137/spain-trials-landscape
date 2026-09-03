@@ -40,3 +40,34 @@ the chart reads. The filter is recorded here rather than scripted: it ran once,
 the output is committed, and a rebuild means re-reading this paragraph -- the
 same rule as `data/raw/`, where the durable artefact is the file and not the
 code that fetched it.
+
+## `spain-provinces.geojson`
+
+52 polygons: the 50 provinces plus Ceuta and Melilla. `id` = `properties.ine`,
+the 2-digit INE province code -- which is also the postcode prefix, so the
+name-to-code table in `analysis/geography.py` is checkable against the data
+rather than merely asserted, and `tests/test_geography.py` checks it.
+
+Same source, retrieval date and licence as above, from
+`NUTS_RG_20M_2021_4326_LEVL_3.geojson` (1.6 MB, all of Europe).
+
+### Provinces are not a NUTS level
+
+Spain has **59** NUTS-3 units and **52** provinces, because the islands are
+split finer than the provinces are:
+
+| province | INE | NUTS 3 units merged |
+|---|---|---|
+| Illes Balears | 07 | ES531 Eivissa y Formentera, ES532 Mallorca, ES533 Menorca |
+| Las Palmas | 35 | ES704 Fuerteventura, ES705 Gran Canaria, ES708 Lanzarote |
+| Santa Cruz de Tenerife | 38 | ES703 El Hierro, ES706 La Gomera, ES707 La Palma, ES709 Tenerife |
+
+The other 49 are 1:1. Merging is safe here because the units being combined
+are separate islands: disjoint polygons concatenate into one MultiPolygon and
+no shared border has to be dissolved. A test asserts each of the three still
+carries at least as many polygons as it has island units, since a dropped
+merge would leave a province quietly missing an island.
+
+The three merged names are written out (`Illes Balears`, `Las Palmas`,
+`Santa Cruz de Tenerife`); the other 49 keep the NUTS `NAME_LATN`, which is
+why the map says `Alicante/Alacant` and `Araba/Álava`.

@@ -22,7 +22,8 @@ from analysis import geography, therapeutic, volume
 # every chart file with a one-line diff that means nothing.
 DEFAULT_DB = Path("data") / "trials.db"
 CHART_DIR = Path("docs") / "charts"
-GEOMETRY = Path("data") / "geo" / "spain-ccaa.geojson"
+REGIONS = Path("data") / "geo" / "spain-ccaa.geojson"
+PROVINCES = Path("data") / "geo" / "spain-provinces.geojson"
 
 
 def open_database(path=DEFAULT_DB):
@@ -91,18 +92,37 @@ def write_area_race_chart(con, chart_dir=CHART_DIR):
     return path
 
 
-def write_geography_chart(con, chart_dir=CHART_DIR, geometry_path=GEOMETRY):
+def write_map(con, grain, geometry_path, filename, title, chart_dir):
+    """One choropleth. The two grains differ in three arguments, not in code.
+
+    Both maps read the same corrected centres and the same participation
+    count; what changes is which column the pairs are keyed on and which
+    geometry they are drawn against.
+    """
     trials = sum(count for _, count in volume.trials_per_year(con))
-    pairs = geography.located_pairs(con)
-    regions = geography.trials_per_region(pairs, trials)
+    pairs = (geography.region_pairs(con) if grain == "region"
+             else geography.province_pairs(con))
+    places = geography.participation(pairs, trials)
+    geometry = geography.load_geometry(geometry_path)
+    unplaced = geography.unlocated(pairs, trials)
     chart_dir.mkdir(parents=True, exist_ok=True)
-    path = chart_dir / "regional-participation.html"
-    geography.figure(regions, geography.load_geometry(geometry_path),
-                     geography.unlocated(pairs, trials)).write_html(
-                         path, include_plotlyjs="cdn", div_id=path.stem)
-    print("{}: {} regions, {:,} unplaced trials".format(
-        path, len(regions), geography.unlocated(pairs, trials)))
+    path = chart_dir / filename
+    geography.figure(
+        places, geometry, title,
+        geography.subtitle(places, geometry, unplaced, grain)).write_html(
+            path, include_plotlyjs="cdn", div_id=path.stem)
+    print("{}: {} {}s, {:,} unplaced trials".format(
+        path, len(places), grain, unplaced))
     return path
+
+
+def write_geography_charts(con, chart_dir=CHART_DIR):
+    write_map(con, "region", REGIONS, "regional-participation.html",
+              "Where Spanish trials run: regional participation since {}"
+              .format(volume.COVERAGE_START), chart_dir)
+    write_map(con, "province", PROVINCES, "province-participation.html",
+              "Where Spanish trials run: participation by province since {}"
+              .format(volume.COVERAGE_START), chart_dir)
 
 
 def main():
@@ -112,7 +132,7 @@ def main():
         write_therapeutic_chart(con)
         write_area_trend_chart(con)
         write_area_race_chart(con)
-        write_geography_chart(con)
+        write_geography_charts(con)
     finally:
         con.close()
 

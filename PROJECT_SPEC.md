@@ -1398,6 +1398,26 @@ named-individual fields are dropped, and for the specific reasons given in
   Errors that look alarming per centre may be irrelevant to the statistic
   actually being computed, and the way to find out is to compute it both
   ways.
+
+  *Province level, 52 units.* **Barcelona 9,240 trials (78.1%), Madrid 8,898
+  (75.2%)**, then Valencia 4,616 (39.0%), Sevilla 3,827 (32.3%), A Coruña
+  2,631 (22.2%), Málaga 2,458 (20.8%). The tail is genuinely thin: Soria 9
+  trials, Ceuta 6, Melilla 5. 182 trials are unplaceable here rather than 181,
+  because a centre can carry a region and no province — which is why the
+  unplaced count is computed per grain rather than once.
+
+  The finer grain also shows the corrections doing more work: **four trials
+  move rather than one** (Alicante +1, Ávila +1, Burgos −1, Murcia −1), for
+  the same reason — a trial with sites in nine regions may still have only
+  one site in Girona. And it puts a number on the rule that was rejected:
+  deriving province from the postcode prefix takes **114 trials out of
+  Girona**, 15% of the province, into Barcelona.
+
+  Spain's provinces are **not** a NUTS level. NUTS 3 has 59 Spanish units
+  because the Balearics are three island units and the Canaries seven, so ten
+  polygons merge into three provinces; the other 49 are 1:1. Merging is safe
+  because the units are separate islands — disjoint polygons concatenate and
+  no shared border has to be dissolved.
 - **Trial duration (survival analysis):** time-to-completion via Kaplan-Meier,
   stratified by phase / sponsor type / therapeutic area / pre- vs. post-CTIS,
   compared with the log-rank test; multivariate Cox proportional hazards model
@@ -1788,10 +1808,12 @@ and would have to be in the model.
       interactive piece, and a rehearsal for the dashboard's controls
 - [ ] Phase distribution
 - [ ] Sponsor structure
-- [x] Geography (choropleth) -- region level, `analysis/geography.py`,
-      geometry vendored in `data/geo/` with its licence
-- [ ] Geography, optional follow-up: province level, which is where the
-      provincia errors actually bite (one row carries 193 trials)
+- [x] Geography (choropleth) -- region and province level,
+      `analysis/geography.py`, both geometries vendored in `data/geo/` with
+      their licence
+- [ ] Geography, optional follow-up: fill the 68 centres that have a postcode
+      and no province. The prefix is the right tool for *filling* a missing
+      value and the wrong one for *overriding* a present one — see §3.2c
 - [ ] Survival analysis (Kaplan-Meier → log-rank → Cox PH → assumption check) —
       last, since it depends on the DB being fully trustworthy
 - [ ] Results-reporting compliance
