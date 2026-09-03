@@ -332,10 +332,15 @@ CREATE TABLE centers (
     -- Not part of the key, so these use NULL rather than '' for "never
     -- reported". Resolved per site by most frequent non-blank value; 149
     -- sites disagree, 132 only because one variant is blank.
-    -- provincia is a clean vocabulary containing wrong assignments - 258 rows
-    -- name a province the postcode contradicts - so province-level
-    -- aggregation derives the province from the postcode prefix in analysis/,
-    -- where the assumption can be stated. Do not group by this column.
+    -- provincia is a clean vocabulary containing wrong assignments: 258 raw
+    -- entries name a province their postcode contradicts, 7 of them once
+    -- entries are resolved to sites. Do not group by this column directly.
+    -- REVISED in Phase 4: reading those 7 shows the postcode is the wrong
+    -- field in 3 of them, so deriving the province from the postcode prefix
+    -- would fix four rows and break three - one worth 193 trials. The
+    -- locality settles every case, and the seven are enumerated with their
+    -- evidence in analysis/geography.py, which is where the judgement can be
+    -- read rather than inferred.
     provincia  TEXT             CHECK (provincia <> ''),
     ccaa       TEXT             CHECK (ccaa      <> ''),
 

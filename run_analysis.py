@@ -15,13 +15,14 @@ promise.
 import sqlite3
 from pathlib import Path
 
-from analysis import therapeutic, volume
+from analysis import geography, therapeutic, volume
 
 # div_id is pinned to the file name on every write_html below. Plotly
 # generates a fresh uuid otherwise, so re-running the analysis would rewrite
 # every chart file with a one-line diff that means nothing.
 DEFAULT_DB = Path("data") / "trials.db"
 CHART_DIR = Path("docs") / "charts"
+GEOMETRY = Path("data") / "geo" / "spain-ccaa.geojson"
 
 
 def open_database(path=DEFAULT_DB):
@@ -90,6 +91,20 @@ def write_area_race_chart(con, chart_dir=CHART_DIR):
     return path
 
 
+def write_geography_chart(con, chart_dir=CHART_DIR, geometry_path=GEOMETRY):
+    trials = sum(count for _, count in volume.trials_per_year(con))
+    pairs = geography.located_pairs(con)
+    regions = geography.trials_per_region(pairs, trials)
+    chart_dir.mkdir(parents=True, exist_ok=True)
+    path = chart_dir / "regional-participation.html"
+    geography.figure(regions, geography.load_geometry(geometry_path),
+                     geography.unlocated(pairs, trials)).write_html(
+                         path, include_plotlyjs="cdn", div_id=path.stem)
+    print("{}: {} regions, {:,} unplaced trials".format(
+        path, len(regions), geography.unlocated(pairs, trials)))
+    return path
+
+
 def main():
     con = open_database()
     try:
@@ -97,6 +112,7 @@ def main():
         write_therapeutic_chart(con)
         write_area_trend_chart(con)
         write_area_race_chart(con)
+        write_geography_chart(con)
     finally:
         con.close()
 
