@@ -1133,6 +1133,132 @@ to correct it.
 blanks, 2,447 orphan-designated. **`codigo`** is 78.7% present and improves
 sharply over time — 52% through 2021, 100% from 2024.
 
+### 3.2d Regime and coverage — two assumptions the data does not support
+
+Written before the first Phase 3 chart, from queries against a built
+`data/trials.db` (11,843 studies). Both assumptions below were carried into
+Phase 3 from earlier sections; both are wrong, and a volume-per-year chart
+drawn on either of them would be wrong in a way no test would catch.
+
+Every figure here is reproducible with `sqlite3 data/trials.db` and the query
+quoted beside it.
+
+#### `es_ctis` marks the register, not the regime
+
+`studies.es_ctis` is generated from the identifier format (14 chars EudraCT,
+17 chars CTIS — see the column comment in `db/schema.sql`). The temptation is
+to read it as "authorised under the EU CTR", i.e. after CTIS became mandatory
+in January 2023. It does not mean that.
+
+```sql
+SELECT substr(fecha_autorizacion_aemps, 1, 4) AS year,
+       count(*), sum(es_ctis)
+FROM studies GROUP BY year ORDER BY year;
+```
+
+| authorisation year | studies | of which CTIS-format |
+|---|---|---|
+| 2013 | 759 | 8 |
+| 2015 | 804 | 29 |
+| 2017 | 779 | 57 |
+| 2019 | 831 | 188 |
+| 2020 | 1,027 | 256 |
+| 2021 | 996 | 438 |
+| 2022 | 922 | 563 |
+| 2023 | 846 | 761 |
+| 2024 | 929 | 928 |
+
+CTIS-format identifiers appear in every year back to 2009. **1,679 studies
+authorised before 2023 carry one** — 19.9% of the 8,432 pre-2023 cohort — and
+86 studies authorised after January 2023 still carry a EudraCT identifier.
+
+These are **transitioned trials**. The EU CTR gave sponsors a window to move
+ongoing EudraCT trials into CTIS; the record acquires a new CTIS identifier
+and a new registration date, and keeps its original authorisation date:
+
+| identificador | fecha_autorizacion_aemps | fecha_registro |
+|---|---|---|
+| `2024-510784-36-00` | 2009-03-04 | 2024-03-28 |
+| `2024-515986-33-00` | 2010-02-01 | 2024-07-15 |
+| `2023-503479-79-00` | 2011-05-12 | 2024-01-26 |
+
+The identifier-prefix years of those 1,679 records confirm it: 2022 (177),
+2023 (814), 2024 (671), 2025 (17) — all inside the transition window, none
+contemporaneous with the authorisation.
+
+**Decision.** Neither variable alone answers "which regime authorised this
+trial", so `analysis/` derives a three-level `regime` from both:
+
+| regime | rule | meaning |
+|---|---|---|
+| EudraCT | EudraCT id, authorised before 2023 | authorised and registered under the old regime |
+| CTIS | CTIS id, authorised 2023 or later | authorised under the EU CTR |
+| transitioned | CTIS id, authorised before 2023 | old-regime authorisation, migrated record |
+
+The 86 post-2023 EudraCT-format records fall outside these three and are
+counted and inspected before being assigned, not silently bucketed.
+
+`es_ctis` on its own remains the correct variable for *register-level*
+questions — results-reporting compliance, field fill rates, which fields the
+record even has — because those are properties of the register holding the
+record, which is exactly what it measures. It is the wrong variable for
+questions about when a trial was authorised.
+
+This supersedes the Phase 2 handoff note "use `es_ctis`, not a date
+threshold, for the regime split". A date threshold alone misclassifies the
+transitioned records too; the point is that neither field is sufficient alone.
+
+#### Coverage begins in 2013; this is not left truncation
+
+`fecha_registro` runs from **2017-11-02** to 2026-07-29, while
+`fecha_autorizacion_aemps` runs from 2009-03-04. 3,077 studies (26%) were
+authorised before the registry's first registration date. The suspicion this
+raises is **left truncation**: if REEC had loaded only the trials still
+running when it opened, the pre-2017 years would contain a survivor-selected
+sample, biased towards long trials — selection on the very outcome a duration
+analysis measures.
+
+The data rejects that reading.
+
+- The pre-2017 records are a single bulk load, not a rolling accumulation:
+  **3,207 studies share the registration date 2017-11-02** - 97% of the 3,302
+  records registered in 2017 at all.
+- 2,717 of the 3,068 studies authorised 2013–2016 (88.6%) carry a real Spanish
+  end date, so the cohort is not dominated by still-running trials.
+- Decisively: **1,495 of that cohort ended before 2017-11-02.**
+
+  ```sql
+  SELECT count(*) FROM studies
+  WHERE fecha_autorizacion_aemps BETWEEN '2013-01-01' AND '2016-12-31'
+    AND fecha_fin_real_espana < '2017-11-02';
+  ```
+
+  Under truncation-on-still-running those 1,495 records could not exist. Their
+  presence is what distinguishes a retrospective backload from a truncated
+  sample, and it is the check to repeat on any future registry that looks like
+  this one.
+
+What remains is a **coverage boundary**, not a truncation: REEC's retrospective
+load starts in 2013, and the cliff is sharp — 4 studies authorised in 2012,
+759 in 2013. The 9 studies authorised before 2013 are not a 2009–2012 cohort;
+8 of the 9 are transitioned records with backdated authorisations, i.e. the
+same artefact as above.
+
+**Decisions for `analysis/`.**
+
+- Volume charts start at **2013**. Earlier years are excluded and annotated as
+  transitioned backfill, not drawn as four near-empty bars.
+- **No `entry=` argument in the Kaplan-Meier fits.** `lifelines` supports left
+  truncation via `entry`; using it here would correct a bias that is not
+  present. The claim is testable, and §3.2d is where the test lives.
+- The unprovable residual is stated rather than assumed away: nothing in the
+  data shows whether the 2013–2016 backload was *complete*. It is not
+  survivor-selected, which is the failure that would bias a duration analysis;
+  a uniform shortfall would not.
+- 2026 is a partial year — the data cut is the maximum authorisation date,
+  **2026-08-26**. Any per-year chart must mark it, or the last bar reads as a
+  collapse in activity.
+
 ### 3.3 Analysis questions / insights to extract
 
 **These are a minimum, not a ceiling.** The list below is the starting set of
@@ -1145,8 +1271,11 @@ require re-ingesting or redesigning. Only free text (`informacion`) and
 named-individual fields are dropped, and for the specific reasons given in
 §3.2b–c.
 
-- **Volume & momentum:** trials authorized per year; look for a visible break
-  around January 2023 (mandatory EU CTIS transition).
+- **Volume & momentum:** trials authorized per year, from 2013 (REEC's coverage
+  boundary) with 2026 marked partial. The January 2023 CTIS transition is a
+  break in the *register*, not necessarily in the volume: it is read off the
+  three-level `regime` variable of §3.2d, since `es_ctis` alone labels 1,679
+  pre-2023 authorisations as CTIS.
 - **Therapeutic landscape:** which conditions dominate, and how the mix shifts
   over time.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
@@ -1509,8 +1638,13 @@ test that fails when a refresh changes the data underneath.
   seen in cached JSON — 11,847 studies total
 
 ### Phase 3 — First analysis + visualization checkpoint
+- [x] Correct the two regime/coverage assumptions against the built database
+      (§3.2d) — done before any chart depends on them
+- [ ] `regime` derivation (§3.2d table) as a tested function in `analysis/`, not
+      a CASE WHEN inside a query string
 - [ ] Volume per year / CTIS-transition break (single query + one Plotly chart)
-- Verify: chart sanity-checks against known facts (Jan 2023 dip/jump)
+- Verify: counts per year match the §3.2d crosstab; 2013 boundary and partial
+  2026 are visible on the chart rather than left to the reader
 
 ### Phase 4 — Remaining analyses (Section 3.3), one at a time
 - [ ] Therapeutic landscape
