@@ -1172,9 +1172,12 @@ CTIS-format identifiers appear in every year back to 2009. **1,679 studies
 authorised before 2023 carry one** — 19.9% of the 8,432 pre-2023 cohort — and
 86 studies authorised after January 2023 still carry a EudraCT identifier.
 
-These are **transitioned trials**. The EU CTR gave sponsors a window to move
-ongoing EudraCT trials into CTIS; the record acquires a new CTIS identifier
-and a new registration date, and keeps its original authorisation date:
+**Almost all of these are transitioned trials.** The EU CTR gave sponsors a
+window to move ongoing EudraCT trials into CTIS; the record acquires a new
+CTIS identifier and a new registration date, and keeps its original
+authorisation date. The discriminator is the order of the two dates — a record
+registered *after* the trial was already authorised did not go through CTIS to
+get that authorisation:
 
 | identificador | fecha_autorizacion_aemps | fecha_registro |
 |---|---|---|
@@ -1182,31 +1185,44 @@ and a new registration date, and keeps its original authorisation date:
 | `2024-515986-33-00` | 2010-02-01 | 2024-07-15 |
 | `2023-503479-79-00` | 2011-05-12 | 2024-01-26 |
 
-The identifier-prefix years of those 1,679 records confirm it: 2022 (177),
-2023 (814), 2024 (671), 2025 (17) — all inside the transition window, none
-contemporaneous with the authorisation.
+**1,620** of the 1,679 are migrations on that test, with identifier years
+2022–2025 — all inside the transition window, never contemporaneous with the
+authorisation they carry, the oldest of which is 2009-03-04.
 
-**Decision.** Neither variable alone answers "which regime authorised this
-trial", so `analysis/` derives a three-level `regime` from both:
+The remaining **59 are the opposite case, and they are real**: registered
+*before* their authorisation, all in 2022, the earliest on 2022-02-24. CTIS
+opened on 2022-01-31 and was voluntary for its first year, so these are
+genuine early CTIS submissions — trials authorised under the new regime before
+the mandate made it compulsory. Writing the characterisation test
+(`tests/test_registry_era.py`) is what separated them from the migrations;
+the first pass through this section called all 1,679 transitioned.
 
-| regime | rule | meaning |
-|---|---|---|
-| EudraCT | EudraCT id, authorised before 2023 | authorised and registered under the old regime |
-| CTIS | CTIS id, authorised 2023 or later | authorised under the EU CTR |
-| transitioned | CTIS id, authorised before 2023 | old-regime authorisation, migrated record |
+The 86 records pointing the other way are the mirror image: EudraCT
+identifiers issued in 2020 (7), 2021 (21) and 2022 (58), authorised in 2023 or
+later. Nothing new entered EudraCT after the mandate — these are old
+submissions that took a long time to authorise.
 
-The 86 post-2023 EudraCT-format records fall outside these three and are
-counted and inspected before being assigned, not silently bucketed.
+**Decision: no analysis groups by `es_ctis`.** A variable this composite
+cannot carry an interpretation. Split on it and each side mixes two
+populations — the CTIS side holds 1,620 trials authorised as far back as 2009,
+the EudraCT side holds 86 authorised after the mandate — so any difference
+between the groups is unattributable, and a difference of zero would be
+equally unattributable. Deriving a cleaned three-level regime variable from
+the identifier and the dates is possible, but the resulting contrast — trials
+authorised before versus after January 2023 — is one the authorisation date
+already gives directly, and gives without the derivation to explain.
 
-`es_ctis` on its own remains the correct variable for *register-level*
-questions — results-reporting compliance, field fill rates, which fields the
-record even has — because those are properties of the register holding the
-record, which is exactly what it measures. It is the wrong variable for
-questions about when a trial was authorised.
+What `es_ctis` legitimately answers is *which register holds this record*.
+That is a real property, and the right variable for register-level questions
+if any are asked later: field fill rates, which fields the record even has,
+and results-reporting compliance, since results are posted to a register
+rather than by a regime. It is the wrong variable for every question about
+when or under what rules a trial was authorised.
 
-This supersedes the Phase 2 handoff note "use `es_ctis`, not a date
-threshold, for the regime split". A date threshold alone misclassifies the
-transitioned records too; the point is that neither field is sufficient alone.
+This supersedes the Phase 2 handoff note "use `es_ctis`, not a date threshold,
+for the regime split". The threshold is not the problem the note thought it
+was: `fecha_autorizacion_aemps` is the honest answer to "when was this trial
+authorised", and `es_ctis` is not an answer to that question at all.
 
 #### Coverage begins in 2013; this is not left truncation
 
@@ -1272,10 +1288,10 @@ named-individual fields are dropped, and for the specific reasons given in
 §3.2b–c.
 
 - **Volume & momentum:** trials authorized per year, from 2013 (REEC's coverage
-  boundary) with 2026 marked partial. The January 2023 CTIS transition is a
-  break in the *register*, not necessarily in the volume: it is read off the
-  three-level `regime` variable of §3.2d, since `es_ctis` alone labels 1,679
-  pre-2023 authorisations as CTIS.
+  boundary) with 2026 marked partial, counted on `fecha_autorizacion_aemps`.
+  The January 2023 CTIS mandate is marked on the time axis rather than used to
+  group the data — §3.2d, `es_ctis` is a register marker and no analysis groups
+  by it.
 - **Therapeutic landscape:** which conditions dominate, and how the mix shifts
   over time.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
@@ -1640,9 +1656,10 @@ test that fails when a refresh changes the data underneath.
 ### Phase 3 — First analysis + visualization checkpoint
 - [x] Correct the two regime/coverage assumptions against the built database
       (§3.2d) — done before any chart depends on them
-- [ ] `regime` derivation (§3.2d table) as a tested function in `analysis/`, not
-      a CASE WHEN inside a query string
-- [ ] Volume per year / CTIS-transition break (single query + one Plotly chart)
+- [x] `tests/test_registry_era.py` — characterisation test pinning down what
+      `es_ctis` is, which settled that no analysis should group by it
+- [ ] Volume per year, 2013 onwards, with the Jan 2023 mandate marked (single
+      query + one Plotly chart)
 - Verify: counts per year match the §3.2d crosstab; 2013 boundary and partial
   2026 are visible on the chart rather than left to the reader
 

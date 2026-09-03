@@ -3,7 +3,7 @@
 **Read first:** `CLAUDE.md`, then `PROJECT_SPEC.md` §3.2c (long, and the
 reasoning in it matters more than the conclusions).
 
-**State:** `main` at `275c03b`, clean and pushed. 408 tests pass.
+**State:** `main` at `275c03b`, clean and pushed. 420 tests pass.
 `feature/cleaning-rules` is merged and can be deleted when you're confident.
 
 ```bash
@@ -92,12 +92,16 @@ CTIS break**. One query plus one Plotly chart, in `analysis/`.
 
 Two things had to be settled before drawing it:
 
-- **Both settled in PROJECT_SPEC §3.2d, against the built database — and both
-  of the assumptions written here first were wrong.** `es_ctis` marks the
+- **Both settled in PROJECT_SPEC §3.2d, against the built database, and both of
+  the assumptions written here first were wrong.** `es_ctis` marks the
   register, not the regime: 1,679 studies authorised before 2023 carry a CTIS
-  identifier because their records were *transitioned*, so the regime split
-  needs both fields (EudraCT / CTIS / transitioned), not either alone. And the
-  pre-2017 years are a single 2017-11-02 backload, not left truncation —
+  identifier — 1,620 because their records were *transitioned* into CTIS, 59
+  because they really were authorised through CTIS while it was voluntary in
+  2022. **Decision: no analysis groups by `es_ctis`.** Split on it and both
+  sides mix two populations, so any difference is unattributable. Volume is
+  counted on `fecha_autorizacion_aemps`, with the Jan 2023 mandate marked on
+  the axis. `tests/test_registry_era.py` pins the variable down.
+- The pre-2017 years are a single 2017-11-02 backload, not left truncation:
   1,495 studies of the 2013-2016 cohort ended before the registry's first
   registration date, which truncation-on-still-running could not produce. The
   chart starts at 2013 (REEC's coverage boundary) and marks 2026 partial; the
