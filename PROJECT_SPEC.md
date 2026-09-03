@@ -1658,10 +1658,27 @@ test that fails when a refresh changes the data underneath.
       (§3.2d) — done before any chart depends on them
 - [x] `tests/test_registry_era.py` — characterisation test pinning down what
       `es_ctis` is, which settled that no analysis should group by it
-- [ ] Volume per year, 2013 onwards, with the Jan 2023 mandate marked (single
-      query + one Plotly chart)
-- Verify: counts per year match the §3.2d crosstab; 2013 boundary and partial
-  2026 are visible on the chart rather than left to the reader
+- [x] Volume per year, 2013 onwards, with the Jan 2023 mandate marked
+      (`analysis/volume.py`, `run_analysis.py`, `docs/charts/`)
+- Verified: counts per year match the §3.2d crosstab; the 2013 boundary and the
+  partial 2026 are stated on the chart rather than left to the reader
+
+**What it showed, and it is not what this section predicted.** There is no
+break at January 2023. Authorisations run 714–831 a year through 2019, peak at
+**1,027 in 2020** and 996 in 2021 — the COVID surge — then settle back: 922
+(2022), **846 (2023)**, 929 (2024), 962 (2025). The CTIS year is the lowest
+since 2019, an 8% dip against 2022, and volume is above the pre-COVID level
+again by 2024. So the regime change reads as a one-year dip in a series that
+recovers, not as a discontinuity — consistent with an administrative
+transition slowing submissions rather than changing how many trials Spain
+attracts.
+
+Stated as an observation, not a result: eyeballing a bar chart is not a test
+of a level shift. Establishing one needs an **interrupted time series** —
+segmented regression on monthly counts with a step at the intervention date
+and autocorrelation accounted for — which is a Phase 4 question if it is worth
+asking at all. The 2020 peak is a second intervention inside the same window
+and would have to be in the model.
 
 ### Phase 4 — Remaining analyses (Section 3.3), one at a time
 - [ ] Therapeutic landscape
