@@ -155,3 +155,116 @@ def subtitle(bars, trials):
     return ("A trial is counted in every area it lists, so the bars total "
             "{:,} over {:,} trials.<br>The two hatched bars are not "
             "therapeutic areas.".format(memberships, trials))
+
+
+# --- how the mix shifts ----------------------------------------------------
+#
+# Categorical slots 1-4 of the reference palette, in that fixed order, mapped
+# to the series in rank order. Validated as a set rather than eyeballed:
+#   worst adjacent CVD dE 9.1 (protan), normal-vision dE 22.9, both above the
+#   floors; aqua and yellow fall below 3:1 against the surface, which obliges
+#   the visible end-labels this chart draws anyway.
+PALETTE = (SERIES, "#eb6834", "#1baf7a", "#eda100")
+
+Trend = collections.namedtuple("Trend", "label years shares")
+
+
+def top_areas(rows, count=4):
+    """[(code, name)] -- the biggest real areas, absence statements excluded.
+
+    Four, because four is where the accessibility rules and the data agree: a
+    fifth line would forfeit direct labelling, and cardiovascular (628) sits
+    within 1% of the fourth (633) while telling the same flat story.
+    """
+    return [(code, name) for code, name, _ in rows
+            if code not in UNSPECIFIED][:count]
+
+
+def area_counts_by_year(con, codes, since=COVERAGE_START):
+    """[(year, eutct_code, trials)] for the given areas, year as an int.
+
+    The cast is not cosmetic. substr() returns TEXT, analysis.volume returns
+    int years, and area_trends looks the two up in one dict: the first draft
+    of this chart plotted four flat lines at 0% because '2013' never matched
+    2013 and every share fell through to the zero default.
+    """
+    placeholders = ", ".join("?" * len(codes))
+    return [(int(year), code, trials) for year, code, trials in con.execute(
+        """SELECT substr(st.fecha_autorizacion_aemps, 1, 4) AS year,
+                  sta.eutct_code, count(*)
+             FROM study_therapeutic_areas sta
+             JOIN studies st ON st.identificador = sta.study_id
+            WHERE st.fecha_autorizacion_aemps >= ?
+              AND sta.eutct_code IN ({})
+         GROUP BY year, sta.eutct_code""".format(placeholders),
+        ["{}-01-01".format(since)] + list(codes))]
+
+
+def area_trends(rows, totals, areas):
+    """A share-of-year series per area, in the order `areas` gives.
+
+    `totals` is analysis.volume.trials_per_year's output, so the denominator
+    is the same one the volume chart draws and cannot drift from it. The
+    numerator counts trials, the denominator counts trials, and a trial in two
+    areas is in both numerators -- which is why these lines do not sum to
+    100% and must not be stacked.
+
+    A year in which an area saw no trials is 0%, not a hole: the year happened
+    and the area was available to choose.
+    """
+    years = [year for year, _ in totals]
+    total = dict(totals)
+    counts = {(year, code): trials for year, code, trials in rows}
+    return [Trend(leaf(name), years,
+                  [100.0 * counts.get((year, code), 0) / total[year]
+                   for year in years])
+            for code, name in areas]
+
+
+def trend_figure(trends, data_cut):
+    """Share of each year's trials, one line per area."""
+    fig = go.Figure()
+    for index, trend in enumerate(trends):
+        colour = PALETTE[index]
+        last = len(trend.years) - 1
+        fig.add_trace(go.Scatter(
+            x=trend.years, y=trend.shares, name=trend.label, mode="lines+markers",
+            line=dict(color=colour, width=2),
+            # One dot, on the last point, ringed in the surface colour so it
+            # stays legible where two lines nearly meet.
+            marker=dict(color=colour, size=[0] * last + [8],
+                        line=dict(color=SURFACE, width=2)),
+            hovertemplate="%{y:.1f}%<extra>" + trend.label + "</extra>"))
+        # The value at the end of the line, in ink rather than in the series
+        # colour: the coloured dot beside it carries the identity.
+        fig.add_annotation(x=trend.years[-1], y=trend.shares[-1], xshift=12,
+                           text="{:.0f}%".format(trend.shares[-1]),
+                           showarrow=False, xanchor="left",
+                           font=dict(size=11, color=MUTED))
+
+    fig.update_layout(
+        title=dict(
+            text="How the mix shifts: share of each year's trials",
+            subtitle=dict(text=trend_subtitle(data_cut),
+                          font=dict(size=12, color=MUTED)),
+            font=dict(size=17, color=INK)),
+        hovermode="x unified",
+        # Below the plot. Above it, the legend ran through the second line
+        # of the subtitle -- and a two-line subtitle is not something to
+        # shorten to make room for a legend.
+        legend=dict(orientation="h", yanchor="top", y=-0.12, x=0,
+                    font=dict(size=11, color=MUTED)),
+        plot_bgcolor=SURFACE, paper_bgcolor=SURFACE,
+        font=dict(family="system-ui, sans-serif", color=MUTED, size=12),
+        margin=dict(t=95, r=70, b=90, l=60), width=760, height=470)
+    fig.update_xaxes(dtick=1, showgrid=False, linecolor=GRID,
+                     ticks="outside", tickcolor=GRID)
+    fig.update_yaxes(title_text="share of trials authorised", rangemode="tozero",
+                     ticksuffix="%", gridcolor=GRID, zeroline=False)
+    return fig
+
+
+def trend_subtitle(data_cut):
+    return ("A trial counts in every area it lists, so the lines do not sum "
+            "to 100% and must not be stacked.<br>{} is partial, to {}."
+            .format(data_cut[:4], data_cut))

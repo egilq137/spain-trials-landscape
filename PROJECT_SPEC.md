@@ -1305,6 +1305,25 @@ named-individual fields are dropped, and for the specific reasons given in
   dropped; and the vocabulary's top level is useless as a grouping here —
   branch C (Diseases) holds 11,066 of 12,276 memberships, so collapsing to it
   draws one bar. The leaf level is where the variation is.
+
+  *And the second half.* Share of each year's trials, top four areas, drawn as
+  four lines and **not** as a 100% stack — a stack asserts the parts make a
+  whole, and multi-area trials mean these shares sum to about 104%. Three
+  things in it:
+  - **Cancer is structural, not growing.** 28.5% in 2013, then 32–39% every
+    year since, ending at 38.3%. The step up happens by 2014-15 and nothing
+    moves after it.
+  - **The COVID spike is real and it fully reversed.** Virus diseases run
+    ~6.5% before 2020, hit **13.6% in 2020**, and are at **2.4% in 2026** —
+    *below* the pre-pandemic baseline. A shock that overshoots and undershoots
+    on the way back, not a permanent shift in what Spain researches.
+  - **Immunology is the only real trend.** Immune system diseases go 4.0%
+    (2013) → 9.0% (2023) → **11.4% (2025)**, a near-tripling with no spike in
+    it. It overtakes nervous system diseases in 2023 and stays above.
+
+  The denominator is `analysis.volume.trials_per_year`'s own output rather
+  than a second count, so the two charts cannot quote different totals for the
+  same year.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
@@ -1694,7 +1713,7 @@ and would have to be in the model.
 ### Phase 4 — Remaining analyses (Section 3.3), one at a time
 - [x] Therapeutic landscape, part 1: which conditions dominate
       (`analysis/therapeutic.py`)
-- [ ] Therapeutic landscape, part 2: how the mix shifts over time
+- [x] Therapeutic landscape, part 2: how the mix shifts over time
 - [ ] Phase distribution
 - [ ] Sponsor structure
 - [ ] Geography (choropleth)

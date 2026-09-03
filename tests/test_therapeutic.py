@@ -14,6 +14,14 @@ Success criteria:
     size -- rank 13 should not silently be a different kind of thing
   figure: hatches exactly the non-area bars, labels every tip, and leaves
     room for the longest label instead of clipping it
+  top_areas: the biggest real areas, absence statements never among them
+  area_counts_by_year: years come back as ints, so they match the volume
+    query's keys -- the first draft plotted four flat lines at 0% because
+    '2013' never matched 2013 and every share fell through to a zero default
+  area_trends: shares are of the year's trials, the denominator is the volume
+    chart's own, and an area with no trials in a year is 0% not a hole
+  trend_figure: one line per area in fixed palette order, a dot on the last
+    point only, a legend, and a value at the end of every line
   against the database: 55 areas, 12,276 memberships over 11,834 trials
 """
 
@@ -22,12 +30,19 @@ import unittest
 from pathlib import Path
 
 from analysis.therapeutic import (
+    PALETTE,
     Area,
+    Trend,
+    area_counts_by_year,
+    area_trends,
     figure,
     leaf,
     ranked_areas,
+    top_areas,
+    trend_figure,
     trials_per_area,
 )
+from analysis import volume
 from tests.test_loader import LoaderTestCase
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "trials.db"
@@ -41,7 +56,9 @@ def area(code, name):
     return {"eutct": code, "nombre_es": name, "nombre_en": name}
 
 
-class TestTrialsPerArea(LoaderTestCase):
+class AreaLoaderTestCase(LoaderTestCase):
+    """A database built through the loader from (date, areas) fixtures."""
+
     def con_with(self, studies):
         """studies: [(authorisation date, [(code, name), ...])]."""
         self.write_year(2019, [
@@ -52,6 +69,8 @@ class TestTrialsPerArea(LoaderTestCase):
         con, _ = self.load()
         return con
 
+
+class TestTrialsPerArea(AreaLoaderTestCase):
     def test_counts_studies_per_area_most_first(self):
         con = self.con_with([
             ("04-03-2015", [("C04", "Cancer")]),
@@ -172,6 +191,105 @@ class TestFigure(unittest.TestCase):
         self.assertFalse(self.fig.layout.showlegend)
 
 
+class TestTopAreas(unittest.TestCase):
+    def test_takes_the_biggest_real_areas_in_order(self):
+        self.assertEqual(top_areas(TestRankedAreas.ROWS, count=2),
+                         [("C04", "Diseases [C] - Cancer [C04]"),
+                          ("C10", "Diseases [C] - Nervous System Diseases "
+                                  "[C10]")])
+
+    def test_an_absence_code_is_never_picked(self):
+        # 'Not specified' outranks two real areas in these rows; a line for
+        # it would be a line for "the registry did not say".
+        picked = dict(top_areas(TestRankedAreas.ROWS, count=4))
+        self.assertNotIn("999999000486", picked)
+        self.assertNotIn("999999999999", picked)
+        self.assertEqual(len(picked), 4)
+
+
+class TestAreaCountsByYear(AreaLoaderTestCase):
+    def test_years_are_ints_so_they_match_the_volume_query(self):
+        # The regression: substr() returns TEXT, analysis.volume returns int
+        # years, and area_trends looks both up in one dict. A mismatch here
+        # does not raise -- it silently draws every line at zero.
+        con = self.con_with([("04-03-2015", [("C04", "Cancer")])])
+        self.assertEqual(area_counts_by_year(con, ["C04"]),
+                         [(2015, "C04", 1)])
+
+    def test_it_counts_only_the_areas_asked_for(self):
+        con = self.con_with([
+            ("04-03-2015", [("C04", "Cancer"), ("C14", "Cardiovascular")])])
+        self.assertEqual(area_counts_by_year(con, ["C14"]),
+                         [(2015, "C14", 1)])
+
+    def test_the_shares_come_out_of_the_end_of_the_real_pipeline(self):
+        # End to end against a database, because that is the only place the
+        # year types of the two queries meet.
+        con = self.con_with([
+            ("04-03-2015", [("C04", "Cancer")]),
+            ("18-12-2015", [("C14", "Cardiovascular")])])
+        trends = area_trends(area_counts_by_year(con, ["C04"]),
+                             volume.trials_per_year(con),
+                             [("C04", "Diseases [C] - Cancer [C04]")])
+        self.assertEqual(trends, [Trend("Cancer [C04]", [2015], [50.0])])
+
+
+class TestAreaTrends(unittest.TestCase):
+    TOTALS = [(2013, 200), (2014, 100)]
+    AREAS = [("C04", "Diseases [C] - Cancer [C04]"),
+             ("C10", "Diseases [C] - Nervous System Diseases [C10]")]
+
+    def test_shares_are_of_the_years_trials(self):
+        rows = [(2013, "C04", 50), (2014, "C04", 40)]
+        self.assertEqual(area_trends(rows, self.TOTALS, self.AREAS)[0],
+                         Trend("Cancer [C04]", [2013, 2014], [25.0, 40.0]))
+
+    def test_a_year_without_the_area_is_zero_not_a_hole(self):
+        # The year happened and the area was available to choose, so 0% is
+        # the honest value and a gap in the line would not be.
+        rows = [(2014, "C10", 10)]
+        self.assertEqual(area_trends(rows, self.TOTALS, self.AREAS)[1].shares,
+                         [0.0, 10.0])
+
+    def test_the_order_is_the_one_the_caller_asked_for(self):
+        # Colour is assigned by position, so this order is what decides which
+        # area is blue. It must not depend on what the SQL happened to return.
+        trends = area_trends([], self.TOTALS, self.AREAS[::-1])
+        self.assertEqual([trend.label for trend in trends],
+                         ["Nervous System Diseases [C10]", "Cancer [C04]"])
+
+
+class TestTrendFigure(unittest.TestCase):
+    TRENDS = [Trend("Cancer [C04]", [2013, 2014], [25.0, 40.0]),
+              Trend("Nervous [C10]", [2013, 2014], [5.0, 6.0])]
+
+    def setUp(self):
+        self.fig = trend_figure(self.TRENDS, data_cut="2014-08-26")
+
+    def test_one_line_per_area_in_palette_order(self):
+        self.assertEqual([trace.line.color for trace in self.fig.data],
+                         list(PALETTE[:2]))
+
+    def test_the_dot_sits_on_the_last_point_only(self):
+        # A marker on every point would be a scatter plot of 14 dots per
+        # line; the end dot is what the end label attaches to.
+        self.assertEqual(self.fig.data[0].marker.size, (0, 8))
+
+    def test_every_line_ends_in_its_value(self):
+        # The last year's share, not the first: the label rides the end of
+        # the line, which is where the eye leaves it.
+        self.assertEqual([note.text for note in self.fig.layout.annotations],
+                         ["40%", "6%"])
+
+    def test_two_series_carry_a_legend(self):
+        self.assertNotEqual(self.fig.layout.showlegend, False)
+        self.assertEqual([trace.name for trace in self.fig.data],
+                         ["Cancer [C04]", "Nervous [C10]"])
+
+    def test_the_partial_year_is_named_in_the_subtitle(self):
+        self.assertIn("2014", self.fig.layout.title.subtitle.text)
+
+
 @requires_database
 class TestAgainstDatabase(unittest.TestCase):
     """Re-measures the corpus figures the module's docstring quotes."""
@@ -207,6 +325,23 @@ class TestAgainstDatabase(unittest.TestCase):
         bars = ranked_areas(self.rows)
         self.assertEqual(bars[-2:], [Area("Not specified", 247, False),
                                      Area("Other (41 areas)", 1921, False)])
+
+    def test_the_trends_hold_the_two_findings_the_spec_quotes(self):
+        areas = top_areas(self.rows)
+        trends = area_trends(
+            area_counts_by_year(self.con, [code for code, _ in areas]),
+            volume.trials_per_year(self.con), areas)
+        share = {trend.label: dict(zip(trend.years, trend.shares))
+                 for trend in trends}
+        # COVID: virus trials triple in 2020 and end below where they began.
+        self.assertAlmostEqual(share["Virus Diseases [C02]"][2020], 13.6, 1)
+        self.assertAlmostEqual(share["Virus Diseases [C02]"][2013], 6.5, 1)
+        self.assertLess(share["Virus Diseases [C02]"][2025], 3.5)
+        # Immunology: the one line with a trend rather than a spike.
+        self.assertAlmostEqual(share["Immune System Diseases [C20]"][2013],
+                               4.0, 1)
+        self.assertAlmostEqual(share["Immune System Diseases [C20]"][2025],
+                               11.4, 1)
 
 
 if __name__ == "__main__":

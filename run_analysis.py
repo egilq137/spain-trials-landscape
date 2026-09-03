@@ -56,11 +56,28 @@ def write_therapeutic_chart(con, chart_dir=CHART_DIR):
     return path
 
 
+def write_area_trend_chart(con, chart_dir=CHART_DIR):
+    rows = therapeutic.trials_per_area(con)
+    areas = therapeutic.top_areas(rows)
+    counts = therapeutic.area_counts_by_year(
+        con, [code for code, _ in areas])
+    trends = therapeutic.area_trends(
+        counts, volume.trials_per_year(con), areas)
+    chart_dir.mkdir(parents=True, exist_ok=True)
+    path = chart_dir / "therapeutic-mix-by-year.html"
+    therapeutic.trend_figure(trends, volume.coverage(con).data_cut).write_html(
+        path, include_plotlyjs="cdn", div_id=path.stem)
+    print("{}: {} areas over {} years".format(
+        path, len(trends), len(trends[0].years)))
+    return path
+
+
 def main():
     con = open_database()
     try:
         write_volume_chart(con)
         write_therapeutic_chart(con)
+        write_area_trend_chart(con)
     finally:
         con.close()
 
