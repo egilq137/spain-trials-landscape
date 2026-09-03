@@ -27,7 +27,8 @@ Success criteria:
     same areas in every frame, so it does not flicker as the animation runs
   race_figure: a frame per year named by it, a fixed x range so the bars are
     comparable across frames, and the year on the chart
-  against the database: 55 areas, 12,276 memberships over 11,834 trials
+  against the database: 55 areas, 12,276 memberships over 11,834 trials, and
+    mental health on the chart rather than swept into Other
 """
 
 import sqlite3
@@ -36,6 +37,7 @@ from pathlib import Path
 
 from analysis.therapeutic import (
     PALETTE,
+    TOP_AREAS,
     Area,
     Share,
     Trend,
@@ -418,10 +420,20 @@ class TestAgainstDatabase(unittest.TestCase):
         self.assertEqual((leaf(name), trials), ("Cancer [C04]", 4239))
         self.assertGreater(trials, 4 * self.rows[1][2])
 
-    def test_the_folding_leaves_41_areas_in_the_tail(self):
+    def test_the_folding_leaves_37_areas_in_the_tail(self):
         bars = ranked_areas(self.rows)
+        self.assertEqual(len(bars), TOP_AREAS + 2)
         self.assertEqual(bars[-2:], [Area("Not specified", 247, False),
-                                     Area("Other (41 areas)", 1921, False)])
+                                     Area("Other (37 areas)", 1106, False)])
+
+    def test_mental_health_has_a_bar_of_its_own(self):
+        # The reason TOP_AREAS is 16. At 12 this area fell into Other and the
+        # chart showed no mental health at all, which is a fact about where
+        # the cut was drawn and not about Spanish trials. F03 is the whole of
+        # psychiatry the chart names: the three other F areas hold 37 trials
+        # between them and stay in the tail.
+        bars = {bar.label: bar.trials for bar in ranked_areas(self.rows)}
+        self.assertEqual(bars["Mental Disorders [F03]"], 170)
 
     def test_the_trends_hold_the_two_findings_the_spec_quotes(self):
         areas = top_areas(self.rows)

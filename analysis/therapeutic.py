@@ -18,7 +18,7 @@ bar a number no record anywhere contains.
 The top level is useless as a grouping here: branch C holds 11,066 of the
 12,276 memberships, so collapsing to it draws one bar. The leaf is the level
 with the variation, and the branch prefix is dropped from the label because
-repeating "Diseases" on twelve of fourteen bars is ink that separates nothing.
+repeating "Diseases" on most of the bars is ink that separates nothing.
 
 **Two codes are absence statements**, not areas: `Not specified [CCC]` (144)
 and `Not possible to specify` (103). They are merged into one bar and marked,
@@ -40,6 +40,22 @@ from analysis.volume import COVERAGE_START, GRID, INK, MUTED, SERIES, SURFACE
 # which is what makes the pair checkable rather than a guess.
 UNSPECIFIED = ("999999000486", "999999999999")
 UNSPECIFIED_LABEL = "Not specified"
+
+# How many areas get their own bar, in the ranking and in the animation both.
+#
+# Sixteen rather than twelve because twelve cut the tail mid-slope -- rank 12
+# holds 282 trials and rank 13 holds 265 -- and swept four substantial areas
+# into Other, which then carried 15.6% of all memberships. The four are eye
+# diseases (265), bacterial infections (230), mental disorders (170) and
+# female urogenital (150): 42% of what Other used to hold. Mental disorders
+# is the one that matters most, since it is all of psychiatry the chart shows;
+# a therapeutic landscape with no mental health on it is an artefact of where
+# the line was drawn, not a fact about Spanish trials.
+#
+# Sixteen is still a cut, and the tail is still 37 areas and 1,106 trials --
+# it is a smooth slope with no natural break in it. What sixteen buys is that
+# nothing above 150 trials is hidden.
+TOP_AREAS = 16
 
 Area = collections.namedtuple("Area", "label trials substantive")
 
@@ -81,7 +97,7 @@ def leaf(name):
     return rest if separator else branch
 
 
-def ranked_areas(rows, top=12):
+def ranked_areas(rows, top=TOP_AREAS):
     """The bars, in order: the top areas, then Not specified, then Other.
 
     The two folds sit at the bottom whatever their size, because neither is an

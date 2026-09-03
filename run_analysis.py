@@ -74,9 +74,9 @@ def write_area_trend_chart(con, chart_dir=CHART_DIR):
 
 def write_area_race_chart(con, chart_dir=CHART_DIR):
     rows = therapeutic.trials_per_area(con)
-    # The same twelve areas the static ranking shows, so the two charts are
-    # the same chart with and without a year on it.
-    areas = therapeutic.top_areas(rows, count=12)
+    # The same areas the static ranking shows, from the same constant, so the
+    # two charts are one chart with and without a year on it.
+    areas = therapeutic.top_areas(rows, count=therapeutic.TOP_AREAS)
     frames = therapeutic.yearly_shares(
         therapeutic.area_counts_by_year(con), volume.trials_per_year(con),
         areas)
