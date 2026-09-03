@@ -710,6 +710,10 @@ ROUTE_CANONICAL = {
 # about what a question is asking. Same line as sponsor entity resolution --
 # normalisation here, classification in `analysis/`, where it can be stated
 # and varied per question rather than frozen in a column.
+#
+# That grouping now exists, as `analysis.routes.ROUTE_GROUP`: 12 buckets over
+# these canonical routes, applied at query time. Adding a canonical route here
+# without giving it a group there fails `tests/test_routes.py`.
 
 
 # ---------------------------------------------------------------------------
