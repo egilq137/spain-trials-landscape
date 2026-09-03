@@ -180,24 +180,27 @@ def top_areas(rows, count=4):
             if code not in UNSPECIFIED][:count]
 
 
-def area_counts_by_year(con, codes, since=COVERAGE_START):
-    """[(year, eutct_code, trials)] for the given areas, year as an int.
+def area_counts_by_year(con, codes=None, since=COVERAGE_START):
+    """[(year, eutct_code, trials)], year as an int. `codes=None` is all areas.
 
     The cast is not cosmetic. substr() returns TEXT, analysis.volume returns
     int years, and area_trends looks the two up in one dict: the first draft
     of this chart plotted four flat lines at 0% because '2013' never matched
     2013 and every share fell through to the zero default.
     """
-    placeholders = ", ".join("?" * len(codes))
+    restriction = ""
+    parameters = ["{}-01-01".format(since)]
+    if codes is not None:
+        restriction = " AND sta.eutct_code IN ({})".format(
+            ", ".join("?" * len(codes)))
+        parameters += list(codes)
     return [(int(year), code, trials) for year, code, trials in con.execute(
         """SELECT substr(st.fecha_autorizacion_aemps, 1, 4) AS year,
                   sta.eutct_code, count(*)
              FROM study_therapeutic_areas sta
              JOIN studies st ON st.identificador = sta.study_id
-            WHERE st.fecha_autorizacion_aemps >= ?
-              AND sta.eutct_code IN ({})
-         GROUP BY year, sta.eutct_code""".format(placeholders),
-        ["{}-01-01".format(since)] + list(codes))]
+            WHERE st.fecha_autorizacion_aemps >= ?{}
+         GROUP BY year, sta.eutct_code""".format(restriction), parameters)]
 
 
 def area_trends(rows, totals, areas):
@@ -268,3 +271,143 @@ def trend_subtitle(data_cut):
     return ("A trial counts in every area it lists, so the lines do not sum "
             "to 100% and must not be stacked.<br>{} is partial, to {}."
             .format(data_cut[:4], data_cut))
+
+
+# --- the same ranking, one year at a time ----------------------------------
+#
+# The static ranking answers "what does the corpus look like"; this answers
+# "what did it look like in 2016", fourteen times, with a slider. It is the
+# line chart's information laid out the other way round: the lines are better
+# for reading a trend, this is better for seeing a year's shape whole.
+#
+# Values are shares, not counts. The corpus is not the same size every year --
+# 714 trials in 2014 against 1,027 in 2020 -- so a race on counts would show
+# every bar growing in 2020 and shrinking in 2023 for reasons that have
+# nothing to do with the mix.
+Share = collections.namedtuple("Share", "label share substantive")
+
+
+def yearly_shares(counts, totals, areas):
+    """[(year, [Share, ...])] -- the same bars, in the same order, per year.
+
+    The row order is the overall ranking and does not re-sort per year. A
+    true bar-chart race re-ranks every frame, which looks livelier and makes
+    the one thing this chart is for -- watching a single area move against a
+    fixed backdrop -- harder, because the reader has to re-find the bar
+    before they can see it has moved.
+    """
+    top = [code for code, _ in areas]
+    tail = ({code for _, code, _ in counts} - set(top) - set(UNSPECIFIED))
+    by_year = collections.defaultdict(dict)
+    for year, code, trials in counts:
+        by_year[year][code] = trials
+
+    frames = []
+    for year, total in totals:
+        seen = by_year.get(year, {})
+
+        def share(code_group):
+            return 100.0 * sum(seen.get(code, 0) for code in code_group) / total
+
+        bars = [Share(leaf(name), share([code]), True) for code, name in areas]
+        bars.append(Share(UNSPECIFIED_LABEL, share(UNSPECIFIED), False))
+        bars.append(Share("Other ({} areas)".format(len(tail)),
+                          share(tail), False))
+        frames.append((year, bars))
+    return frames
+
+
+def _share_trace(bars, labels, patterns):
+    """One frame's bars. Built the same way for the figure and every frame."""
+    return go.Bar(
+        x=[bar.share for bar in bars][::-1], y=labels, orientation="h",
+        marker=dict(color=SERIES, cornerradius=4,
+                    pattern=dict(shape=patterns, solidity=0.55,
+                                 fgcolor=SURFACE, size=6)),
+        text=["{:.1f}%".format(bar.share) for bar in bars][::-1],
+        textposition="outside", textfont=dict(size=11, color=MUTED),
+        hovertemplate="%{y}<br>%{x:.1f}% of the year's trials<extra></extra>")
+
+
+def _year_note(year):
+    """The year, large, in the empty space the long bars leave."""
+    return dict(x=0.97, y=0.06, xref="paper", yref="paper", text=str(year),
+                showarrow=False, xanchor="right",
+                font=dict(size=38, color=GRID))
+
+
+def race_figure(frames, data_cut):
+    """The ranking with a year slider and a play button.
+
+    The x axis is fixed across every frame. Letting it autoscale would rescale
+    the chart to each year's biggest bar, so cancer would look the same width
+    in every frame and the animation would show nothing moving at all.
+    """
+    labels = [bar.label for bar in frames[0][1]][::-1]
+    patterns = ["" if bar.substantive else "/" for bar in frames[0][1]][::-1]
+    ceiling = max(bar.share for _, bars in frames for bar in bars) * 1.12
+
+    fig = go.Figure(
+        data=[_share_trace(frames[0][1], labels, patterns)],
+        frames=[go.Frame(name=str(year),
+                         data=[_share_trace(bars, labels, patterns)],
+                         layout=go.Layout(annotations=[_year_note(year)]))
+                for year, bars in frames])
+
+    fig.update_layout(
+        title=dict(
+            text="Therapeutic areas, year by year",
+            subtitle=dict(
+                text="Share of the trials authorised that year. A trial "
+                     "counts in every area it lists.<br>Bars keep their "
+                     "overall ranking order; {} is partial, to {}.".format(
+                         data_cut[:4], data_cut),
+                font=dict(size=12, color=MUTED)),
+            font=dict(size=17, color=INK)),
+        annotations=[_year_note(frames[0][0])],
+        bargap=0.42, showlegend=False,
+        plot_bgcolor=SURFACE, paper_bgcolor=SURFACE,
+        font=dict(family="system-ui, sans-serif", color=MUTED, size=12),
+        margin=dict(t=100, r=70, b=90, l=290), width=760,
+        height=150 + 30 * len(labels),
+        updatemenus=[play_button()], sliders=[year_slider(frames)])
+    fig.update_xaxes(visible=False, range=[0, ceiling])
+    fig.update_yaxes(showgrid=False, linecolor=GRID, ticks="")
+    return fig
+
+
+# 900ms a frame: fourteen years take twelve seconds, and a bar that moves two
+# points needs long enough on screen to be seen moving rather than blinking.
+FRAME_MS = 900
+
+
+def play_button():
+    return dict(
+        type="buttons", direction="left", x=0, y=-0.18, xanchor="left",
+        showactive=False, pad=dict(t=0, r=8),
+        buttons=[
+            dict(label="Play", method="animate",
+                 args=[None, dict(frame=dict(duration=FRAME_MS, redraw=True),
+                                  fromcurrent=True,
+                                  transition=dict(duration=300))]),
+            dict(label="Pause", method="animate",
+                 # A None frame list is Plotly's stop signal; the immediate
+                 # mode is what makes it stop on this frame rather than
+                 # finishing the queue.
+                 args=[[None], dict(frame=dict(duration=0, redraw=False),
+                                    mode="immediate")])])
+
+
+def year_slider(frames):
+    return dict(
+        active=0, x=0.12, len=0.88, y=-0.12, pad=dict(t=0, b=10),
+        # The year is already on the chart, in 38px. Plotly's own readout
+        # would be the third place it appears, after that and the ticks.
+        currentvalue=dict(visible=False),
+        font=dict(size=11, color=MUTED),
+        steps=[dict(label=str(year), method="animate",
+                    args=[[str(year)],
+                          dict(mode="immediate", frame=dict(duration=0,
+                                                            redraw=True),
+                               transition=dict(duration=0))])
+               for year, _ in frames])

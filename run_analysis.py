@@ -72,12 +72,31 @@ def write_area_trend_chart(con, chart_dir=CHART_DIR):
     return path
 
 
+def write_area_race_chart(con, chart_dir=CHART_DIR):
+    rows = therapeutic.trials_per_area(con)
+    # The same twelve areas the static ranking shows, so the two charts are
+    # the same chart with and without a year on it.
+    areas = therapeutic.top_areas(rows, count=12)
+    frames = therapeutic.yearly_shares(
+        therapeutic.area_counts_by_year(con), volume.trials_per_year(con),
+        areas)
+    chart_dir.mkdir(parents=True, exist_ok=True)
+    path = chart_dir / "therapeutic-areas-by-year.html"
+    therapeutic.race_figure(
+        frames, volume.coverage(con).data_cut).write_html(
+            path, include_plotlyjs="cdn", div_id=path.stem, auto_play=False)
+    print("{}: {} frames, {} bars".format(
+        path, len(frames), len(frames[0][1])))
+    return path
+
+
 def main():
     con = open_database()
     try:
         write_volume_chart(con)
         write_therapeutic_chart(con)
         write_area_trend_chart(con)
+        write_area_race_chart(con)
     finally:
         con.close()
 

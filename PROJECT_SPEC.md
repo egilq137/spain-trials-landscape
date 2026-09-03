@@ -1324,6 +1324,18 @@ named-individual fields are dropped, and for the specific reasons given in
   The denominator is `analysis.volume.trials_per_year`'s own output rather
   than a second count, so the two charts cannot quote different totals for the
   same year.
+
+  A third view of the same data, for the dashboard: the ranking again, with a
+  year slider and a play button (`race_figure`). Two decisions in it. The bars
+  are **shares, not counts** — the corpus is 714 trials in 2014 and 1,027 in
+  2020, so a race on counts would show every bar growing and shrinking for
+  reasons that have nothing to do with the mix. And the rows keep the overall
+  ranking order rather than **re-sorting per frame**, the way a bar-chart race
+  usually does: re-ranking looks livelier and makes the one thing this chart
+  is for — watching one area move against a fixed backdrop — harder, because
+  the reader has to find the bar again before they can see it has moved. The
+  x axis is fixed across frames for the same reason; on an autoscaling axis
+  the longest bar fills the width every year and nothing appears to move.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
@@ -1714,6 +1726,8 @@ and would have to be in the model.
 - [x] Therapeutic landscape, part 1: which conditions dominate
       (`analysis/therapeutic.py`)
 - [x] Therapeutic landscape, part 2: how the mix shifts over time
+- [x] Therapeutic landscape, part 3: the ranking animated by year — the first
+      interactive piece, and a rehearsal for the dashboard's controls
 - [ ] Phase distribution
 - [ ] Sponsor structure
 - [ ] Geography (choropleth)
