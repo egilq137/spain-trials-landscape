@@ -13,6 +13,12 @@ Success criteria:
     what lets the chart show a crude rate being dragged by one of them
   figures: only the folded row is hatched, the bars keep phase order, and the
     three lines carry their end values
+  phase_by_area: shares are of that area's own trials, columns count
+    involvement so a row may exceed 100%, and the corpus baseline is the
+    last row rather than one of the areas
+  heatmap: a blank row separates the baseline from the areas, cell values
+    are drawn in ink or surface by the cell's own darkness, and the biggest
+    area ends up at the top of a bottom-up axis
   against the database: 11,834 trials over 8 rows, and the oncology split
     that the second chart's headline rests on
 """
@@ -23,13 +29,16 @@ from pathlib import Path
 
 from analysis import volume
 from analysis.phases import (
+    ALL_TRIALS,
     CANCER,
     DESIGNS,
     Year,
     early_phase_by_year,
     early_phase_figure,
+    heatmap_figure,
     label_of,
     mix_figure,
+    phase_by_area,
     phase_mix,
 )
 from tests.test_loader import LoaderTestCase
@@ -173,6 +182,72 @@ class TestEarlyPhaseByYear(PhaseLoaderTestCase):
                          [2015, 2016])
 
 
+class TestPhaseByArea(PhaseLoaderTestCase):
+    AREAS = [(CANCER, "Diseases [C] - Cancer [C04]")]
+
+    def test_shares_are_of_that_areas_own_trials(self):
+        # Two cancer trials, one of them phase I, plus a non-cancer trial
+        # that must not touch the cancer denominator.
+        con = self.con_with([("04-03-2015", (1, 0, 0, 0), True),
+                             ("04-03-2015", (0, 0, 1, 0), True),
+                             ("04-03-2015", (1, 0, 0, 0), False)])
+        cancer = phase_by_area(con, self.AREAS)[0]
+        self.assertEqual((cancer.label, cancer.trials), ("Cancer [C04]", 2))
+        self.assertEqual(cancer.shares, [50.0, 0.0, 50.0, 0.0])
+
+    def test_a_row_counts_involvement_so_it_can_exceed_100(self):
+        # One I/II trial: 100% phase I and 100% phase II, because it reaches
+        # both. This is the column definition the mix chart does not use.
+        con = self.con_with([("04-03-2015", (1, 1, 0, 0), True)])
+        self.assertEqual(phase_by_area(con, self.AREAS)[0].shares,
+                         [100.0, 100.0, 0.0, 0.0])
+
+    def test_the_baseline_row_is_last_and_covers_the_whole_corpus(self):
+        con = self.con_with([("04-03-2015", (1, 0, 0, 0), True),
+                             ("04-03-2015", (0, 0, 1, 0), False)])
+        rows = phase_by_area(con, self.AREAS)
+        self.assertEqual(rows[-1].label, ALL_TRIALS)
+        self.assertEqual(rows[-1].trials, 2)
+        self.assertEqual(rows[-1].shares, [50.0, 0.0, 50.0, 0.0])
+
+
+class TestHeatmap(unittest.TestCase):
+    def setUp(self):
+        from analysis.phases import AreaPhases
+        self.rows = [AreaPhases("Cancer [C04]", 4239, [38.7, 47.8, 31.2, 2.0],
+                                [1639, 2026, 1324, 85]),
+                     AreaPhases("Eye Diseases [C11]", 265,
+                                [7.2, 28.7, 56.2, 17.7], [19, 76, 149, 47]),
+                     AreaPhases(ALL_TRIALS, 11834, [22.8, 38.4, 41.8, 9.2],
+                                [2698, 4542, 4946, 1085])]
+        self.fig = heatmap_figure(self.rows)
+
+    def test_the_biggest_area_is_the_top_row(self):
+        # A heatmap's y axis is drawn bottom-up, so the rows go in reversed.
+        self.assertEqual(list(self.fig.data[0].y)[-1], "Cancer [C04]")
+
+    def test_a_blank_row_separates_the_baseline_from_the_areas(self):
+        # So the corpus reads as a rule under the table rather than as one
+        # more therapeutic area.
+        rows = list(self.fig.data[0].y)
+        self.assertEqual(rows[:2], [ALL_TRIALS, " "])
+        self.assertEqual(list(self.fig.data[0].z)[1], [None] * 4)
+
+    def test_the_blank_row_gets_no_cell_labels(self):
+        # Three rows of four, not four: the spacer has nothing to say.
+        self.assertEqual(len(self.fig.layout.annotations), 12)
+
+    def test_cell_text_switches_colour_on_dark_cells(self):
+        from analysis.phases import INK, SURFACE
+        colours = {note.text: note.font.color
+                   for note in self.fig.layout.annotations}
+        self.assertEqual(colours["2"], INK)       # palest cell
+        self.assertEqual(colours["56"], SURFACE)  # darkest cell
+
+    def test_the_columns_are_the_phase_ladder(self):
+        self.assertEqual(list(self.fig.data[0].x), ["I", "II", "III", "IV"])
+
+
 class TestFigures(unittest.TestCase):
     def setUp(self):
         from analysis.phases import Bar
@@ -259,6 +334,25 @@ class TestAgainstDatabase(unittest.TestCase):
         self.assertGreater(last.cancer - first.cancer, 15)
         self.assertLess(abs(last.other - first.other), 2)
         self.assertGreater(last.overall, first.overall)
+
+    def test_the_heatmap_grid_is_the_one_the_headline_rests_on(self):
+        from analysis import therapeutic
+        areas = therapeutic.top_areas(therapeutic.trials_per_area(self.con),
+                                      therapeutic.TOP_AREAS)
+        rows = phase_by_area(self.con, areas)
+        cancer, baseline = rows[0], rows[-1]
+        self.assertEqual(cancer.label, "Cancer [C04]")
+        self.assertEqual([round(share, 1) for share in cancer.shares],
+                         [38.7, 47.8, 31.2, 2.0])
+        self.assertEqual(baseline.label, ALL_TRIALS)
+        self.assertEqual([round(share, 1) for share in baseline.shares],
+                         [22.8, 38.4, 41.8, 9.2])
+        # The claim in the title: cancer is the only large area weighted
+        # toward phase I rather than phase III.
+        for row in rows[1:-1]:
+            with self.subTest(area=row.label):
+                self.assertLess(row.shares[0], row.shares[2])
+        self.assertGreater(cancer.shares[0], cancer.shares[2])
 
     def test_the_pooled_rate_sits_between_the_two_groups(self):
         # Not a law of arithmetic to be assumed -- a pooled rate lies

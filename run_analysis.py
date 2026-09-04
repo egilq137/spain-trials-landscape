@@ -142,7 +142,16 @@ def write_phase_charts(con, chart_dir=CHART_DIR):
         early_path, include_plotlyjs="cdn", div_id=early_path.stem)
     print("{}: {} years, phase I {:.1f}% to {:.1f}%".format(
         early_path, len(years), years[0].overall, years[-1].overall))
-    return mix_path, early_path
+
+    areas = therapeutic.top_areas(therapeutic.trials_per_area(con),
+                                  therapeutic.TOP_AREAS)
+    grid = phases.phase_by_area(con, areas)
+    heatmap_path = chart_dir / "phase-by-area.html"
+    phases.heatmap_figure(grid).write_html(
+        heatmap_path, include_plotlyjs="cdn", div_id=heatmap_path.stem)
+    print("{}: {} areas plus the corpus row".format(
+        heatmap_path, len(grid) - 1))
+    return mix_path, early_path, heatmap_path
 
 
 def main():

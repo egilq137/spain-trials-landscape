@@ -28,6 +28,8 @@ import collections
 
 import plotly.graph_objects as go
 
+from analysis.geography import BLUE_RAMP
+from analysis.therapeutic import leaf
 from analysis.volume import COVERAGE_START, GRID, INK, MUTED, SERIES, SURFACE
 
 PHASE_COLUMNS = ("fase_uno", "fase_dos", "fase_tres", "fase_cuatro")
@@ -218,4 +220,129 @@ def early_phase_figure(years):
                      ticks="outside", tickcolor=GRID)
     fig.update_yaxes(title_text="trials involving phase I", rangemode="tozero",
                      ticksuffix="%", gridcolor=GRID, zeroline=False)
+    return fig
+
+
+# --- phase against therapeutic area ----------------------------------------
+#
+# The two charts above answer "what phases" and "when". This one answers "who
+# runs which", and it is where the oncology finding stops being a trend and
+# becomes a structure: cancer is the only large area weighted toward phase I,
+# and the only one with almost no phase IV.
+#
+# Columns count **involvement**, not the exclusive designs of the mix chart: a
+# I/II trial appears under both I and II, so a row does not sum to 100%. The
+# question here is "what share of this area's trials reach phase I", and a
+# seamless I/II trial reaches both. Said on the chart, since the mix chart
+# says the opposite about itself.
+AreaPhases = collections.namedtuple("AreaPhases", "label trials shares counts")
+
+ALL_TRIALS = "All trials"
+
+
+def phase_by_area(con, areas, since=COVERAGE_START):
+    """[AreaPhases] per area, biggest first, with an All trials row last.
+
+    The baseline row is what makes the rest readable: 38.7% of cancer trials
+    reaching phase I means nothing until you know the corpus figure is 22.8%.
+    It is placed last and labelled, not mixed in among the areas -- it is not
+    an area, it is the thing they are being compared against.
+
+    `areas` is the same top-16 cut the therapeutic ranking uses, so the two
+    charts show the same areas. One casualty of that consistency is worth
+    naming: anaesthesia and analgesia [E03] is **61.8% phase IV**, the most
+    post-marketing-heavy area in the corpus by a distance, and it sits just
+    below the cut at 123 trials. The heatmap's phase IV column therefore
+    understates how extreme that end gets.
+    """
+    sums = ", ".join("sum(st.{})".format(column) for column in PHASE_COLUMNS)
+    rows = []
+    for code, name in areas:
+        trials, *counts = con.execute(
+            """SELECT count(*), {}
+                 FROM study_therapeutic_areas sta
+                 JOIN studies st ON st.identificador = sta.study_id
+                WHERE sta.eutct_code = ?
+                  AND st.fecha_autorizacion_aemps >= ?""".format(sums),
+            (code, "{}-01-01".format(since))).fetchone()
+        rows.append(AreaPhases(leaf(name), trials,
+                               [100.0 * count / trials for count in counts],
+                               counts))
+
+    trials, *counts = con.execute(
+        "SELECT count(*), {} FROM studies st "
+        "WHERE st.fecha_autorizacion_aemps >= ?".format(sums),
+        ("{}-01-01".format(since),)).fetchone()
+    rows.append(AreaPhases(ALL_TRIALS, trials,
+                           [100.0 * count / trials for count in counts],
+                           counts))
+    return rows
+
+
+def heatmap_figure(rows):
+    """Areas down, phases across, colour and value = share of the area."""
+    # A blank row before the corpus baseline, so it reads as a rule under the
+    # table rather than as the seventeenth therapeutic area. An empty z row
+    # draws nothing, which is the gap.
+    display = []
+    for row in rows:
+        if row.label == ALL_TRIALS:
+            display.append(AreaPhases(" ", 0, [None] * 4, [0] * 4))
+        display.append(row)
+
+    # Reversed, because a heatmap's y axis is drawn bottom-up and the biggest
+    # area belongs at the top.
+    ordered = display[::-1]
+    labels = [row.label for row in ordered]
+    shares = [row.shares for row in ordered]
+    ceiling = max(max(row.shares) for row in rows)
+
+    fig = go.Figure(go.Heatmap(
+        z=shares, x=list(NUMERALS), y=labels,
+        colorscale=BLUE_RAMP, zmin=0, zmax=ceiling,
+        xgap=2, ygap=2,  # the surface doing the separating, as everywhere else
+        customdata=[row.counts for row in ordered],
+        colorbar=dict(title=dict(text="% of the area's trials", side="top",
+                                 font=dict(size=11, color=MUTED)),
+                      orientation="h", x=0.5, y=-0.13, xanchor="center",
+                      yanchor="bottom", ticksuffix="%", thickness=10,
+                      len=0.4, outlinewidth=0,
+                      tickfont=dict(size=11, color=MUTED)),
+        hovertemplate="%{y}<br>Phase %{x}: %{customdata:,} trials, "
+                      "%{z:.1f}% of the area<extra></extra>"))
+
+    # A value in every cell, which a heatmap is allowed: it is a table that
+    # has been coloured, not a plot with numbers scattered over it. Ink or
+    # surface by the cell's own darkness, so the text clears its background
+    # either way.
+    for y, row in enumerate(ordered):
+        for x, share in enumerate(row.shares):
+            if share is None:
+                continue
+            fig.add_annotation(
+                x=x, y=y, text="{:.0f}".format(share), showarrow=False,
+                font=dict(size=11,
+                          color=SURFACE if share > 0.55 * ceiling else INK))
+
+    fig.update_layout(
+        title=dict(
+            text="Cancer runs a different kind of research from everything "
+                 "else",
+            subtitle=dict(
+                text="Share of each area's trials reaching each phase. A "
+                     "phase I/II trial reaches both,<br>so a row does not sum "
+                     "to 100%. The bottom row is the whole corpus, for "
+                     "comparison.",
+                font=dict(size=12, color=MUTED)),
+            font=dict(size=17, color=INK)),
+        plot_bgcolor=SURFACE, paper_bgcolor=SURFACE,
+        font=dict(family="system-ui, sans-serif", color=MUTED, size=12),
+        # The column headers sit on top of the plot, so the top margin has
+        # to clear a two-line subtitle as well as the title.
+        margin=dict(t=130, r=30, b=110, l=290), width=760,
+        height=180 + 26 * len(rows))
+    fig.update_xaxes(side="top", showgrid=False, ticks="",
+                     tickfont=dict(size=12, color=MUTED))
+    fig.update_yaxes(showgrid=False, ticks="",
+                     tickfont=dict(size=11, color=MUTED))
     return fig

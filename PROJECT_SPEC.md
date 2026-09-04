@@ -1399,6 +1399,38 @@ named-individual fields are dropped, and for the specific reasons given in
   involvement counts a flagged trial, so I/II counts as phase I — the strict
   reading would drop 977 of the 2,698 early-phase trials, most of them exactly
   the seamless designs the trend is about.
+
+  *Phase against therapeutic area, as a heatmap.* The trend turns out to be a
+  **structure**: cancer is the only large area weighted toward phase I rather
+  than phase III, and it is the only one with almost no phase IV.
+
+  | | I | II | III | IV |
+  |---|---|---|---|---|
+  | Cancer | **38.7%** | 47.8% | 31.2% | **2.0%** |
+  | Cardiovascular | 9.1% | 25.5% | 51.8% | 18.8% |
+  | Nervous system | 12.2% | 40.1% | 49.7% | 7.6% |
+  | Bacterial infections | 9.1% | 26.5% | 44.8% | 25.7% |
+  | *All trials* | 22.8% | 38.4% | 41.8% | 9.2% |
+
+  **Phase I is not "more basic science"** — every phase is a trial in humans,
+  and basic science sits before phase I, outside this registry entirely. In
+  oncology it means something stronger: **0.4% of cancer phase I trials enrol
+  healthy volunteers against 38.5% of non-cancer phase I trials**, because
+  cytotoxic drugs cannot be given to healthy people. A phase I cancer trial
+  enrols patients who have exhausted standard care, so it is a treatment
+  offer. More phase I oncology in Spain means more access to experimental
+  therapy, and it is a capability signal — phase I units need dedicated beds,
+  intensive monitoring and specialised pharmacy.
+
+  **Phase IV is post-marketing, not pre-launch.** It concentrates where the
+  drugs are old, cheap and long approved: anaesthesia and analgesia is
+  **61.8% phase IV**, the most extreme area in the corpus (123 trials, just
+  below the top-16 cut and so absent from the heatmap), then bacterial
+  infections 25.7% and cardiovascular 18.8%, against cancer's 2.0%. That is
+  characteristically investigator-led, non-commercial research — which makes
+  the **halving of phase IV, 11.3% to 6.5% of trials**, a possible story about
+  non-commercial research shrinking in Spain. Testable once sponsors are
+  classified, and a reason to do that question next.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
   map; Madrid-specific angle for the target audience). *Answered at region
@@ -1829,8 +1861,8 @@ and would have to be in the model.
 - [x] Therapeutic landscape, part 2: how the mix shifts over time
 - [x] Therapeutic landscape, part 3: the ranking animated by year — the first
       interactive piece, and a rehearsal for the dashboard's controls
-- [x] Phase distribution: the mix, and phase I over time split on oncology
-      (`analysis/phases.py`)
+- [x] Phase distribution: the mix, phase I over time split on oncology, and
+      phase against therapeutic area as a heatmap (`analysis/phases.py`)
 - [ ] Phase distribution by region — deferred to the dashboard, where it is a
       filter rather than a chart. Phase I share runs Navarra 24.9%, Madrid
       21.8%, Cataluña 20.2% against País Vasco 5.8% and Balears 4.5%
