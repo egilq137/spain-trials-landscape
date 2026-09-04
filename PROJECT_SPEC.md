@@ -1376,6 +1376,29 @@ named-individual fields are dropped, and for the specific reasons given in
   x axis is fixed across frames for the same reason; on an autoscaling axis
   the longest bar fills the width every year and nothing appears to move.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
+  *Answered, overall and over time; by sponsor type deferred until sponsors are
+  classified.* Phase is four independent flags, so the **combinations are the
+  categories**: 12 appear, 7 are recognised designs and get a row, the other 5
+  (22 trials) are folded and marked. Every one of the 11,834 trials sets at
+  least one flag, so unlike the therapeutic and geographic charts **this one's
+  shares really do sum to 100%**. III 4,468 (37.8%), II 3,212 (27.1%), I 1,721
+  (14.5%), IV 996 (8.4%), I/II 958 (8.1%), II/III 369 (3.1%), III/IV 88 (0.7%).
+  Rows are drawn in ladder order, not by size: phase is ordinal and sorting by
+  count would discard an ordering the reader already has.
+
+  **The finding is in the stratification.** Phase I involvement rises 18.4%
+  (2013) to 26.8% (2024) — which reads as "Spain moved toward early-phase
+  research" until you split it. Cancer trials go **27.3% to ~45%**; everything
+  else is **flat at 13–17% with no trend**. The national rise is an oncology
+  phenomenon, and the crude line is on the chart precisely so the reader can
+  see it being dragged by one subgroup.
+
+  A crude rate can move because its subgroups moved, because the mix of
+  subgroups moved, or because one large subgroup moved and pulled the total.
+  Only stratifying tells them apart, and here it is the third. Phase I
+  involvement counts a flagged trial, so I/II counts as phase I — the strict
+  reading would drop 977 of the 2,698 early-phase trials, most of them exactly
+  the seamless designs the trend is about.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
   map; Madrid-specific angle for the target audience). *Answered at region
@@ -1806,7 +1829,12 @@ and would have to be in the model.
 - [x] Therapeutic landscape, part 2: how the mix shifts over time
 - [x] Therapeutic landscape, part 3: the ranking animated by year — the first
       interactive piece, and a rehearsal for the dashboard's controls
-- [ ] Phase distribution
+- [x] Phase distribution: the mix, and phase I over time split on oncology
+      (`analysis/phases.py`)
+- [ ] Phase distribution by region — deferred to the dashboard, where it is a
+      filter rather than a chart. Phase I share runs Navarra 24.9%, Madrid
+      21.8%, Cataluña 20.2% against País Vasco 5.8% and Balears 4.5%
+- [ ] Phase distribution by sponsor type — blocked on classifying sponsors
 - [ ] Sponsor structure
 - [x] Geography (choropleth) -- region and province level,
       `analysis/geography.py`, both geometries vendored in `data/geo/` with
