@@ -145,12 +145,18 @@ def write_phase_charts(con, chart_dir=CHART_DIR):
 
     areas = therapeutic.top_areas(therapeutic.trials_per_area(con),
                                   therapeutic.TOP_AREAS)
-    grid = phases.phase_by_area(con, areas)
+    # Two halves of the window rather than one pooled grid: thirteen years
+    # in one cell averages a structure that moved, and the point of the
+    # chart is that it moved.
+    panels = [("{}-2019".format(volume.COVERAGE_START),
+               phases.phase_by_area(con, areas, until=2019)),
+              ("2020-{}".format(volume.coverage(con).data_cut[:4]),
+               phases.phase_by_area(con, areas, since=2020))]
     heatmap_path = chart_dir / "phase-by-area.html"
-    phases.heatmap_figure(grid).write_html(
+    phases.heatmap_figure(panels).write_html(
         heatmap_path, include_plotlyjs="cdn", div_id=heatmap_path.stem)
-    print("{}: {} areas plus the corpus row".format(
-        heatmap_path, len(grid) - 1))
+    print("{}: {} areas x {} periods".format(
+        heatmap_path, len(panels[0][1]) - 1, len(panels)))
     return mix_path, early_path, heatmap_path
 
 

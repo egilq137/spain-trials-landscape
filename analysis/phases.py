@@ -240,13 +240,20 @@ AreaPhases = collections.namedtuple("AreaPhases", "label trials shares counts")
 ALL_TRIALS = "All trials"
 
 
-def phase_by_area(con, areas, since=COVERAGE_START):
+def phase_by_area(con, areas, since=COVERAGE_START, until=None):
     """[AreaPhases] per area, biggest first, with an All trials row last.
 
     The baseline row is what makes the rest readable: 38.7% of cancer trials
     reaching phase I means nothing until you know the corpus figure is 22.8%.
     It is placed last and labelled, not mixed in among the areas -- it is not
     an area, it is the thing they are being compared against.
+
+    `until` bounds the window at the top, which is what lets the same grid be
+    drawn for two periods and compared. Splitting the corpus halves every
+    denominator, so the small areas get noisy -- 62 and 88 trials for female
+    urogenital across the two halves, where a few points either way is not a
+    finding. The rows stay in overall size order, so the reader's confidence
+    can fall as they read down.
 
     `areas` is the same top-16 cut the therapeutic ranking uses, so the two
     charts show the same areas. One casualty of that consistency is worth
@@ -256,6 +263,12 @@ def phase_by_area(con, areas, since=COVERAGE_START):
     understates how extreme that end gets.
     """
     sums = ", ".join("sum(st.{})".format(column) for column in PHASE_COLUMNS)
+    window = "st.fecha_autorizacion_aemps >= ?"
+    bounds = ["{}-01-01".format(since)]
+    if until is not None:
+        window += " AND st.fecha_autorizacion_aemps <= ?"
+        bounds.append("{}-12-31".format(until))
+
     rows = []
     for code, name in areas:
         trials, *counts = con.execute(
@@ -263,84 +276,109 @@ def phase_by_area(con, areas, since=COVERAGE_START):
                  FROM study_therapeutic_areas sta
                  JOIN studies st ON st.identificador = sta.study_id
                 WHERE sta.eutct_code = ?
-                  AND st.fecha_autorizacion_aemps >= ?""".format(sums),
-            (code, "{}-01-01".format(since))).fetchone()
+                  AND {}""".format(sums, window),
+            [code] + bounds).fetchone()
         rows.append(AreaPhases(leaf(name), trials,
                                [100.0 * count / trials for count in counts],
                                counts))
 
     trials, *counts = con.execute(
-        "SELECT count(*), {} FROM studies st "
-        "WHERE st.fecha_autorizacion_aemps >= ?".format(sums),
-        ("{}-01-01".format(since),)).fetchone()
+        "SELECT count(*), {} FROM studies st WHERE {}".format(sums, window),
+        bounds).fetchone()
     rows.append(AreaPhases(ALL_TRIALS, trials,
                            [100.0 * count / trials for count in counts],
                            counts))
     return rows
 
 
-def heatmap_figure(rows):
-    """Areas down, phases across, colour and value = share of the area."""
-    # A blank row before the corpus baseline, so it reads as a rule under the
-    # table rather than as the seventeenth therapeutic area. An empty z row
-    # draws nothing, which is the gap.
+def _with_spacer(rows):
+    """A blank row before the corpus baseline.
+
+    It reads as a rule under the table rather than as the seventeenth
+    therapeutic area. An empty z row draws nothing, which is the gap.
+    """
     display = []
     for row in rows:
         if row.label == ALL_TRIALS:
             display.append(AreaPhases(" ", 0, [None] * 4, [0] * 4))
         display.append(row)
+    return display
 
-    # Reversed, because a heatmap's y axis is drawn bottom-up and the biggest
-    # area belongs at the top.
-    ordered = display[::-1]
-    labels = [row.label for row in ordered]
-    shares = [row.shares for row in ordered]
-    ceiling = max(max(row.shares) for row in rows)
 
-    fig = go.Figure(go.Heatmap(
-        z=shares, x=list(NUMERALS), y=labels,
-        colorscale=BLUE_RAMP, zmin=0, zmax=ceiling,
-        xgap=2, ygap=2,  # the surface doing the separating, as everywhere else
-        customdata=[row.counts for row in ordered],
-        colorbar=dict(title=dict(text="% of the area's trials", side="top",
-                                 font=dict(size=11, color=MUTED)),
-                      orientation="h", x=0.5, y=-0.13, xanchor="center",
-                      yanchor="bottom", ticksuffix="%", thickness=10,
-                      len=0.4, outlinewidth=0,
-                      tickfont=dict(size=11, color=MUTED)),
-        hovertemplate="%{y}<br>Phase %{x}: %{customdata:,} trials, "
-                      "%{z:.1f}% of the area<extra></extra>"))
+def heatmap_figure(panels):
+    """One column block per period: areas down, phases across, share in each.
 
-    # A value in every cell, which a heatmap is allowed: it is a table that
-    # has been coloured, not a plot with numbers scattered over it. Ink or
-    # surface by the cell's own darkness, so the text clears its background
-    # either way.
-    for y, row in enumerate(ordered):
-        for x, share in enumerate(row.shares):
-            if share is None:
-                continue
-            fig.add_annotation(
-                x=x, y=y, text="{:.0f}".format(share), showarrow=False,
-                font=dict(size=11,
-                          color=SURFACE if share > 0.55 * ceiling else INK))
+    `panels` is [(period label, [AreaPhases])], and every panel must carry
+    the same rows in the same order -- the comparison is read across, so a
+    row that means one area on the left and another on the right would be
+    worse than no chart.
+
+    The two panels share one colour scale. Scaled separately, a period with
+    a flatter spread would come out looking as extreme as one with a sharper
+    spread, and the whole point is that they differ.
+    """
+    from plotly.subplots import make_subplots
+
+    labels = [label for label, _ in panels]
+    grids = [_with_spacer(rows) for _, rows in panels]
+    assert len({tuple(row.label for row in grid) for grid in grids}) == 1,         "panels must carry the same rows in the same order"
+
+    ceiling = max(share for _, rows in panels for row in rows
+                  for share in row.shares)
+    # Bottom-up y axis, so the biggest area goes in last and lands on top.
+    ordered = [grid[::-1] for grid in grids]
+    y = [row.label for row in ordered[0]]
+
+    fig = make_subplots(rows=1, cols=len(panels), shared_yaxes=True,
+                        horizontal_spacing=0.06, subplot_titles=labels)
+    for index, grid in enumerate(ordered):
+        fig.add_trace(go.Heatmap(
+            z=[row.shares for row in grid], x=list(NUMERALS), y=y,
+            colorscale=BLUE_RAMP, zmin=0, zmax=ceiling,
+            xgap=2, ygap=2,  # the surface separating, as everywhere else
+            showscale=index == len(panels) - 1,
+            customdata=[row.counts for row in grid],
+            colorbar=dict(
+                title=dict(text="% of the area's trials in that period",
+                           side="top", font=dict(size=11, color=MUTED)),
+                orientation="h", x=0.5, y=-0.14, xanchor="center",
+                yanchor="bottom", ticksuffix="%", thickness=10, len=0.4,
+                outlinewidth=0, tickfont=dict(size=11, color=MUTED)),
+            hovertemplate="%{y}<br>Phase %{x}: %{customdata:,} trials, "
+                          "%{z:.1f}% of the area<extra>" + labels[index] +
+                          "</extra>"), row=1, col=index + 1)
+
+        # A value in every cell, which a heatmap is allowed: it is a table
+        # that has been coloured, not a plot with numbers scattered over it.
+        # Ink or surface by the cell's own darkness, so the text clears its
+        # background either way.
+        for row_index, row in enumerate(grid):
+            for column, share in enumerate(row.shares):
+                if share is None:
+                    continue
+                fig.add_annotation(
+                    x=column, y=row_index, text="{:.0f}".format(share),
+                    showarrow=False, row=1, col=index + 1,
+                    font=dict(size=11, color=(SURFACE if share > 0.55 * ceiling
+                                              else INK)))
 
     fig.update_layout(
         title=dict(
-            text="Cancer runs a different kind of research from everything "
-                 "else",
+            text="Cancer runs a different kind of research, and more so now",
             subtitle=dict(
                 text="Share of each area's trials reaching each phase. A "
-                     "phase I/II trial reaches both,<br>so a row does not sum "
-                     "to 100%. The bottom row is the whole corpus, for "
-                     "comparison.",
+                     "phase I/II trial reaches both, so a row does not sum "
+                     "to 100%.<br>The last row is the whole corpus. Rows are "
+                     "in size order, and the small ones at the bottom hold "
+                     "under 100 trials a period.",
                 font=dict(size=12, color=MUTED)),
             font=dict(size=17, color=INK)),
         plot_bgcolor=SURFACE, paper_bgcolor=SURFACE,
         font=dict(family="system-ui, sans-serif", color=MUTED, size=12),
-        # The column headers sit on top of the plot, so the top margin has
-        # to clear a two-line subtitle as well as the title.
-        margin=dict(t=130, r=30, b=110, l=290), width=760,
-        height=180 + 26 * len(rows))
+        margin=dict(t=140, r=30, b=110, l=300), width=860,
+        height=180 + 26 * (len(panels[0][1]) + 1))
+    for annotation in fig.layout.annotations[:len(panels)]:
+        annotation.font = dict(size=12, color=INK)
     fig.update_xaxes(side="top", showgrid=False, ticks="",
                      tickfont=dict(size=12, color=MUTED))
     fig.update_yaxes(showgrid=False, ticks="",

@@ -16,9 +16,10 @@ Success criteria:
   phase_by_area: shares are of that area's own trials, columns count
     involvement so a row may exceed 100%, and the corpus baseline is the
     last row rather than one of the areas
-  heatmap: a blank row separates the baseline from the areas, cell values
-    are drawn in ink or surface by the cell's own darkness, and the biggest
-    area ends up at the top of a bottom-up axis
+  heatmap: two period panels on one shared colour scale, refusing to draw
+    if their rows disagree; a blank row separating the baseline from the
+    areas; cell values in ink or surface by the cell's own darkness; and the
+    biggest area at the top of a bottom-up axis
   against the database: 11,834 trials over 8 rows, and the oncology split
     that the second chart's headline rests on
 """
@@ -202,6 +203,16 @@ class TestPhaseByArea(PhaseLoaderTestCase):
         self.assertEqual(phase_by_area(con, self.AREAS)[0].shares,
                          [100.0, 100.0, 0.0, 0.0])
 
+    def test_until_bounds_the_window_at_the_top(self):
+        # What lets the same grid be drawn twice and compared. Without it a
+        # thirteen-year average stands in for a structure that moved.
+        con = self.con_with([("04-03-2015", (1, 0, 0, 0), True),
+                             ("04-03-2021", (0, 0, 1, 0), True)])
+        early = phase_by_area(con, self.AREAS, until=2019)[0]
+        late = phase_by_area(con, self.AREAS, since=2020)[0]
+        self.assertEqual((early.trials, early.shares[0]), (1, 100.0))
+        self.assertEqual((late.trials, late.shares[2]), (1, 100.0))
+
     def test_the_baseline_row_is_last_and_covers_the_whole_corpus(self):
         con = self.con_with([("04-03-2015", (1, 0, 0, 0), True),
                              ("04-03-2015", (0, 0, 1, 0), False)])
@@ -211,20 +222,52 @@ class TestPhaseByArea(PhaseLoaderTestCase):
         self.assertEqual(rows[-1].shares, [50.0, 0.0, 50.0, 0.0])
 
 
-class TestHeatmap(unittest.TestCase):
-    def setUp(self):
-        from analysis.phases import AreaPhases
-        self.rows = [AreaPhases("Cancer [C04]", 4239, [38.7, 47.8, 31.2, 2.0],
-                                [1639, 2026, 1324, 85]),
-                     AreaPhases("Eye Diseases [C11]", 265,
-                                [7.2, 28.7, 56.2, 17.7], [19, 76, 149, 47]),
-                     AreaPhases(ALL_TRIALS, 11834, [22.8, 38.4, 41.8, 9.2],
-                                [2698, 4542, 4946, 1085])]
-        self.fig = heatmap_figure(self.rows)
+def area_rows(cancer, eye, corpus):
+    from analysis.phases import AreaPhases
+    return [AreaPhases("Cancer [C04]", 4239, cancer, [1, 2, 3, 4]),
+            AreaPhases("Eye Diseases [C11]", 265, eye, [1, 2, 3, 4]),
+            AreaPhases(ALL_TRIALS, 11834, corpus, [1, 2, 3, 4])]
 
-    def test_the_biggest_area_is_the_top_row(self):
-        # A heatmap's y axis is drawn bottom-up, so the rows go in reversed.
-        self.assertEqual(list(self.fig.data[0].y)[-1], "Cancer [C04]")
+
+class TestHeatmap(unittest.TestCase):
+    PANELS = [("2013-2019", area_rows([32.3, 46.9, 33.2, 2.6],
+                                      [7.9, 21.9, 51.8, 23.7],
+                                      [20.8, 34.4, 42.7, 10.7])),
+              ("2020-2026", area_rows([43.8, 48.6, 29.6, 1.5],
+                                      [6.6, 33.8, 59.6, 13.2],
+                                      [24.5, 41.9, 41.0, 7.9]))]
+
+    def setUp(self):
+        self.fig = heatmap_figure(self.PANELS)
+
+    def test_one_panel_per_period_titled_by_it(self):
+        self.assertEqual(len(self.fig.data), 2)
+        self.assertEqual(
+            [note.text for note in self.fig.layout.annotations[:2]],
+            ["2013-2019", "2020-2026"])
+
+    def test_the_biggest_area_is_the_top_row_in_both_panels(self):
+        # A heatmap's y axis is drawn bottom-up, so rows go in reversed.
+        for panel in self.fig.data:
+            self.assertEqual(list(panel.y)[-1], "Cancer [C04]")
+
+    def test_the_panels_share_one_colour_scale(self):
+        # Scaled apart, a flatter period would look as extreme as a sharper
+        # one, and the comparison the chart exists for would be false.
+        early, late = self.fig.data
+        self.assertEqual((early.zmin, early.zmax), (late.zmin, late.zmax))
+        self.assertEqual(early.zmax, 59.6)
+
+    def test_only_the_last_panel_carries_the_colour_bar(self):
+        self.assertEqual([panel.showscale for panel in self.fig.data],
+                         [False, True])
+
+    def test_panels_whose_rows_disagree_are_refused(self):
+        # Read across, a row that means one area on the left and another on
+        # the right is worse than no chart at all.
+        mismatched = [self.PANELS[0], ("2020-2026", self.PANELS[1][1][:-1])]
+        with self.assertRaises(AssertionError):
+            heatmap_figure(mismatched)
 
     def test_a_blank_row_separates_the_baseline_from_the_areas(self):
         # So the corpus reads as a rule under the table rather than as one
@@ -234,15 +277,16 @@ class TestHeatmap(unittest.TestCase):
         self.assertEqual(list(self.fig.data[0].z)[1], [None] * 4)
 
     def test_the_blank_row_gets_no_cell_labels(self):
-        # Three rows of four, not four: the spacer has nothing to say.
-        self.assertEqual(len(self.fig.layout.annotations), 12)
+        # Two panels of three rows by four columns, plus the two panel
+        # titles: the spacer has nothing to say in either.
+        self.assertEqual(len(self.fig.layout.annotations), 2 + 2 * 12)
 
     def test_cell_text_switches_colour_on_dark_cells(self):
         from analysis.phases import INK, SURFACE
         colours = {note.text: note.font.color
-                   for note in self.fig.layout.annotations}
-        self.assertEqual(colours["2"], INK)       # palest cell
-        self.assertEqual(colours["56"], SURFACE)  # darkest cell
+                   for note in self.fig.layout.annotations[2:]}
+        self.assertEqual(colours["2"], INK)       # 1.5%, the palest cell
+        self.assertEqual(colours["60"], SURFACE)  # 59.6%, the darkest
 
     def test_the_columns_are_the_phase_ladder(self):
         self.assertEqual(list(self.fig.data[0].x), ["I", "II", "III", "IV"])
@@ -353,6 +397,24 @@ class TestAgainstDatabase(unittest.TestCase):
             with self.subTest(area=row.label):
                 self.assertLess(row.shares[0], row.shares[2])
         self.assertGreater(cancer.shares[0], cancer.shares[2])
+
+    def test_the_two_periods_move_the_way_3_3_says(self):
+        from analysis import therapeutic
+        areas = therapeutic.top_areas(therapeutic.trials_per_area(self.con),
+                                      therapeutic.TOP_AREAS)
+        early = {row.label: row for row
+                 in phase_by_area(self.con, areas, until=2019)}
+        late = {row.label: row for row
+                in phase_by_area(self.con, areas, since=2020)}
+        # Cancer's early-phase skew deepens: 32.3% to 43.8% phase I.
+        self.assertEqual(
+            (round(early["Cancer [C04]"].shares[0], 1),
+             round(late["Cancer [C04]"].shares[0], 1)), (32.3, 43.8))
+        # And the corpus moves too: phase II up, phase IV down.
+        self.assertGreater(late[ALL_TRIALS].shares[1],
+                           early[ALL_TRIALS].shares[1] + 5)
+        self.assertLess(late[ALL_TRIALS].shares[3],
+                        early[ALL_TRIALS].shares[3] - 2)
 
     def test_the_pooled_rate_sits_between_the_two_groups(self):
         # Not a law of arithmetic to be assumed -- a pooled rate lies

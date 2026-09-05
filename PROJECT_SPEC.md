@@ -1400,17 +1400,38 @@ named-individual fields are dropped, and for the specific reasons given in
   reading would drop 977 of the 2,698 early-phase trials, most of them exactly
   the seamless designs the trend is about.
 
-  *Phase against therapeutic area, as a heatmap.* The trend turns out to be a
-  **structure**: cancer is the only large area weighted toward phase I rather
-  than phase III, and it is the only one with almost no phase IV.
+  *Phase against therapeutic area, as a heatmap — in two periods, because
+  thirteen years in one cell averages a structure that moved.* 16 areas × 4
+  phases × 2 windows, on one shared colour scale, with the corpus as a
+  baseline row. Denominators halve when the window is split, so the rows stay
+  in size order and the bottom ones hold under 100 trials a period; the
+  reader's confidence should fall as they read down.
 
   | | I | II | III | IV |
   |---|---|---|---|---|
-  | Cancer | **38.7%** | 47.8% | 31.2% | **2.0%** |
-  | Cardiovascular | 9.1% | 25.5% | 51.8% | 18.8% |
-  | Nervous system | 12.2% | 40.1% | 49.7% | 7.6% |
-  | Bacterial infections | 9.1% | 26.5% | 44.8% | 25.7% |
-  | *All trials* | 22.8% | 38.4% | 41.8% | 9.2% |
+  | Cancer, 2013–19 | 32.3% | 46.9% | 33.2% | 2.6% |
+  | Cancer, 2020–26 | **43.8%** | 48.6% | 29.6% | **1.5%** |
+  | Cardiovascular, 2013–19 | 14.0% | 18.7% | 47.2% | 22.1% |
+  | Cardiovascular, 2020–26 | 4.6% | 31.6% | 55.9% | 15.8% |
+  | *All trials, 2013–19* | 20.8% | 34.4% | 42.7% | 10.7% |
+  | *All trials, 2020–26* | 24.5% | 41.9% | 41.0% | 7.9% |
+
+  Three movements, and only the first was visible in the pooled version:
+
+  - **Cancer's early-phase skew deepened**, 32.3% → 43.8% phase I, and it is
+    still the only large area weighted toward phase I over phase III.
+  - **Phase II rose almost everywhere**: 34.4% → 41.9% across the corpus, and
+    in nearly every area — virus 31.5 → 44.1, respiratory 28.8 → 42.0, skin
+    26.6 → 40.8, digestive 32.2 → 43.6.
+  - **Phase IV fell almost everywhere**: 10.7% → 7.9% overall, with immune
+    10.5 → 4.1, nutritional 17.2 → 6.5, eye 23.7 → 13.2, cardiovascular
+    22.1 → 15.8.
+
+  Pooling the whole window had reported cancer's phase I share as 38.7% — a
+  number that describes no single year and understates where it now sits by
+  five points. The lesson generalises to every chart in this project that
+  spans 2013 to 2026: an average over a period in which the thing moved is a
+  claim about nothing in particular.
 
   **Phase I is not "more basic science"** — every phase is a trial in humans,
   and basic science sits before phase I, outside this registry entirely. In
@@ -1862,7 +1883,8 @@ and would have to be in the model.
 - [x] Therapeutic landscape, part 3: the ranking animated by year — the first
       interactive piece, and a rehearsal for the dashboard's controls
 - [x] Phase distribution: the mix, phase I over time split on oncology, and
-      phase against therapeutic area as a heatmap (`analysis/phases.py`)
+      phase against therapeutic area as a two-period heatmap
+      (`analysis/phases.py`)
 - [ ] Phase distribution by region — deferred to the dashboard, where it is a
       filter rather than a chart. Phase I share runs Navarra 24.9%, Madrid
       21.8%, Cataluña 20.2% against País Vasco 5.8% and Balears 4.5%
