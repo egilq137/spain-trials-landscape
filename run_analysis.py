@@ -21,7 +21,8 @@ from analysis import geography, phases, sponsors, therapeutic, volume
 # generates a fresh uuid otherwise, so re-running the analysis would rewrite
 # every chart file with a one-line diff that means nothing.
 DEFAULT_DB = Path("data") / "trials.db"
-CHART_DIR = Path("docs") / "charts"
+DOCS_DIR = Path("docs")
+CHART_DIR = DOCS_DIR / "charts"
 REGIONS = Path("data") / "geo" / "spain-ccaa.geojson"
 PROVINCES = Path("data") / "geo" / "spain-provinces.geojson"
 
@@ -185,7 +186,16 @@ def write_sponsor_charts(con, chart_dir=CHART_DIR):
         families_path, include_plotlyjs="cdn", div_id=families_path.stem)
     print("{}: {} led by {} with {:,}".format(
         families_path, len(families), families[0][0], families[0][1]))
-    return share_path, phase_path, families_path
+
+    # Not a chart: the page the merges get read on. It lives in docs/ beside
+    # the ERD rather than in docs/charts/.
+    merged, unmerged = sponsors.family_review(con)
+    review_path = DOCS_DIR / "sponsor-families.html"
+    review_path.write_text(sponsors.review_page(merged, unmerged),
+                           encoding="utf-8")
+    print("{}: {} families merged, {:,} sponsors left alone".format(
+        review_path, len(merged), len(unmerged)))
+    return share_path, phase_path, families_path, review_path
 
 
 def main():

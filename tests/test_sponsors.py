@@ -37,9 +37,11 @@ from analysis.sponsors import (
     display_name,
     families_figure,
     family_of,
+    family_review,
     is_individual,
     phase_four_by_year,
     phase_four_figure,
+    review_page,
     share_by_year,
     share_figure,
     top_families,
@@ -192,9 +194,9 @@ class TestAgainstDatabase(unittest.TestCase):
     def test_the_classification_covers_the_corpus_it_claims_to(self):
         totals = self.counts()
         self.assertEqual(sum(totals.values()), 11834)
-        self.assertEqual(totals[INDUSTRY], 9456)
+        self.assertEqual(totals[INDUSTRY], 9475)
         self.assertEqual(totals[ACADEMIC], 1783)
-        self.assertEqual(totals[UNCLASSIFIED], 595)
+        self.assertEqual(totals[UNCLASSIFIED], 576)
 
     def test_every_hand_written_name_matches_a_real_sponsor(self):
         # A hand table whose keys match nothing does nothing quietly. The
@@ -218,11 +220,10 @@ class TestAgainstDatabase(unittest.TestCase):
              GROUP BY sp.promotor HAVING n >= 5""").fetchall()
         unresolved = sorted(name for name, _ in big
                             if classify(name) == UNCLASSIFIED)
-        # MedSIR is left out on purpose: an independent research
-        # organisation is neither a pharmaceutical company nor a public
-        # institution, and guessing would be worse than saying so.
-        self.assertEqual(
-            unresolved, ["Medica Scientia Innovation Research (MedSIR)"])
+        # Nothing left: the second family pass settled MedSIR, whose
+        # S.L. spelling says it is a commercial entity, which is the whole
+        # of what Industry claims here.
+        self.assertEqual(unresolved, [])
 
     def test_industry_and_academia_run_different_research(self):
         # The 3.3 finding, and the reason the sponsor split was worth
@@ -361,9 +362,76 @@ class TestFamiliesAgainstDatabase(unittest.TestCase):
         self.assertEqual(unmerged, ("AstraZeneca AB", 348))
         self.assertEqual([(family, trials) for family, trials, _
                           in self.families[:2]],
-                         [("Novartis", 537), ("Roche", 429)])
+                         [("Novartis", 537), ("Roche", 481)])
 
     def test_the_spelling_counts_are_what_the_merge_collapsed(self):
         spellings = {family: count for family, _, count in self.families}
         self.assertEqual(spellings["Novartis"], 10)
-        self.assertEqual(spellings["Roche"], 13)
+        self.assertEqual(spellings["Roche"], 14)
+
+
+class TestReviewPage(unittest.TestCase):
+    MERGED = [("Roche", 481, [("F. Hoffmann-La Roche AG", 172),
+                              ("Roche Farma S.A.", 82)])]
+    UNMERGED = [("Novo Nordisk A/S", 102, INDUSTRY),
+                ("Merck Sharp & Dohme Copr.", 1, INDUSTRY)]
+
+    def setUp(self):
+        self.page = review_page(self.MERGED, self.UNMERGED)
+
+    def test_both_tables_are_on_the_page(self):
+        # The second one is the point: a rule cannot report the merge it
+        # failed to make, so what was left alone has to be readable too.
+        self.assertIn("1 families", self.page)
+        self.assertIn("2 sponsors joined no family", self.page)
+
+    def test_a_family_lists_the_spellings_it_collapsed(self):
+        self.assertIn("F. Hoffmann-La Roche AG", self.page)
+        self.assertIn("in 2 spellings", self.page)
+
+    def test_ampersands_in_sponsor_names_are_escaped(self):
+        # 'Merck Sharp & Dohme' would otherwise open an entity and eat the
+        # rest of the cell.
+        self.assertIn("Merck Sharp &amp; Dohme", self.page)
+        self.assertNotIn("Dohme & Copr", self.page)
+
+    def test_the_page_needs_no_network(self):
+        # Same rule as the ERD: a review artifact that only renders online
+        # is not a review artifact.
+        self.assertNotIn("http://", self.page)
+        self.assertNotIn("https://", self.page)
+
+
+@requires_database
+class TestReviewAgainstDatabase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.con = sqlite3.connect(
+            "file:{}?mode=ro".format(DB_PATH.as_posix()), uri=True)
+        cls.merged, cls.unmerged = family_review(cls.con)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.con.close()
+
+    def test_the_two_tables_account_for_every_sponsor(self):
+        spellings = sum(len(members) for _, _, members in self.merged)
+        self.assertEqual(spellings + len(self.unmerged), 2957)
+
+    def test_the_two_tables_account_for_every_trial(self):
+        merged = sum(total for _, total, _ in self.merged)
+        unmerged = sum(total for _, total, _ in self.unmerged)
+        self.assertEqual(merged + unmerged, 11834)
+
+    def test_nothing_in_the_unmerged_table_has_a_family(self):
+        # If it did, the review page would be lying about what it merged.
+        for name, _, _ in self.unmerged:
+            self.assertEqual(family_of(name), name)
+
+    def test_the_second_pass_families_are_all_there(self):
+        # Found by reading the unmerged table, which is what it is for.
+        families = {family: total for family, total, _ in self.merged}
+        self.assertEqual(families["UCB"], 71)
+        self.assertEqual(families["BeiGene (BeOne Medicines)"], 47)
+        self.assertEqual(families["Eisai"], 29)
+        self.assertEqual(families["ViiV Healthcare"], 28)
