@@ -15,7 +15,7 @@ promise.
 import sqlite3
 from pathlib import Path
 
-from analysis import geography, therapeutic, volume
+from analysis import geography, phases, therapeutic, volume
 
 # div_id is pinned to the file name on every write_html below. Plotly
 # generates a fresh uuid otherwise, so re-running the analysis would rewrite
@@ -125,6 +125,41 @@ def write_geography_charts(con, chart_dir=CHART_DIR):
               .format(volume.COVERAGE_START), chart_dir)
 
 
+def write_phase_charts(con, chart_dir=CHART_DIR):
+    trials = sum(count for _, count in volume.trials_per_year(con))
+    chart_dir.mkdir(parents=True, exist_ok=True)
+
+    bars = phases.phase_mix(con)
+    mix_path = chart_dir / "phase-mix.html"
+    phases.mix_figure(bars, trials).write_html(
+        mix_path, include_plotlyjs="cdn", div_id=mix_path.stem)
+    print("{}: {} rows, {:,} trials".format(
+        mix_path, len(bars), sum(bar.trials for bar in bars)))
+
+    years = phases.early_phase_by_year(con)
+    early_path = chart_dir / "early-phase-by-year.html"
+    phases.early_phase_figure(years).write_html(
+        early_path, include_plotlyjs="cdn", div_id=early_path.stem)
+    print("{}: {} years, phase I {:.1f}% to {:.1f}%".format(
+        early_path, len(years), years[0].overall, years[-1].overall))
+
+    areas = therapeutic.top_areas(therapeutic.trials_per_area(con),
+                                  therapeutic.TOP_AREAS)
+    # Two halves of the window rather than one pooled grid: thirteen years
+    # in one cell averages a structure that moved, and the point of the
+    # chart is that it moved.
+    panels = [("{}-2019".format(volume.COVERAGE_START),
+               phases.phase_by_area(con, areas, until=2019)),
+              ("2020-{}".format(volume.coverage(con).data_cut[:4]),
+               phases.phase_by_area(con, areas, since=2020))]
+    heatmap_path = chart_dir / "phase-by-area.html"
+    phases.heatmap_figure(panels).write_html(
+        heatmap_path, include_plotlyjs="cdn", div_id=heatmap_path.stem)
+    print("{}: {} areas x {} periods".format(
+        heatmap_path, len(panels[0][1]) - 1, len(panels)))
+    return mix_path, early_path, heatmap_path
+
+
 def main():
     con = open_database()
     try:
@@ -133,6 +168,7 @@ def main():
         write_area_trend_chart(con)
         write_area_race_chart(con)
         write_geography_charts(con)
+        write_phase_charts(con)
     finally:
         con.close()
 

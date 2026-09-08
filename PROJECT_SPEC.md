@@ -1376,6 +1376,82 @@ named-individual fields are dropped, and for the specific reasons given in
   x axis is fixed across frames for the same reason; on an autoscaling axis
   the longest bar fills the width every year and nothing appears to move.
 - **Phase distribution:** Phase I–IV balance, overall and by sponsor type.
+  *Answered, overall and over time; by sponsor type deferred until sponsors are
+  classified.* Phase is four independent flags, so the **combinations are the
+  categories**: 12 appear, 7 are recognised designs and get a row, the other 5
+  (22 trials) are folded and marked. Every one of the 11,834 trials sets at
+  least one flag, so unlike the therapeutic and geographic charts **this one's
+  shares really do sum to 100%**. III 4,468 (37.8%), II 3,212 (27.1%), I 1,721
+  (14.5%), IV 996 (8.4%), I/II 958 (8.1%), II/III 369 (3.1%), III/IV 88 (0.7%).
+  Rows are drawn in ladder order, not by size: phase is ordinal and sorting by
+  count would discard an ordering the reader already has.
+
+  **The finding is in the stratification.** Phase I involvement rises 18.4%
+  (2013) to 26.8% (2024) — which reads as "Spain moved toward early-phase
+  research" until you split it. Cancer trials go **27.3% to ~45%**; everything
+  else is **flat at 13–17% with no trend**. The national rise is an oncology
+  phenomenon, and the crude line is on the chart precisely so the reader can
+  see it being dragged by one subgroup.
+
+  A crude rate can move because its subgroups moved, because the mix of
+  subgroups moved, or because one large subgroup moved and pulled the total.
+  Only stratifying tells them apart, and here it is the third. Phase I
+  involvement counts a flagged trial, so I/II counts as phase I — the strict
+  reading would drop 977 of the 2,698 early-phase trials, most of them exactly
+  the seamless designs the trend is about.
+
+  *Phase against therapeutic area, as a heatmap — in two periods, because
+  thirteen years in one cell averages a structure that moved.* 16 areas × 4
+  phases × 2 windows, on one shared colour scale, with the corpus as a
+  baseline row. Denominators halve when the window is split, so the rows stay
+  in size order and the bottom ones hold under 100 trials a period; the
+  reader's confidence should fall as they read down.
+
+  | | I | II | III | IV |
+  |---|---|---|---|---|
+  | Cancer, 2013–19 | 32.3% | 46.9% | 33.2% | 2.6% |
+  | Cancer, 2020–26 | **43.8%** | 48.6% | 29.6% | **1.5%** |
+  | Cardiovascular, 2013–19 | 14.0% | 18.7% | 47.2% | 22.1% |
+  | Cardiovascular, 2020–26 | 4.6% | 31.6% | 55.9% | 15.8% |
+  | *All trials, 2013–19* | 20.8% | 34.4% | 42.7% | 10.7% |
+  | *All trials, 2020–26* | 24.5% | 41.9% | 41.0% | 7.9% |
+
+  Three movements, and only the first was visible in the pooled version:
+
+  - **Cancer's early-phase skew deepened**, 32.3% → 43.8% phase I, and it is
+    still the only large area weighted toward phase I over phase III.
+  - **Phase II rose almost everywhere**: 34.4% → 41.9% across the corpus, and
+    in nearly every area — virus 31.5 → 44.1, respiratory 28.8 → 42.0, skin
+    26.6 → 40.8, digestive 32.2 → 43.6.
+  - **Phase IV fell almost everywhere**: 10.7% → 7.9% overall, with immune
+    10.5 → 4.1, nutritional 17.2 → 6.5, eye 23.7 → 13.2, cardiovascular
+    22.1 → 15.8.
+
+  Pooling the whole window had reported cancer's phase I share as 38.7% — a
+  number that describes no single year and understates where it now sits by
+  five points. The lesson generalises to every chart in this project that
+  spans 2013 to 2026: an average over a period in which the thing moved is a
+  claim about nothing in particular.
+
+  **Phase I is not "more basic science"** — every phase is a trial in humans,
+  and basic science sits before phase I, outside this registry entirely. In
+  oncology it means something stronger: **0.4% of cancer phase I trials enrol
+  healthy volunteers against 38.5% of non-cancer phase I trials**, because
+  cytotoxic drugs cannot be given to healthy people. A phase I cancer trial
+  enrols patients who have exhausted standard care, so it is a treatment
+  offer. More phase I oncology in Spain means more access to experimental
+  therapy, and it is a capability signal — phase I units need dedicated beds,
+  intensive monitoring and specialised pharmacy.
+
+  **Phase IV is post-marketing, not pre-launch.** It concentrates where the
+  drugs are old, cheap and long approved: anaesthesia and analgesia is
+  **61.8% phase IV**, the most extreme area in the corpus (123 trials, just
+  below the top-16 cut and so absent from the heatmap), then bacterial
+  infections 25.7% and cardiovascular 18.8%, against cancer's 2.0%. That is
+  characteristically investigator-led, non-commercial research — which makes
+  the **halving of phase IV, 11.3% to 6.5% of trials**, a possible story about
+  non-commercial research shrinking in Spain. Testable once sponsors are
+  classified, and a reason to do that question next.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
   map; Madrid-specific angle for the target audience). *Answered at region
@@ -1806,7 +1882,13 @@ and would have to be in the model.
 - [x] Therapeutic landscape, part 2: how the mix shifts over time
 - [x] Therapeutic landscape, part 3: the ranking animated by year — the first
       interactive piece, and a rehearsal for the dashboard's controls
-- [ ] Phase distribution
+- [x] Phase distribution: the mix, phase I over time split on oncology, and
+      phase against therapeutic area as a two-period heatmap
+      (`analysis/phases.py`)
+- [ ] Phase distribution by region — deferred to the dashboard, where it is a
+      filter rather than a chart. Phase I share runs Navarra 24.9%, Madrid
+      21.8%, Cataluña 20.2% against País Vasco 5.8% and Balears 4.5%
+- [ ] Phase distribution by sponsor type — blocked on classifying sponsors
 - [ ] Sponsor structure
 - [x] Geography (choropleth) -- region and province level,
       `analysis/geography.py`, both geometries vendored in `data/geo/` with
