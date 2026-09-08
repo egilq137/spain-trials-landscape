@@ -177,7 +177,15 @@ def write_sponsor_charts(con, chart_dir=CHART_DIR):
     sponsors.phase_four_figure(phase_four).write_html(
         phase_path, include_plotlyjs="cdn", div_id=phase_path.stem)
     print("{}: {} class-years".format(phase_path, len(phase_four)))
-    return share_path, phase_path
+
+    families = sponsors.top_families(con)
+    trials = sum(count for _, count in volume.trials_per_year(con))
+    families_path = chart_dir / "top-sponsors.html"
+    sponsors.families_figure(families, trials).write_html(
+        families_path, include_plotlyjs="cdn", div_id=families_path.stem)
+    print("{}: {} led by {} with {:,}".format(
+        families_path, len(families), families[0][0], families[0][1]))
+    return share_path, phase_path, families_path
 
 
 def main():
