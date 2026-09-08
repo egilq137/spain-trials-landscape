@@ -1453,6 +1453,47 @@ named-individual fields are dropped, and for the specific reasons given in
   non-commercial research shrinking in Spain. Testable once sponsors are
   classified, and a reason to do that question next.
 - **Sponsor structure:** industry vs. academic/public share; top sponsors.
+  *Share answered; top sponsors still to do.* The database stores the sponsor
+  name and nothing else, so the classification is made in `analysis/` where it
+  can be argued with: legal-form and institutional markers settle 91.6% of
+  trials, an enumerated list settles every sponsor with 5+ trials that they
+  cannot, and the rest is **`Unclassified` rather than forced** — 644 trials,
+  5.4%. **Industry 9,407 (79.5%), academic or public 1,783 (15.1%).**
+
+  Patterns alone fail here in a way worth recording: the 8.4% the markers miss
+  are not a random tail but some of the largest sponsors in the corpus —
+  `Sanofi-Aventis Recherche & Developpement`, `Janssen - Cilag International`,
+  `Argenx`, `BioNTech SE` — whose names carry no legal form. A rule loose
+  enough to catch them also catches the academic cooperative groups (SOLTI,
+  Unicancer, EORTC, LYSARC, HOVON), which are what make the academic column
+  mean anything. Hence: patterns generate candidates, the list decides.
+
+  **Industry's share is rising, 76.0% → 85.8%** — but the unclassified share
+  fell from 8.8% to 2.7% over the same window as registry names got more
+  complete, so part of that is trials becoming classifiable. Measured against
+  classified trials only, the rise is **83.3% → 88.1%**, about half the crude
+  move. The chart draws both lines.
+
+  **The two classes run different research.** Industry: 25.5% phase I, 3.5%
+  phase IV. Academic: 12.3% phase I, **33.6% phase IV** — a tenfold
+  difference. Industry does first-in-human and registration; academia does
+  post-marketing optimisation of drugs that already exist.
+
+  Which settles the hypothesis raised under phase distribution, in the
+  negative. The corpus-wide phase IV decline is **not** academic sponsors
+  doing less phase IV: their intensity is flat and ends higher (30.4% → 41.0%).
+  It is industry abandoning phase IV (6.4% → 2.1%, a two-thirds fall) plus
+  academic sponsors becoming a smaller share of the corpus (15.2% → 11.6%).
+  A crude rate fell because one group did less of the thing and the group
+  that does most of it got smaller — the same decomposition as the phase I
+  chart, in the opposite direction, and the third time this phase that
+  stratifying changed the answer.
+
+  **Named individuals** (54 sponsors, PROJECT_SPEC 3.2b): counted as academic,
+  since an investigator-sponsored trial is exactly non-commercial research,
+  and displayed as `Individual investigator`. No individual sponsors more than
+  two trials, so nothing analytical is lost, and the decision is one label in
+  one place if it should be revisited.
 - **Geography:** which CCAA / hospitals host the most trial activity (choropleth
   map; Madrid-specific angle for the target audience). *Answered at region
   level.* **The map measures participation, not ownership**: trials are
@@ -1888,8 +1929,14 @@ and would have to be in the model.
 - [ ] Phase distribution by region — deferred to the dashboard, where it is a
       filter rather than a chart. Phase I share runs Navarra 24.9%, Madrid
       21.8%, Cataluña 20.2% against País Vasco 5.8% and Balears 4.5%
-- [ ] Phase distribution by sponsor type — blocked on classifying sponsors
-- [ ] Sponsor structure
+- [x] Phase distribution by sponsor type — answered above
+- [x] Sponsor structure, part 1: industry vs academic/public share, and the
+      phase split by class (`analysis/sponsors.py`)
+- [ ] Sponsor structure, part 2: top sponsors, which needs corporate families
+      — `Lilly S.A.` (101) against `Eli Lilly & Co.` (95), six AstraZeneca
+      entities, three Roche. 74 sponsors hold 46% of trials, so the ranking
+      error is concentrated in the top of the list
+- [ ] Phase distribution by sponsor type — now unblocked
 - [x] Geography (choropleth) -- region and province level,
       `analysis/geography.py`, both geometries vendored in `data/geo/` with
       their licence

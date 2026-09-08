@@ -15,7 +15,7 @@ promise.
 import sqlite3
 from pathlib import Path
 
-from analysis import geography, phases, therapeutic, volume
+from analysis import geography, phases, sponsors, therapeutic, volume
 
 # div_id is pinned to the file name on every write_html below. Plotly
 # generates a fresh uuid otherwise, so re-running the analysis would rewrite
@@ -160,6 +160,26 @@ def write_phase_charts(con, chart_dir=CHART_DIR):
     return mix_path, early_path, heatmap_path
 
 
+def write_sponsor_charts(con, chart_dir=CHART_DIR):
+    rows = sponsors.classified_studies(con)
+    chart_dir.mkdir(parents=True, exist_ok=True)
+
+    shares = sponsors.share_by_year(rows)
+    share_path = chart_dir / "sponsor-share.html"
+    sponsors.share_figure(shares).write_html(
+        share_path, include_plotlyjs="cdn", div_id=share_path.stem)
+    print("{}: industry {:.1f}% to {:.1f}%".format(
+        share_path, shares[0][1][sponsors.INDUSTRY],
+        shares[-1][1][sponsors.INDUSTRY]))
+
+    phase_four = sponsors.phase_four_by_year(con, rows)
+    phase_path = chart_dir / "phase-four-by-sponsor.html"
+    sponsors.phase_four_figure(phase_four).write_html(
+        phase_path, include_plotlyjs="cdn", div_id=phase_path.stem)
+    print("{}: {} class-years".format(phase_path, len(phase_four)))
+    return share_path, phase_path
+
+
 def main():
     con = open_database()
     try:
@@ -169,6 +189,7 @@ def main():
         write_area_race_chart(con)
         write_geography_charts(con)
         write_phase_charts(con)
+        write_sponsor_charts(con)
     finally:
         con.close()
 
