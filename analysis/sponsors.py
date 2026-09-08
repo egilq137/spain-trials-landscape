@@ -15,14 +15,14 @@ catch academic cooperative groups, which is why the exceptions are listed by
 hand instead.
 
 **Three classes, not two.** Anything the markers and the list cannot settle is
-`Unclassified` and is shown as such: 595 trials, 5.0%. Forcing them into one
+`Unclassified` and is shown as such: 576 trials, 4.9%. Forcing them into one
 of the two real classes would move 5% of the corpus into whichever answer the
 chart was trying to make, which is exactly the failure this project keeps
-trying not to commit. Industry 9,456 (79.9%), academic or public 1,783
+trying not to commit. Industry 9,475 (80.1%), academic or public 1,783
 (15.1%).
 
 **And the unclassified share is not constant**, which matters more than its
-size: it falls from 7.9% of trials in 2013 to 2.7% in 2026 as registry names
+size: it falls from 7.8% of trials in 2013 to 2.7% in 2026 as registry names
 got more complete. So part of the rising industry share is trials becoming
 classifiable rather than sponsors changing, and `share_figure` draws the
 industry line twice -- once over all trials, once over the classified only.
@@ -155,7 +155,7 @@ def classify(name):
     `Novartis Farmacéutica` and `Janssen R&D Ireland` carry no legal form and
     no institutional word, so the markers give up on them, and membership of
     a corporate family settles it -- every family in FAMILIES is a company.
-    That is worth 49 trials that were Unclassified before the families
+    That is worth 68 trials that were Unclassified before the families
     existed.
 
     It comes second, not first, because a marker is direct evidence about
@@ -284,7 +284,7 @@ def share_figure(shares):
     """Who sponsors each year's trials, as three shares that sum to 100%.
 
     A fourth line carries industry as a share of the *classified* trials
-    only. The unclassified share falls from 7.9% to 2.7% across the window --
+    only. The unclassified share falls from 7.8% to 2.7% across the window --
     registry names got more complete -- so part of the crude industry rise is
     trials becoming classifiable rather than sponsors changing. The muted line
     is what is left when that is taken out, and it is about half the move.
@@ -305,7 +305,7 @@ def share_figure(shares):
     return _layout(
         fig, "Industry sponsors four trials in five, and the share is rising",
         "A trial has exactly one sponsor, so the three classes sum to 100%."
-        "<br>The muted line removes the unclassified, which shrank from 7.9% "
+        "<br>The muted line removes the unclassified, which shrank from 7.8% "
         "to 2.7% as registry names got more complete.",
         "share of trials authorised")
 
@@ -337,7 +337,7 @@ def phase_four_figure(rows):
 # --- corporate families ----------------------------------------------------
 #
 # 2,957 sponsors is a list of legal entities, not of companies. Novartis files
-# under eight spellings and Roche under thirteen, so a ranking of the raw
+# under ten spellings and Roche under fourteen, so a ranking of the raw
 # column answers "which legal entity signed the most protocols" when the
 # question people mean is "which company is behind the most Spanish trials".
 # Resolving that is entity resolution, which PROJECT_SPEC 3.2c keeps out of
@@ -365,6 +365,17 @@ def phase_four_figure(rows):
 # wholly owned subsidiary of Pfizer)`, `Millennium Pharmaceuticals, Inc., a
 # wholly owned subsidiary of Takeda` -- so a pattern that looks anywhere in
 # the name picks up acquisitions without anyone having to know about them.
+#
+# **When an acquisition is merged, and when it is not.** Two cases merge: an
+# arm the parent owned for the whole window (Genentech has been Roche's since
+# 2009, Genzyme Sanofi's since 2011, MedImmune AstraZeneca's since 2007), and
+# a name that declares its parent, where the registry states the relationship
+# rather than us inferring it. Companies bought *during* the window and still
+# filing under their own name are left alone: Celgene, Seagen, Actelion, Kite
+# and Baxalta each ran trials here for years before their buyer owned them,
+# and crediting those trials backwards would misdate the corpus. The rule is
+# the window, not the present day, and it is why Celgene still has its own
+# row.
 #
 # First match wins, so the exceptions come first. A sponsor matching nothing
 # keeps its own name and is its own family: most of the 2,957 are.
@@ -397,6 +408,27 @@ FAMILIES = (
     (r"\bServier\b", "Servier"),
     (r"\bAstellas\b", "Astellas"),
     (r"\bIpsen\b", "Ipsen"),
+
+    # --- second pass, from reading docs/sponsor-families.html ---------------
+    # A rule cannot report the merge it failed to make, so these came from
+    # scanning what the first pass left alone, biggest first. Four are arms
+    # sharing no token with their parent, findable only by knowing about
+    # them; five are one organisation spelling its own name several ways.
+    (r"\bGenentech\b", "Roche"),
+    (r"\bGenzyme\b", "Sanofi"),
+    (r"\bMedImmune\b", "AstraZeneca"),
+    (r"Millennium Pharmaceuticals", "Takeda"),
+    (r"\bUCB\b", "UCB"),
+    (r"\bEisai\b", "Eisai"),
+    (r"ViiV Healthcare", "ViiV Healthcare"),
+    # One company under two names: BeiGene renamed itself BeOne Medicines.
+    (r"\bBeiGene\b|\bBeOne Medicines\b", "BeiGene (BeOne Medicines)"),
+    # An S.L. and the same name without it. Its own description is
+    # "independent research organisation", which is why it was left
+    # Unclassified in the first pass; the S.L. spelling settles it as a
+    # commercial entity, which is all "Industry" claims here.
+    (r"Medica Scientia Innovation Research",
+     "Medica Scientia Innovation Research (MedSIR)"),
 )
 
 
@@ -463,7 +495,7 @@ def families_figure(families, trials):
             text="Top sponsors, once the corporate families are merged",
             subtitle=dict(
                 text="A company files under many legal entities: Novartis "
-                     "under 10 spellings, Roche under 13.<br>Unmerged, the "
+                     "under 10 spellings, Roche under 14.<br>Unmerged, the "
                      "list is led by AstraZeneca AB with 348 — an entity, "
                      "not a company.",
                 font=dict(size=12, color=MUTED)),
@@ -476,3 +508,140 @@ def families_figure(families, trials):
     fig.update_xaxes(visible=False, range=[0, max(counts) * 1.12])
     fig.update_yaxes(showgrid=False, linecolor=GRID, ticks="")
     return fig
+
+
+# --- the review page -------------------------------------------------------
+#
+# The rules above are the artifact; the groups they produce are derived. This
+# renders both, because "read every merge before accepting it" needs somewhere
+# to do the reading, and a console dump is not somewhere.
+#
+# The second table is the one that earns the page. It lists every sponsor that
+# joined no family, biggest first, which is the only way to notice a family
+# that should exist and does not -- a rule cannot report the merge it failed
+# to make.
+
+def family_review(con, since=COVERAGE_START):
+    """(merged, unmerged) -- what the rules did, and what they left alone.
+
+    merged:   [(family, trials, [(spelling, trials)])], biggest family first
+    unmerged: [(sponsor, trials, class)], biggest first
+    """
+    members = collections.defaultdict(list)
+    for name, trials in con.execute(
+            """SELECT sp.promotor, count(*)
+                 FROM studies st
+                 JOIN sponsors sp ON sp.sponsor_id = st.sponsor_id
+                WHERE st.fecha_autorizacion_aemps >= ?
+             GROUP BY sp.promotor""", ("{}-01-01".format(since),)):
+        members[family_of(name)].append((name, trials))
+
+    merged, unmerged = [], []
+    for family, spellings in members.items():
+        total = sum(trials for _, trials in spellings)
+        if len(spellings) > 1:
+            merged.append((family, total,
+                           sorted(spellings, key=lambda s: -s[1])))
+        else:
+            unmerged.append((family, total, classify(spellings[0][0])))
+    merged.sort(key=lambda row: -row[1])
+    unmerged.sort(key=lambda row: -row[1])
+    return merged, unmerged
+
+
+REVIEW_STYLE = """
+body {{ margin: 0; padding: 32px 40px 64px; background: {surface};
+        color: {ink}; font: 14px/1.5 system-ui, sans-serif; max-width: 1000px; }}
+h1 {{ font-size: 20px; font-weight: 600; margin: 0 0 4px; }}
+h2 {{ font-size: 16px; font-weight: 600; margin: 40px 0 4px; }}
+p  {{ color: {muted}; margin: 4px 0 16px; max-width: 66ch; }}
+table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+th {{ text-align: left; font-weight: 600; color: {muted}; padding: 6px 10px;
+      border-bottom: 1px solid {grid}; }}
+td {{ padding: 4px 10px; border-bottom: 1px solid {grid};
+      vertical-align: top; }}
+td.n {{ text-align: right; font-variant-numeric: tabular-nums;
+        white-space: nowrap; }}
+tr.family td {{ font-weight: 600; border-bottom: none; padding-top: 14px; }}
+tr.spelling td {{ color: {muted}; }}
+tr.spelling td.name {{ padding-left: 28px; }}
+.tag {{ font-size: 11px; color: {muted}; }}
+input {{ font: 13px system-ui, sans-serif; padding: 6px 10px; width: 320px;
+         border: 1px solid {grid}; border-radius: 4px; margin-bottom: 12px; }}
+"""
+
+
+def review_page(merged, unmerged):
+    """A self-contained page: every merge, and everything left unmerged."""
+    import html
+
+    def row(cells, css=""):
+        return "<tr{}>{}</tr>".format(
+            ' class="{}"'.format(css) if css else "",
+            "".join(cells))
+
+    lines = ["<!doctype html><html lang='en'><head><meta charset='utf-8'>",
+             "<title>Sponsor families</title><style>",
+             REVIEW_STYLE.format(surface=SURFACE, ink=INK, muted=MUTED,
+                                 grid=GRID),
+             "</style></head><body>",
+             "<h1>Sponsor families</h1>",
+             "<p>Every merge the rules in <code>analysis/sponsors.py</code> "
+             "made, and every sponsor they left alone. Generated by "
+             "<code>run_analysis.py</code>, so it cannot drift from the "
+             "rules it documents. Counts are trials authorised since "
+             "{}.</p>".format(COVERAGE_START),
+             "<h2>{} families, {:,} trials</h2>".format(
+                 len(merged), sum(total for _, total, _ in merged)),
+             "<p>Each family is one company filing under several legal "
+             "entities. Read the spellings under a family: if one of them "
+             "does not belong to that company, the rule that caught it is "
+             "wrong.</p>",
+             "<table><thead>",
+             row(["<th>Sponsor as the registry spells it</th>",
+                  "<th class='n'>Trials</th>"]),
+             "</thead><tbody>"]
+
+    for family, total, spellings in merged:
+        lines.append(row(["<td>{}</td>".format(html.escape(family)),
+                          "<td class='n'>{:,} <span class='tag'>in {} "
+                          "spellings</span></td>".format(total,
+                                                         len(spellings))],
+                         "family"))
+        for name, trials in spellings:
+            lines.append(row(
+                ["<td class='name'>{}</td>".format(html.escape(name)),
+                 "<td class='n'>{:,}</td>".format(trials)], "spelling"))
+
+    lines += ["</tbody></table>",
+              "<h2>{:,} sponsors joined no family</h2>".format(len(unmerged)),
+              "<p><strong>This is the table to scan.</strong> A rule cannot "
+              "report the merge it failed to make, so the only way to notice "
+              "a missing family is to read what was left alone, biggest "
+              "first. Anything here with a familiar corporate name, or two "
+              "rows that are obviously the same organisation, is a family "
+              "the rules missed.</p>",
+              "<input id='filter' type='search' placeholder='Filter "
+              "sponsors\u2026' autocomplete='off'>",
+              "<table><thead>",
+              row(["<th>Sponsor</th>", "<th>Class</th>",
+                   "<th class='n'>Trials</th>"]),
+              "</thead><tbody id='rows'>"]
+
+    for name, trials, sponsor_class in unmerged:
+        lines.append(row(["<td>{}</td>".format(html.escape(name)),
+                          "<td class='tag'>{}</td>".format(sponsor_class),
+                          "<td class='n'>{:,}</td>".format(trials)]))
+
+    lines += ["</tbody></table>",
+              "<script>",
+              "const box = document.getElementById('filter');",
+              "const rows = [...document.querySelectorAll('#rows tr')];",
+              "box.addEventListener('input', () => {",
+              "  const q = box.value.toLowerCase();",
+              "  for (const tr of rows)",
+              "    tr.hidden = q && !tr.cells[0].textContent"
+              ".toLowerCase().includes(q);",
+              "});",
+              "</script></body></html>"]
+    return "\n".join(lines)
