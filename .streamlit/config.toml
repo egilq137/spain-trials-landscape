@@ -1,0 +1,12 @@
+# Palette chosen after reviewing datarocks.co.nz / thedataschool.co.uk dashboard
+# colour guidelines: one muted accent (teal) reused for every single-series
+# chart, plus a "muted earth" categorical set for phase mix / sponsor rankings
+# (see analysis/ for where each is used). Diverges from the bright blue
+# currently hardcoded in analysis/volume.py -- see the note in the handoff
+# about whether to update the static charts to match.
+[theme]
+base = "light"
+primaryColor = "#2f6f6b"
+backgroundColor = "#f5f4f0"
+secondaryBackgroundColor = "#dcd8d0"
+textColor = "#201f1c"
