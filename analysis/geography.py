@@ -26,9 +26,16 @@ quietly dropped -- a map would otherwise imply a coverage it does not have.
 """
 
 import collections
+import csv
 import json
 
-from analysis.volume import COVERAGE_START, INK, MUTED, SURFACE
+from analysis.volume import COVERAGE_START, GRID, INK, MUTED, SERIES, SURFACE
+
+
+def _first_of(year):
+    """January 1st of `year`, as the stored ISO text. See volume.january_first
+    for why the comparison is against a date rather than a substring."""
+    return "{}-01-01".format(year)
 
 # ---------------------------------------------------------------------------
 # The seven centres whose province disagrees with their postcode
@@ -216,6 +223,123 @@ def unlocated(pairs, trials):
     return trials - len({study_id for study_id, _ in pairs})
 
 
+# ---------------------------------------------------------------------------
+# Sites as points: the dot map
+# ---------------------------------------------------------------------------
+# A different question from the choropleths above, and a different unit. The
+# maps answer "which regions take part"; this answers "where are the sites".
+#
+# **The dots are centres, not trials.** A trial has no location -- its sites
+# do, 7.2 of them on average and up to 93 -- so a dot per trial would be a
+# dot per (trial, site) pair, about 6,000 marks stacked on the ~500 places
+# that actually exist in a year. The mark is the hospital; the trial count is
+# what it carries.
+#
+# Coordinates come from the postcode, so **every centre sharing a postcode
+# shares a point**. In a dense district several large hospitals land exactly
+# on top of each other. That is stated on the chart rather than jittered
+# apart: jitter would invent a precision the postcode does not have, and put
+# hospitals on streets they are not on.
+
+Site = collections.namedtuple(
+    "Site", "center_id name localidad provincia trials lat lon")
+
+
+def normalise_postcode(value):
+    """A postcode fit to look up, or None. The rule is deliberately narrow.
+
+    Three defects are documented in the schema and all three are repairable
+    without guessing: trailing punctuation (`28006,`), digit separators
+    (`28.223`), and a dropped leading zero, which is why `8214` is Barcelona
+    and not nowhere.
+
+    **Anything still holding a letter is refused rather than repaired**, and
+    that refusal is the point of the function. Stripping letters instead
+    turns `3584 AE` -- a Dutch postcode, Utrecht -- into `03584`, which is a
+    real place in Alicante. A rule that recovers eleven more centres by also
+    being able to move a hospital to another country is not worth eleven
+    centres.
+    """
+    digits = value.strip().replace(".", "").replace(",", "")
+    if not digits.isdigit():
+        return None
+    if len(digits) == 4:
+        digits = "0" + digits
+    return digits if len(digits) == 5 else None
+
+
+def load_postcodes(path):
+    """{postcode: (lat, lon)}. See data/geo/README.md for provenance."""
+    with open(path, encoding="utf-8") as handle:
+        rows = csv.reader(handle)
+        next(rows)
+        return {code: (float(lat), float(lon)) for code, lat, lon in rows}
+
+
+def site_activity(con, since=COVERAGE_START, until=None):
+    """[(center_id, name, localidad, provincia, postcode, trials)].
+
+    Counted over trials authorised in the window, so a centre that ran
+    nothing in it is absent rather than drawn as a zero -- an empty dot would
+    claim the hospital exists on the map and did nothing, when what the data
+    says is that it took part in no trial authorised in these years.
+    """
+    return list(con.execute(
+        """SELECT c.center_id, c.nombre, c.localidad, c.provincia,
+                  c.cod_postal, count(DISTINCT sc.study_id) AS trials
+             FROM centers c
+             JOIN study_centers sc ON sc.center_id = c.center_id
+             JOIN studies s ON s.identificador = sc.study_id
+            WHERE s.fecha_autorizacion_aemps >= ?
+              AND s.fecha_autorizacion_aemps < ?
+         GROUP BY c.center_id
+         ORDER BY trials DESC""",
+        (_first_of(since), _first_of((until or 9998) + 1))))
+
+
+def place_sites(rows, postcodes):
+    """([Site] biggest first, unplaced centres, unplaced trial-site links).
+
+    Pure, so the join between a centre and its coordinates can be tested
+    without a database or a file.
+
+    Two counts come back rather than one because they answer different
+    questions: how many hospitals are missing from the map, and how much
+    activity is missing with them. A hundred unplaceable centres that ran one
+    trial each is a different map from two that ran a hundred.
+    """
+    placed, lost_sites, lost_trials = [], 0, 0
+    for center_id, name, localidad, provincia, postcode, trials in rows:
+        point = postcodes.get(normalise_postcode(postcode or "") or "")
+        if point is None:
+            lost_sites += 1
+            lost_trials += trials
+            continue
+        placed.append(Site(center_id, name, localidad, provincia, trials,
+                           *point))
+    return (sorted(placed, key=lambda site: -site.trials),
+            lost_sites, lost_trials)
+
+
+def studies_at(con, center_id, since=COVERAGE_START, until=None):
+    """[(identificador, es_ctis, year)] for one centre, newest first.
+
+    What a reader gets after clicking a dot. The identifier is the key to the
+    registry that holds the record -- see analysis/registry.py, and note that
+    REEC itself publishes no per-study URL to link to.
+    """
+    return list(con.execute(
+        """SELECT s.identificador, s.es_ctis,
+                  substr(s.fecha_autorizacion_aemps, 1, 4) AS year
+             FROM studies s
+             JOIN study_centers sc ON sc.study_id = s.identificador
+            WHERE sc.center_id = ?
+              AND s.fecha_autorizacion_aemps >= ?
+              AND s.fecha_autorizacion_aemps < ?
+         ORDER BY s.fecha_autorizacion_aemps DESC""",
+        (center_id, _first_of(since), _first_of((until or 9998) + 1))))
+
+
 def load_geometry(path):
     """Polygons keyed by code. See data/geo/README.md for provenance."""
     with open(path, encoding="utf-8") as handle:
@@ -310,6 +434,91 @@ def figure(places, geometry, title, subtitle_text):
         geo2=dict(domain=dict(x=[0.0, 0.22], y=[0.0, 0.30]),
                   visible=False, bgcolor=SURFACE, **CANARIES))
     return fig
+
+
+def sites_figure(sites, title, subtitle_text):
+    """The dot map: one mark per centre, area proportional to trials.
+
+    **Area, not radius.** Plotly's `sizemode="area"` is what makes a hospital
+    with 400 trials read as four times one with 100; sizing the radius by the
+    count instead would draw it sixteen times the ink and overstate every
+    large site. The eye compares blobs by area whatever the code intended, so
+    the encoding has to be the one the eye is already using.
+
+    The Canaries are a second subplot at their own scale, as on the
+    choropleths, and sites are split between the two by longitude rather than
+    by province, since a point either falls in the inset's window or it does
+    not.
+    """
+    import plotly.graph_objects as go
+
+    biggest = max((site.trials for site in sites), default=1)
+
+    def dots(rows, geo):
+        return go.Scattergeo(
+            geo=geo, lon=[site.lon for site in rows],
+            lat=[site.lat for site in rows],
+            text=[site.name for site in rows],
+            customdata=[(site.localidad, site.trials) for site in rows],
+            mode="markers",
+            marker=dict(
+                size=[site.trials for site in rows],
+                sizemode="area",
+                # The largest mark is 34px across; every other follows from
+                # it. sizeref is Plotly's units-per-pixel-squared, so it is
+                # derived from the biggest value rather than tuned by hand,
+                # and a filtered year cannot silently rescale the map.
+                sizeref=2.0 * biggest / (34.0 ** 2),
+                sizemin=3,
+                color=SERIES, opacity=0.65,
+                line=dict(width=0.5, color=SURFACE)),
+            hovertemplate="<b>%{text}</b><br>%{customdata[0]}"
+                          "<br>%{customdata[1]:,} trials<extra></extra>")
+
+    mainland = [site for site in sites if site.lon > -12]
+    canaries = [site for site in sites if site.lon <= -12]
+
+    fig = go.Figure([dots(mainland, "geo"), dots(canaries, "geo2")])
+    fig.update_layout(
+        # y and yanchor are set rather than left to "auto", which puts the
+        # title *below* its own two-line subtitle here and overlaps them by
+        # eight pixels. Anchoring the block's top to the top of the paper
+        # makes the order the reading order whatever the subtitle wraps to.
+        title=dict(text=title, x=0, xref="paper", xanchor="left",
+                   y=0.98, yref="container", yanchor="top",
+                   subtitle=dict(text=subtitle_text,
+                                 font=dict(size=12, color=MUTED)),
+                   font=dict(size=17, color=INK)),
+        plot_bgcolor=SURFACE, paper_bgcolor=SURFACE, showlegend=False,
+        font=dict(family="system-ui, sans-serif", color=MUTED, size=12),
+        margin=dict(t=110, r=10, b=60, l=10), width=760, height=600,
+        annotations=[
+            dict(x=0.01, y=0.31, xref="paper", yref="paper", xanchor="left",
+                 showarrow=False, font=dict(size=10, color=MUTED),
+                 text="Canarias, at its own scale"),
+            dict(x=0, y=-0.09, xref="paper", yref="paper", xanchor="left",
+                 showarrow=False, font=dict(size=10, color=MUTED),
+                 text="Boundaries © EuroGeographics (Eurostat GISCO, NUTS). "
+                      "Sites placed by postcode (GeoNames, CC BY 4.0)")])
+    fig.update_geos(visible=True, projection_type="mercator", bgcolor=SURFACE,
+                    showcountries=True, showland=True,
+                    landcolor=SURFACE, countrycolor=GRID, coastlinecolor=GRID,
+                    showsubunits=False)
+    fig.update_layout(
+        geo=dict(domain=dict(x=[0, 1], y=[0, 1]), **MAINLAND),
+        geo2=dict(domain=dict(x=[0.0, 0.22], y=[0.0, 0.30]), **CANARIES))
+    return fig
+
+
+def sites_subtitle(sites, lost_sites, lost_trials, since, until):
+    """What the dots cannot say for themselves.
+
+    Two short lines rather than one long one: the figure is 760px wide and a
+    subtitle that runs past it is clipped rather than wrapped.
+    """
+    return ("Hospitals sharing a postcode share a point.<br>"
+            "{:,} sites have no usable postcode and are not here, nor are "
+            "the {:,} trials they ran.".format(lost_sites, lost_trials))
 
 
 def subtitle(places, geometry, unplaced, grain):

@@ -1,8 +1,8 @@
 # Geometry
 
-The only file in `data/` that is committed. `data/raw/` is gitignored because
-it is 208 MB and re-fetchable; this is 38 KB and would be tedious to rebuild
-by hand, so it lives in the repo and the provenance lives here.
+The only files in `data/` that are committed. `data/raw/` is gitignored
+because it is 208 MB and re-fetchable; these are small and would be tedious to
+rebuild by hand, so they live in the repo and the provenance lives here.
 
 ## `spain-ccaa.geojson`
 
@@ -71,3 +71,45 @@ merge would leave a province quietly missing an island.
 The three merged names are written out (`Illes Balears`, `Las Palmas`,
 `Santa Cruz de Tenerife`); the other 49 keep the NUTS `NAME_LATN`, which is
 why the map says `Alicante/Alacant` and `Araba/Álava`.
+
+## `postcodes.csv`
+
+11,150 rows of `cod_postal,lat,lon` -- every Spanish postal code, not only the
+812 this corpus uses. The whole table is kept so that a rebuilt database
+holding centres this one has never seen still places them; filtering to the
+812 would save 240 KB and turn a future load into a silent gap.
+
+| | |
+|---|---|
+| Source | GeoNames postal-code export, `ES.zip` → `ES.txt` |
+| URL | https://download.geonames.org/export/zip/ES.zip |
+| Retrieved | 2026-09-09 |
+| Projection | EPSG:4326 (WGS 84), as the geojson files |
+| Licence | **Creative Commons Attribution 4.0**, https://creativecommons.org/licenses/by/4.0/ |
+
+**Attribution is required wherever these points are published** -- the dot map
+carries "Sites placed by postcode (GeoNames, CC BY 4.0)" beside the
+EuroGeographics line.
+
+### How it was cut down
+
+The export is 37,867 rows, one per (postcode, place) pair, so a postcode with
+four named localities appears four times. Rows sharing a postcode were
+averaged into one point and rounded to five decimals, giving 11,150. Recorded
+here rather than scripted, the same rule as the geojson above: it ran once and
+the output is the artefact.
+
+### What a postcode centroid can and cannot say
+
+It is the centre of a postal district, so **every hospital sharing a postcode
+gets the same point**, and in dense districts several large hospitals land on
+top of each other. The dot map says so in its subtitle rather than jittering
+them apart, which would invent a precision the source does not have and put
+hospitals on streets they are not on.
+
+`analysis.geography.normalise_postcode` is what joins REEC's `cod_postal` to
+this table, and it repairs only the three defects the schema documents --
+trailing punctuation, digit separators, a dropped leading zero. **It refuses
+anything still holding a letter**, which costs 11 centres and is worth it:
+stripping letters instead turns `3584 AE`, a Dutch postcode, into `03584`,
+which is a real place in Alicante.

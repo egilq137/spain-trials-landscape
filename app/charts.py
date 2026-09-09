@@ -37,7 +37,7 @@ def render(figure, **kwargs):
     make this a mutation of the cache.
     """
     figure.update_layout(width=None)
-    st.plotly_chart(theme.apply(figure), **kwargs)
+    return st.plotly_chart(theme.apply(figure), **kwargs)
 
 
 def render_fixed(figure, **kwargs):
@@ -63,4 +63,4 @@ def render_fixed(figure, **kwargs):
     fixed size -- would fit more windows and would make the map smaller on
     every window, including the ones where it already fits.
     """
-    st.plotly_chart(theme.apply(figure), width="content", **kwargs)
+    return st.plotly_chart(theme.apply(figure), width="content", **kwargs)

@@ -131,5 +131,17 @@ def apply(figure):
         marker_line_color=SURFACE,
         colorbar_tickfont_color=MUTED,
         colorbar_title_font_color=MUTED)
-    figure.update_geos(bgcolor=SURFACE)
+
+    # Scattergeo carries the dot map. Only the two colours are touched: the
+    # marker sizes encode trial counts and are the figure's business, not the
+    # palette's.
+    figure.update_traces(
+        selector=dict(type="scattergeo"),
+        marker_color=ACCENT,
+        marker_line_color=SURFACE)
+
+    # The land and coastlines under the dots, which the choropleths do not
+    # draw because their polygons cover them.
+    figure.update_geos(bgcolor=SURFACE, landcolor=SURFACE,
+                       countrycolor=GRID, coastlinecolor=GRID)
     return figure
