@@ -25,6 +25,7 @@ DOCS_DIR = Path("docs")
 CHART_DIR = DOCS_DIR / "charts"
 REGIONS = Path("data") / "geo" / "spain-ccaa.geojson"
 PROVINCES = Path("data") / "geo" / "spain-provinces.geojson"
+POSTCODES = Path("data") / "geo" / "postcodes.csv"
 
 
 def open_database(path=DEFAULT_DB):
@@ -117,6 +118,22 @@ def write_map(con, grain, geometry_path, filename, title, chart_dir):
     return path
 
 
+def write_centre_review(con, docs_dir=DOCS_DIR):
+    """The page the centre duplicates get read on.
+
+    Not a chart, and nothing downstream depends on it: it is the list a
+    person has to read before any centre is merged, the same job
+    sponsor-families.html does for companies.
+    """
+    towns = geography.load_towns(POSTCODES)
+    groups = geography.centre_groups(con, towns)
+    path = docs_dir / "centre-duplicates.html"
+    path.write_text(geography.centres_review_page(groups), encoding="utf-8")
+    print("{}: {} candidate groups, {:,} trial-site links".format(
+        path, len(groups), sum(group.trials for group in groups)))
+    return path
+
+
 def write_geography_charts(con, chart_dir=CHART_DIR):
     write_map(con, "region", REGIONS, "regional-participation.html",
               "Where Spanish trials run: regional participation since {}"
@@ -206,6 +223,7 @@ def main():
         write_area_trend_chart(con)
         write_area_race_chart(con)
         write_geography_charts(con)
+        write_centre_review(con)
         write_phase_charts(con)
         write_sponsor_charts(con)
     finally:

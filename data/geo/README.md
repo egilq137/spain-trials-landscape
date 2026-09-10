@@ -74,10 +74,19 @@ why the map says `Alicante/Alacant` and `Araba/Álava`.
 
 ## `postcodes.csv`
 
-11,150 rows of `cod_postal,lat,lon` -- every Spanish postal code, not only the
-812 this corpus uses. The whole table is kept so that a rebuilt database
-holding centres this one has never seen still places them; filtering to the
-812 would save 240 KB and turn a future load into a silent gap.
+11,150 rows of `cod_postal,lat,lon,town` -- every Spanish postal code, not
+only the 812 this corpus uses. The whole table is kept so that a rebuilt
+database holding centres this one has never seen still places them; filtering
+to the 812 would save 400 KB and turn a future load into a silent gap.
+
+The `town` column is a **second, independent source for what town a postcode
+is in**, and it exists because REEC's own `localidad` is not always usable:
+twelve values have lost their accented characters to a mis-decoded byte
+(`M?laga`, `Logro?o`, `Iru?a`) and 174 are blank. `analysis.geography`
+falls back to this column for exactly those rows and **never overrides a
+readable one** -- Institut Català d'Oncologia's Girona campus carries
+L'Hospitalet's postcode, so a postcode-derived town would merge two real
+sites into one.
 
 | | |
 |---|---|
@@ -95,9 +104,16 @@ EuroGeographics line.
 
 The export is 37,867 rows, one per (postcode, place) pair, so a postcode with
 four named localities appears four times. Rows sharing a postcode were
-averaged into one point and rounded to five decimals, giving 11,150. Recorded
-here rather than scripted, the same rule as the geojson above: it ran once and
-the output is the artefact.
+averaged into one point and rounded to five decimals, and the first place name
+for each postcode was kept as `town`, giving 11,150. Recorded here rather than
+scripted, the same rule as the geojson above: it ran once and the output is
+the artefact.
+
+GeoNames is inconsistent about accents in its own place names -- `Malaga` and
+`Leon` unaccented beside `Logroño` and `Pamplona/Iruña`. It does not matter
+here, because every comparison goes through
+`analysis.geography.normalise_town`, which strips accents and the qualifier
+after a comma, slash or bracket.
 
 ### What a postcode centroid can and cannot say
 

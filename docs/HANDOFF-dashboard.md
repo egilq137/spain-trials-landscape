@@ -144,6 +144,35 @@ Recommended: commit the 14 MB database, and write the reason into
 
 ---
 
+## Working on it: restart the server after touching `analysis/`
+
+**Streamlit's auto-reload does not re-import modules under `analysis/`.** It
+reloads the page script and the files in `app/`, and keeps the old
+`analysis.*` in memory. Editing a query and seeing nothing change is the mild
+version; the loud version is a `TypeError` about argument counts, from a new
+`app/views/*.py` calling an old `analysis/*.py` that has not grown the
+parameter yet. Both were hit repeatedly while building the geography page,
+and neither is a bug in the code being edited.
+
+So: after editing anything under `analysis/`, stop the server and start it
+again. "Rerun" and "Always rerun" are not enough. Only `app/` edits hot-reload
+honestly.
+
+Two other environment notes from the same phase:
+
+- **`pyarrow` is blocked on the development machine** by an Application
+  Control policy, surfacing as `ImportError: DLL load failed while importing
+  lib`. Nothing in the app needs it, but `st.dataframe`, `st.table` and
+  `st.write` of anything table-shaped will crash. Use `st.markdown` and
+  `st.metric`, which is what the pages do.
+- **`use_container_width` is the old spelling.** In Streamlit 1.63
+  `st.plotly_chart(width="stretch")` is the default and passing
+  `use_container_width=True` warns. Build order step 6 below is out of date on
+  this point; see `app/charts.py`, which also explains why the maps are the
+  one thing that must *not* stretch.
+
+---
+
 ## Constraints that are not negotiable
 
 - **Named individuals must never be displayed.** PROJECT_SPEC §3.2b. 54

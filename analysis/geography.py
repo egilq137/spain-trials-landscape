@@ -28,7 +28,9 @@ quietly dropped -- a map would otherwise imply a coverage it does not have.
 import collections
 import csv
 import json
+import unicodedata
 
+from analysis.sponsors import REVIEW_STYLE
 from analysis.volume import COVERAGE_START, GRID, INK, MUTED, SERIES, SURFACE
 
 
@@ -243,7 +245,7 @@ def unlocated(pairs, trials):
 # hospitals on streets they are not on.
 
 Site = collections.namedtuple(
-    "Site", "center_id name localidad provincia trials lat lon")
+    "Site", "center_ids name localidad provincia trials lat lon")
 
 
 def normalise_postcode(value):
@@ -274,7 +276,193 @@ def load_postcodes(path):
     with open(path, encoding="utf-8") as handle:
         rows = csv.reader(handle)
         next(rows)
-        return {code: (float(lat), float(lon)) for code, lat, lon in rows}
+        return {code: (float(lat), float(lon)) for code, lat, lon, _ in rows}
+
+
+def load_towns(path):
+    """{postcode: town}, the same file's other column.
+
+    A source of truth for what town a postcode is in, which REEC's own
+    `localidad` is not: twelve of its values have lost their accented
+    characters to a mis-decoded byte -- `M?laga`, `Logro?o`, `Iru?a` -- and
+    174 are blank. Both kinds are unusable for deciding that two rows are the
+    same place, and both have a postcode that is not.
+    """
+    with open(path, encoding="utf-8") as handle:
+        rows = csv.reader(handle)
+        next(rows)
+        return {code: town for code, _, _, town in rows}
+
+
+def is_readable(localidad):
+    """Whether a town name survived being stored.
+
+    A `?` or a replacement character in the middle of a town name is a byte
+    that did not make it through some encoding on the way here, not a town
+    anyone wrote. `M?laga` is Málaga and cannot be matched against it, so it
+    is treated as missing and resolved from the postcode instead.
+    """
+    return bool(localidad.strip()) and not ("?" in localidad
+                                            or "�" in localidad)
+
+
+def resolve_town(localidad, cod_postal, towns):
+    """The town to compare two centre rows on, or '' when there is none.
+
+    **The reported town wins whenever it is readable.** Deriving it from the
+    postcode instead would be tidier and would be wrong: Institut Català
+    d'Oncologia's Girona campus carries L'Hospitalet's postcode, 08908 -- a
+    documented error, CHECKED_UNCHANGED above -- so a postcode-derived town
+    would move Girona to L'Hospitalet and merge two real sites into one. The
+    locality settles every case in the correction table too, for the same
+    reason.
+
+    So the postcode is a fallback for the rows where the reported town cannot
+    be used at all, and never a correction of the rows where it can.
+    """
+    if is_readable(localidad):
+        return normalise_town(localidad)
+    code = normalise_postcode(cod_postal or "")
+    return normalise_town(towns.get(code, "")) if code else ""
+
+
+def normalise_town(localidad):
+    """A town name comparable across spellings, or '' when there is none.
+
+    REEC writes one town several ways: `Pamplona/Iruña` beside `Pamplona`,
+    `Sabadell, Barcelona` beside `Sabadell`, `Manresa (Barcelona)` beside
+    `Manresa`. All three shapes qualify the town with something larger, so
+    everything from the first separator onwards is dropped, and what is left
+    is compared without case or accents.
+    """
+    text = localidad.split(",")[0].split("/")[0].split("(")[0]
+    text = unicodedata.normalize("NFKD", text.strip().lower())
+    return " ".join("".join(c for c in text if not unicodedata.combining(c))
+                    .split())
+
+
+# Postcodes that must not join rows under one reference, because the postcode
+# is the field that is wrong. Read before being written down, the same rule
+# CENTER_CORRECTIONS follows, and the same case it already records: Institut
+# Català d'Oncologia files L'Hospitalet, Badalona and Girona under one
+# reference and gives all three L'Hospitalet's postcode, so linking on it
+# would fuse three real hospitals into one.
+#
+# It is the only one in the corpus. 80 reference-and-postcode groups would
+# merge rows whose towns disagree; 79 of them disagree because one row wrote
+# the province in the town field, or lost an accent, or wrote the hospital's
+# own name there. This is the one where the towns are simply three towns.
+KEEP_APART = {
+    ("ORG-100030394", "08908"):
+        "Institut Català d'Oncologia: L'Hospitalet, Badalona and Girona are "
+        "three hospitals sharing one reference, and the Girona and Badalona "
+        "rows carry L'Hospitalet's postcode. See CHECKED_UNCHANGED above.",
+}
+
+
+def _link(parent, one, other):
+    """Union-find, so that a chain of agreements resolves to one site.
+
+    Needed because the two signals overlap rather than nest: Althaia has rows
+    at three postcodes and rows whose town field holds the province, and it
+    takes both -- postcode joining the province-named row to a Manresa row,
+    town joining that row to the other postcodes -- to see that all seven are
+    one hospital.
+    """
+    while parent[one] != one:
+        one = parent[one]
+    while parent[other] != other:
+        other = parent[other]
+    parent[max(one, other)] = min(one, other)
+
+
+def identities(rows, towns):
+    """{center_id: identity} -- which rows are one site, decided together.
+
+    `rows` are (center_id, center_key, localidad, cod_postal, referencia).
+    Decided for the whole set at once rather than row by row, because one of
+    the rules needs the row's neighbours: a row with no usable town at all
+    takes the town of its key when its key has exactly one. Ramón y Cajal has
+    a row with no locality and no postcode, and every other row under that
+    reference says Madrid, so Madrid is what it is. Where a key has rows in
+    two towns, a blank row could belong to either and stays its own site.
+
+    An identity is either a (reference, town) pair -- the rows sharing one
+    are one hospital -- or the centre's own id, which shares with nothing.
+    """
+    resolved, by_key = {}, collections.defaultdict(set)
+    prepared = []
+    for center_id, center_key, localidad, cod_postal, referencia in rows:
+        town = resolve_town(localidad or "", cod_postal, towns)
+        resolved[center_id] = town
+        prepared.append((center_id, center_key, referencia,
+                         normalise_postcode(cod_postal or "")))
+        if town:
+            by_key[center_key].add(town)
+
+    # A row with no town of its own takes its key's, when its key has one.
+    for center_id, center_key, _, _ in prepared:
+        if not resolved[center_id] and len(by_key[center_key]) == 1:
+            resolved[center_id] = next(iter(by_key[center_key]))
+
+    parent = {center_id: center_id for center_id, _, _, _ in prepared}
+    for referencia, group in _by_reference(prepared).items():
+        for field, index in ((resolved, 0), (None, 3)):
+            seen = {}
+            for center_id, _, _, postcode in group:
+                value = resolved[center_id] if field else postcode
+                if not value or (field is None
+                                 and (referencia, value) in KEEP_APART):
+                    continue
+                if value in seen:
+                    _link(parent, seen[value], center_id)
+                else:
+                    seen[value] = center_id
+
+    out = {}
+    for center_id, _, referencia, _ in prepared:
+        if not referencia:
+            out[center_id] = center_id
+            continue
+        root = center_id
+        while parent[root] != root:
+            root = parent[root]
+        out[center_id] = ((referencia, root) if resolved[center_id] or
+                          root != center_id else center_id)
+    return out
+
+
+def _by_reference(prepared):
+    groups = collections.defaultdict(list)
+    for row in prepared:
+        if row[2]:
+            groups[row[2]].append(row)
+    return groups
+
+
+def merge_key(referencia, town):
+    """What decides that two centre rows are one site, or None for neither.
+
+    **A registry reference and a town, and nothing else.** The reference says
+    the rows belong to the same registered organisation; the town says they
+    are the same site of it rather than two. Either alone is not enough:
+    Institut Català d'Oncologia shares one reference across L'Hospitalet,
+    Badalona and Girona, which are three real sites, and `Clínica privada`
+    shares a town with other private clinics that are not it.
+
+    Rows with no reference are never merged. That leaves 252 groups holding
+    2,163 trial-site links -- 5.6% of the duplicated ones -- unmerged on
+    purpose, because their key is derived from the name and the name is
+    exactly what is unreliable. It is also where the town stops being
+    trustworthy: Corporació Sanitària Parc Taulí is filed under Sabadell and
+    under Barcelona, its province, and no rule reading those two strings can
+    tell that from two genuine towns.
+
+    `town` is already resolved and normalised -- see `resolve_town`.
+    """
+    if not referencia or not town:
+        return None
+    return (referencia, town)
 
 
 def _area_join(area):
@@ -286,7 +474,8 @@ def _area_join(area):
             (area,))
 
 
-def site_activity(con, since=COVERAGE_START, until=None, area=None):
+def site_activity(con, since=COVERAGE_START, until=None, area=None,
+                  towns=None):
     """[(center_id, name, localidad, provincia, postcode, trials)].
 
     Counted over trials authorised in the window, so a centre that ran
@@ -305,28 +494,51 @@ def site_activity(con, since=COVERAGE_START, until=None, area=None):
     but the filter picks one, so within a filtered view each trial is counted
     once per centre and the marks stay comparable.
     """
+    towns = {} if towns is None else towns
     join, params = _area_join(area)
     rows = con.execute(
         """SELECT c.center_id, c.nombre, c.localidad, c.provincia,
-                  c.cod_postal, c.center_key,
-                  count(DISTINCT s.identificador) AS trials
+                  c.cod_postal, c.center_key, c.referencia, s.identificador
              FROM centers c
              JOIN study_centers sc ON sc.center_id = c.center_id
              JOIN studies s ON s.identificador = sc.study_id
              {}
             WHERE s.fecha_autorizacion_aemps >= ?
-              AND s.fecha_autorizacion_aemps < ?
-         GROUP BY c.center_id
-         ORDER BY trials DESC""".format(join),
+              AND s.fecha_autorizacion_aemps < ?""".format(join),
         params + (_first_of(since), _first_of((until or 9998) + 1)))
 
-    corrected = []
-    for cid, name, localidad, provincia, postcode, key, trials in rows:
+    # Every (centre, study) pair rather than a count per centre, because the
+    # trials of merged rows have to be counted distinctly: a study listed
+    # under both spellings of one hospital is one trial there, and summing
+    # two counts would make it two. Same reason _pairs fetches its pairs.
+    rows = list(rows)
+    identity_of = identities(
+        {(cid, key, localidad, postcode, referencia)
+         for cid, _, localidad, _, postcode, key, referencia, _ in rows},
+        towns)
+
+    studies = collections.defaultdict(set)
+    members = collections.defaultdict(dict)
+    per_centre = collections.Counter()
+    for (cid, name, localidad, provincia, postcode, key, referencia,
+         study_id) in rows:
         correction = CENTER_CORRECTIONS.get((key, localidad, postcode))
         if correction is not None:
             provincia = correction.provincia
-        corrected.append((cid, name, localidad, provincia, postcode, trials))
-    return corrected
+        identity = identity_of[cid]
+        studies[identity].add(study_id)
+        members[identity][cid] = (name, localidad, provincia, postcode)
+        per_centre[cid] += 1
+
+    merged = []
+    for identity, ids in members.items():
+        # The spelling carrying the most trials speaks for the site: it is
+        # the one the registry used most often, and its postcode is the one
+        # most of the activity was actually filed under -- which matters,
+        # because that postcode is what puts the mark on the map.
+        principal = max(ids, key=lambda cid: per_centre[cid])
+        merged.append((tuple(ids), *ids[principal], len(studies[identity])))
+    return sorted(merged, key=lambda row: -row[5])
 
 
 # Connectors are lowercase anywhere inside a name: Hospital Clinic de
@@ -456,13 +668,13 @@ def place_sites(rows, postcodes):
     trial each is a different map from two that ran a hundred.
     """
     placed, lost_sites, lost_trials = [], 0, 0
-    for center_id, name, localidad, provincia, postcode, trials in rows:
+    for center_ids, name, localidad, provincia, postcode, trials in rows:
         point = postcodes.get(normalise_postcode(postcode or "") or "")
         if point is None:
             lost_sites += 1
             lost_trials += trials
             continue
-        placed.append(Site(center_id, display_name(name), localidad,
+        placed.append(Site(center_ids, display_name(name), localidad,
                            provincia, trials, *point))
     return (sorted(placed, key=lambda site: -site.trials),
             lost_sites, lost_trials)
@@ -491,7 +703,7 @@ def provinces_with_sites(con, since=COVERAGE_START, until=None, area=None,
             if provincia in INE}
 
 
-def studies_at(con, center_id, since=COVERAGE_START, until=None, area=None):
+def studies_at(con, center_ids, since=COVERAGE_START, until=None, area=None):
     """[(identificador, es_ctis, year)] for one centre, newest first.
 
     What a reader gets after picking a hospital. The identifier is the key to
@@ -502,19 +714,231 @@ def studies_at(con, center_id, since=COVERAGE_START, until=None, area=None):
     read as the mark broken open: if the dot is sized by 40 trials and the
     list runs to 300, one of the two is lying about what it counted.
     """
+    # DISTINCT because the merged rows of one hospital can both list the same
+    # study, which is one trial there and not two -- the same reason
+    # site_activity counts studies in a set.
     join, params = _area_join(area)
+    ids = tuple(center_ids)
     return list(con.execute(
-        """SELECT s.identificador, s.es_ctis,
+        """SELECT DISTINCT s.identificador, s.es_ctis,
                   substr(s.fecha_autorizacion_aemps, 1, 4) AS year
              FROM studies s
              JOIN study_centers sc ON sc.study_id = s.identificador
              {}
-            WHERE sc.center_id = ?
+            WHERE sc.center_id IN ({})
               AND s.fecha_autorizacion_aemps >= ?
               AND s.fecha_autorizacion_aemps < ?
-         ORDER BY s.fecha_autorizacion_aemps DESC""".format(join),
-        params + (center_id, _first_of(since),
-                  _first_of((until or 9998) + 1))))
+         ORDER BY s.fecha_autorizacion_aemps DESC""".format(
+            join, ",".join("?" * len(ids))),
+        params + ids + (_first_of(since),
+                        _first_of((until or 9998) + 1))))
+
+
+# ---------------------------------------------------------------------------
+# Candidate duplicate centres, for reading
+# ---------------------------------------------------------------------------
+# 333 centre keys cover 810 rows and 46.6% of all trial-site links, so the
+# same hospital under two spellings is not a rounding error on this map.
+#
+# **Blocking on the key is where the candidates come from and not where the
+# decision is made**, the same rule the sponsor families follow. A key gathers
+# rows that are sometimes one site spelled twice, sometimes several real sites
+# of one organisation, and sometimes unrelated places sharing a placeholder
+# name. All three shapes appear in the top of this list:
+#
+#   ORG-100009329  Hospital Clínic, Barcelona 08036 and 08028 -- one site
+#   ORG-100030394  Institut Català d'Oncologia, L'Hospitalet / Badalona /
+#                  Girona -- three sites, and Badalona itself under two
+#                  postcodes, so the group is both shapes at once
+#   clinicaprivada `Clínica privada` in Bilbao, Burgos, Madrid, Murcia --
+#                  four unrelated clinics
+#
+# The town nearly separates them and cannot be trusted to: Corporació
+# Sanitària Parc Taulí is filed under Sabadell and under Barcelona, which is
+# its province rather than its town. So the rule generates the list and a
+# person reads it, which is what CentreGroup is for.
+
+CentreGroup = collections.namedtuple("CentreGroup", "key sites trials")
+CentreSite = collections.namedtuple("CentreSite", "label rows trials merged")
+CentreRow = collections.namedtuple(
+    "CentreRow", "center_id name localidad cod_postal referencia trials")
+
+
+def _site_label(rows):
+    """What to call a merged site on the review page.
+
+    The town its busiest rows agree on. Taken from the rows rather than from
+    the identity, because the identity is a centre id once rows can be joined
+    by postcode as well as by town -- and a number tells the reader nothing
+    about whether the merge was right.
+    """
+    counted = collections.Counter(
+        normalise_town(row.localidad or "") for row in rows)
+    counted.pop("", None)
+    return counted.most_common(1)[0][0] if counted else "no town"
+
+
+def centre_groups(con, towns, since=COVERAGE_START, until=None):
+    """[CentreGroup] where one key covers several centres, biggest first.
+
+    Each group carries the *sites* it resolved into, so the page built from
+    this can show what became what rather than leaving the reader to match
+    labels across rows. A group with one site is one hospital that was spelled
+    several ways; a group with several is either several real sites or
+    several unrelated places, and only reading tells them apart.
+
+    Site totals count studies distinctly rather than summing the rows, for
+    the reason site_activity does: Hospital Clínic's two spellings share two
+    studies, so the merged site holds 2,925 trials and not 2,927.
+    """
+    rows = con.execute(
+        """SELECT c.center_key, c.center_id, c.nombre, c.localidad,
+                  c.cod_postal, c.referencia, s.identificador
+             FROM centers c
+             JOIN study_centers sc ON sc.center_id = c.center_id
+             JOIN studies s ON s.identificador = sc.study_id
+            WHERE s.fecha_autorizacion_aemps >= ?
+              AND s.fecha_autorizacion_aemps < ?""",
+        (_first_of(since), _first_of((until or 9998) + 1)))
+
+    rows = list(rows)
+    identity_of = identities(
+        {(cid, key, localidad, postcode, referencia)
+         for key, cid, _, localidad, postcode, referencia, _ in rows},
+        towns)
+
+    members = collections.defaultdict(dict)
+    per_site = collections.defaultdict(set)
+    per_centre = collections.defaultdict(set)
+    for key, cid, name, localidad, postcode, referencia, study_id in rows:
+        identity = identity_of[cid]
+        members[key][cid] = (name, localidad, postcode, referencia, identity)
+        per_site[(key, identity)].add(study_id)
+        per_centre[cid].add(study_id)
+
+    groups = []
+    for key, centres in members.items():
+        if len(centres) < 2:
+            continue
+        by_site = collections.defaultdict(list)
+        for cid, (name, localidad, postcode, referencia,
+                  identity) in centres.items():
+            by_site[identity].append(CentreRow(
+                cid, name, localidad, postcode, referencia,
+                len(per_centre[cid])))
+
+        sites = sorted(
+            (CentreSite(
+                _site_label(rows_),
+                sorted(rows_, key=lambda row: -row.trials),
+                len(per_site[(key, identity)]),
+                len(rows_) > 1)
+             for identity, rows_ in by_site.items()),
+            key=lambda site: -site.trials)
+        groups.append(CentreGroup(
+            key, sites,
+            len({study for identity in by_site
+                 for study in per_site[(key, identity)]})))
+    return sorted(groups, key=lambda group: -group.trials)
+
+
+def centres_review_page(groups, shown=60):
+    """A page listing the candidates, for the reading that has to happen.
+
+    The sibling of `sponsors.review_page`, and it earns its place the same
+    way: a rule cannot report the merge it failed to make, so the only way to
+    find one is to read what the rule left alone.
+
+    `towns` is the column to read first. One town and several postcodes is
+    almost always one site typed twice; several towns is almost always
+    several real sites, or several unrelated places under a shared name.
+    Almost, in both directions, which is the reason this is a page and not a
+    rule.
+    """
+    import html
+
+    lines = ["<!doctype html><html lang='en'><head><meta charset='utf-8'>",
+             "<title>Centre duplicates</title><style>",
+             REVIEW_STYLE.format(surface=SURFACE, ink=INK, muted=MUTED,
+                                 grid=GRID),
+             # The sites are a level the sponsor page does not have, so they
+             # need a rung of their own between the key and its spellings.
+             "tr.site td {{ color: {ink}; font-weight: 600; font-size: 12px; "
+             "border-bottom: none; padding-top: 10px; }}"
+             "tr.site td.name {{ padding-left: 20px; }}"
+             "tr.spelling td.name {{ padding-left: 44px; }}".format(ink=INK),
+             "</style></head><body>",
+             "<h1>Centre duplicates</h1>",
+             "<p>Every centre key covering more than one row, biggest first. "
+             "Generated by <code>run_analysis.py</code>. These are "
+             "<strong>candidates</strong>: nothing here is merged, and no "
+             "count in the project depends on this page. Trials are those "
+             "authorised since {}.</p>".format(COVERAGE_START),
+             "<p><strong>How to read it.</strong> Each bold row is one "
+             "registry key. Under it, each <em>Site</em> row is a hospital "
+             "the key resolved into, and the plain rows beneath a site are "
+             "the spellings that became it. A key with one site was one "
+             "hospital written several ways. A key with several is either "
+             "several real sites of one organisation — Institut Català "
+             "d'Oncologia runs in L'Hospitalet, Badalona and Girona — or "
+             "unrelated places sharing a name, and merging either would be "
+             "wrong.</p>",
+             "<p>Every total counts each trial once. A key's total can "
+             "therefore be <em>smaller</em> than its sites added up — a trial "
+             "running at both Clínica Universidad de Navarra's Pamplona and "
+             "Madrid sites is one trial for the key and one at each site — "
+             "and a merged site's total can be smaller than its rows added "
+             "up, which is the point of merging them: Hospital Clínic's two "
+             "spellings share two studies, so the site holds 2,925 and not "
+             "2,927.</p>",
+             "<p><strong>What to look for.</strong> A site whose rows are "
+             "obviously the same place as another site's: that is a merge "
+             "the rule missed, and the reason is usually in the Town column. "
+             "Hospital Clínic has a row whose town field holds the "
+             "hospital's own name, so there was no town to match on. The "
+             "town is not decisive on its own either — Parc Taulí is filed "
+             "under Sabadell and under Barcelona, its province.</p>",
+             "<h2>{:,} keys covering more than one row, {:,} trials; the {} "
+             "largest below</h2>".format(
+                 len(groups), sum(group.trials for group in groups),
+                 min(shown, len(groups))),
+             "<table><thead><tr>",
+             "<th>Centre as the registry spells it</th>",
+             "<th>Town</th><th>Postcode</th>",
+             "<th class='n'>Trials</th>",
+             "</tr></thead><tbody>"]
+
+    for group in groups[:shown]:
+        first = group.sites[0].rows[0]
+        lines.append(
+            "<tr class='family'><td>{}</td><td class='tag'>{}</td>"
+            "<td class='tag'>{}</td><td class='n'>{:,}</td></tr>".format(
+                html.escape(display_name(first.name)),
+                html.escape(first.referencia or "no reference"),
+                "{} site{}".format(len(group.sites),
+                                   "" if len(group.sites) == 1 else "s"),
+                group.trials))
+        for number, site in enumerate(group.sites, start=1):
+            lines.append(
+                "<tr class='site'><td class='name'>{}</td><td></td><td></td>"
+                "<td class='n'>{:,}</td></tr>".format(
+                    "Site {} of {} — {}".format(
+                        number, len(group.sites),
+                        "{} rows merged on “{}”".format(
+                            len(site.rows), html.escape(site.label or ""))
+                        if site.merged else "one row, nothing to merge"),
+                    site.trials))
+            for row in site.rows:
+                lines.append(
+                    "<tr class='spelling'><td class='name'>{}</td><td>{}</td>"
+                    "<td>{}</td><td class='n'>{:,}</td></tr>".format(
+                        html.escape(row.name),
+                        html.escape(row.localidad or "—"),
+                        html.escape(row.cod_postal or "—"),
+                        row.trials))
+
+    lines.append("</tbody></table></body></html>")
+    return "\n".join(lines)
 
 
 def load_geometry(path):

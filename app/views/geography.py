@@ -65,8 +65,9 @@ def areas(_con):
 @st.cache_data
 def placed_sites(_con, since, until, area, provinces):
     """([Site], centres lost, trials lost) for a window and its filters."""
+    towns = geography.load_towns(POSTCODES)
     rows = geography.only_provinces(
-        geography.site_activity(_con, since, until, area), provinces)
+        geography.site_activity(_con, since, until, area, towns), provinces)
     return geography.place_sites(rows, geography.load_postcodes(POSTCODES))
 
 
@@ -171,7 +172,7 @@ def _site_detail(con, sites, since, until, area):
     if chosen is None:
         return
 
-    studies = geography.studies_at(con, chosen.center_id, since, until, area)
+    studies = geography.studies_at(con, chosen.center_ids, since, until, area)
     st.caption("{:,} trials authorised {}–{}, newest first.".format(
         len(studies), since, until))
     for identificador, es_ctis, year in studies[:50]:

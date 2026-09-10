@@ -18,16 +18,18 @@ Success criteria:
     patterns are the ones verified against the live registers
 """
 
+import collections
 import sqlite3
 import unittest
 from pathlib import Path
 
-from analysis import registry
-from analysis.geography import (BASE_LAYER, Site, display_name,
-                                load_postcodes, normalise_postcode,
+from analysis import geography, registry
+from analysis.geography import (BASE_LAYER, Site, display_name, identities,
+                                is_readable, load_postcodes, load_towns,
+                                normalise_postcode, normalise_town,
                                 only_provinces, place_sites,
-                                provinces_with_sites, site_activity,
-                                sites_figure, studies_at)
+                                provinces_with_sites, resolve_town,
+                                site_activity, sites_figure, studies_at)
 from tests.test_loader import LoaderTestCase
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "trials.db"
@@ -133,23 +135,153 @@ class TestDisplayName(unittest.TestCase):
             self.assertEqual(display_name(name), name)
 
 
+class TestTownResolution(unittest.TestCase):
+    """Which rows are one site turns on which town they are in.
+
+    Two of REEC's town fields cannot be compared as they stand -- one that
+    lost its accented byte on the way into storage, and one that is empty --
+    and both have somewhere else to look.
+    """
+
+    TOWNS = {"29010": "Malaga", "31008": "Pamplona/Iruña"}
+
+    def test_a_qualifier_after_the_town_is_dropped(self):
+        for written in ["Pamplona/Iruña", "Sabadell, Barcelona",
+                        "Manresa (Barcelona)"]:
+            with self.subTest(written=written):
+                self.assertNotIn(",", normalise_town(written))
+                self.assertNotIn("/", normalise_town(written))
+        self.assertEqual(normalise_town("Pamplona/Iruña"), "pamplona")
+        self.assertEqual(normalise_town("Sabadell, Barcelona"), "sabadell")
+
+    def test_accents_and_case_do_not_separate_two_spellings(self):
+        self.assertEqual(normalise_town("MÁLAGA"), normalise_town("malaga"))
+
+    def test_a_town_that_lost_a_byte_is_not_readable(self):
+        # `M?laga` is Málaga and cannot be matched against it. Treating it as
+        # a town would leave the hospital its own site forever.
+        self.assertFalse(is_readable("M?laga"))
+        self.assertFalse(is_readable("Logro�o"))
+        self.assertFalse(is_readable("   "))
+        self.assertTrue(is_readable("Málaga"))
+
+    def test_an_unreadable_town_is_resolved_from_the_postcode(self):
+        self.assertEqual(resolve_town("M?laga", "29010", self.TOWNS),
+                         "malaga")
+        self.assertEqual(resolve_town("", "31008", self.TOWNS), "pamplona")
+
+    def test_a_readable_town_is_never_overridden(self):
+        # The rule that protects Institut Català d'Oncologia: its Girona
+        # campus carries L'Hospitalet's postcode, and deriving the town from
+        # the postcode would merge two real sites.
+        self.assertEqual(
+            resolve_town("Girona", "08908", {"08908": "L'Hospitalet"}),
+            "girona")
+
+    def test_nothing_to_go_on_resolves_to_nothing(self):
+        self.assertEqual(resolve_town("", "", self.TOWNS), "")
+        self.assertEqual(resolve_town("?", "99999", self.TOWNS), "")
+
+
+class TestIdentities(unittest.TestCase):
+    """Which centre rows are one site."""
+
+    def rows(self, *rows):
+        return identities(rows, {"29010": "Malaga"})
+
+    def test_one_reference_and_one_town_is_one_site(self):
+        out = self.rows((1, "k", "Barcelona", "08036", "ORG-1"),
+                        (2, "k", "Barcelona", "08028", "ORG-1"))
+        self.assertEqual(out[1], out[2])
+
+    def test_one_reference_in_two_towns_is_two_sites(self):
+        # Two towns and two postcodes: nothing links them, and one
+        # organisation running hospitals in two places is the normal case.
+        out = self.rows((1, "k", "Badalona", "08916", "ORG-1"),
+                        (2, "k", "Girona", "17007", "ORG-1"))
+        self.assertNotEqual(out[1], out[2])
+
+    def test_no_reference_is_never_merged(self):
+        # The placeholder-name hazard: two `Clínica privada` rows in one town
+        # are two clinics, and nothing here says otherwise.
+        out = self.rows((1, "clinicaprivada", "Madrid", "28001", None),
+                        (2, "clinicaprivada", "Madrid", "28002", None))
+        self.assertNotEqual(out[1], out[2])
+
+    def test_a_row_with_no_town_joins_a_key_that_has_only_one(self):
+        # Ramón y Cajal's row with neither locality nor postcode: every other
+        # row under that reference says Madrid, so Madrid is what it is.
+        out = self.rows((1, "k", "Madrid", "28034", "ORG-1"),
+                        (2, "k", "", "", "ORG-1"))
+        self.assertEqual(out[1], out[2])
+
+    def test_a_row_with_no_town_stays_alone_when_the_key_has_two(self):
+        # It could belong to either, so it belongs to neither.
+        out = self.rows((1, "k", "Pamplona", "31008", "ORG-1"),
+                        (2, "k", "Madrid", "28027", "ORG-1"),
+                        (3, "k", "", "", "ORG-1"))
+        self.assertNotEqual(out[3], out[1])
+        self.assertNotEqual(out[3], out[2])
+
+    def test_one_postcode_joins_rows_whose_towns_disagree(self):
+        # Son Espases writes Palma and Palma de Mallorca; Hospital Clínic
+        # writes its own name where the town goes. Neither pair can be
+        # matched on the town, and both share a postcode.
+        out = self.rows((1, "k", "Palma", "07120", "ORG-1"),
+                        (2, "k", "Palma de Mallorca", "07120", "ORG-1"))
+        self.assertEqual(out[1], out[2])
+
+    def test_a_chain_of_agreements_resolves_to_one_site(self):
+        # Althaia: the province-named row shares a postcode with a Manresa
+        # row, which shares its town with rows at two other postcodes. Only
+        # following both signals sees that all four are one hospital.
+        out = self.rows((1, "k", "Manresa", "08243", "ORG-1"),
+                        (2, "k", "Barcelona", "08243", "ORG-1"),
+                        (3, "k", "Manresa", "08240", "ORG-1"),
+                        (4, "k", "Manresa", "08242", "ORG-1"))
+        self.assertEqual(len({out[i] for i in (1, 2, 3, 4)}), 1)
+
+    def test_a_postcode_known_to_be_wrong_joins_nothing(self):
+        # The one exception in the corpus: Institut Català d'Oncologia gives
+        # three real hospitals L'Hospitalet's postcode.
+        reference, postcode = next(iter(geography.KEEP_APART))
+        out = identities(
+            [(1, "k", "L'Hospitalet de Llobregat", postcode, reference),
+             (2, "k", "Badalona", postcode, reference),
+             (3, "k", "Girona", postcode, reference)], {})
+        self.assertEqual(len({out[i] for i in (1, 2, 3)}), 3)
+
+    def test_a_shared_reference_alone_never_merges(self):
+        # REEC files two Madrid rows named Hospital Ramón y Cajal under the
+        # reference of the Complexo Hospitalario Universitario de Vigo. The
+        # towns are what keep them apart, and they have to.
+        out = self.rows((1, "k", "Vigo", "36312", "ORG-1"),
+                        (2, "k", "Madrid", "28034", "ORG-1"))
+        self.assertNotEqual(out[1], out[2])
+
+    def test_an_unreadable_town_still_merges_through_its_postcode(self):
+        out = self.rows((1, "k", "Málaga", "29010", "ORG-1"),
+                        (2, "k", "M?laga", "29010", "ORG-1"))
+        self.assertEqual(out[1], out[2])
+
+
 class TestPlaceSites(unittest.TestCase):
     POSTCODES = {"28046": (40.46, -3.69), "08035": (41.42, 2.14)}
 
     def rows(self):
         return [
-            (1, "La Paz", "Madrid", "Madrid", "28046", 500),
-            (2, "Vall d'Hebron", "Barcelona", "Barcelona", "8035", 400),
-            (3, "Nowhere", "?", None, "Madrid", 7),
-            (4, "Also nowhere", "?", None, "", 3),
+            ((1,), "La Paz", "Madrid", "Madrid", "28046", 500),
+            ((2, 9), "Vall d'Hebron", "Barcelona", "Barcelona", "8035", 400),
+            ((3,), "Nowhere", "?", None, "Madrid", 7),
+            ((4,), "Also nowhere", "?", None, "", 3),
         ]
 
     def test_it_places_what_it_can(self):
         placed, _, _ = place_sites(self.rows(), self.POSTCODES)
         self.assertEqual([site.name for site in placed],
                          ["La Paz", "Vall d'Hebron"])
-        self.assertEqual(placed[0], Site(1, "La Paz", "Madrid", "Madrid",
-                                         500, 40.46, -3.69))
+        self.assertEqual(placed[0], Site((1,), "La Paz", "Madrid",
+                                         "Madrid", 500, 40.46, -3.69))
 
     def test_it_normalises_on_the_way_in(self):
         # '8035' only finds Barcelona because the leading zero is restored.
@@ -289,7 +421,7 @@ class TestSitesFigure(unittest.TestCase):
         {"id": "28", "properties": {"name": "Madrid"}},
         {"id": "08", "properties": {"name": "Barcelona"}},
     ]}
-    SITES = [Site(1, "La Paz", "Madrid", "Madrid", 500, 40.46, -3.69)]
+    SITES = [Site((1,), "La Paz", "Madrid", "Madrid", 500, 40.46, -3.69)]
 
     def figure(self, active=("28",)):
         return sites_figure(self.SITES, self.GEOMETRY, set(active), "T", "S")
@@ -348,6 +480,7 @@ class TestAgainstDatabase(unittest.TestCase):
         cls.con = sqlite3.connect(
             "file:{}?mode=ro".format(DB_PATH.as_posix()), uri=True)
         cls.postcodes = load_postcodes(POSTCODES)
+        cls.towns = load_towns(POSTCODES)
 
     @classmethod
     def tearDownClass(cls):
@@ -357,16 +490,73 @@ class TestAgainstDatabase(unittest.TestCase):
         self.assertEqual(len(self.postcodes), 11150)
 
     def test_almost_every_centre_lands_somewhere(self):
-        placed, lost_sites, _ = place_sites(
-            site_activity(self.con), self.postcodes)
-        # 3,293 centres; the rest have no postcode at all or one of the 24
-        # that no repair can rescue.
-        self.assertEqual(len(placed) + lost_sites, 3293)
-        self.assertGreater(len(placed) / (len(placed) + lost_sites), 0.92)
+        rows = site_activity(self.con, towns=self.towns)
+        placed, lost_sites, _ = place_sites(rows, self.postcodes)
+        # Fewer than the 3,293 centre rows, because the rows of one hospital
+        # under one reference in one town are now one site.
+        self.assertEqual(len(placed) + lost_sites, len(rows))
+        self.assertLess(len(rows), 3293)
+        self.assertGreater(len(placed) / len(rows), 0.92)
+
+    def test_merging_never_invents_or_loses_a_trial(self):
+        # The corpus has 11,834 trials and no site can hold more, however
+        # many rows were folded into it: summing the merged rows' counts
+        # instead of counting studies distinctly would have let one trial
+        # listed under two spellings of a hospital count twice there.
+        rows = site_activity(self.con, towns=self.towns)
+        self.assertLessEqual(max(row[5] for row in rows), 11834)
+        for center_ids, *_, trials in rows[:20]:
+            with self.subTest(ids=center_ids):
+                self.assertEqual(
+                    len(studies_at(self.con, center_ids)), trials)
+
+    def test_no_merge_fuses_two_different_hospitals(self):
+        """The guard on the whole rule, checked against the real corpus.
+
+        A merge only ever joins rows the loader already gave one identity to.
+        If a data refresh ever produces a group spanning two centre keys, the
+        reference it merged on is being shared by places that are not the
+        same hospital -- the `Clínica privada` hazard arriving through the
+        reference column instead of the name -- and this fails rather than
+        the map quietly gaining a hospital nobody has.
+        """
+        raw = self.con.execute(
+            "SELECT center_id, center_key, localidad, cod_postal, referencia "
+            "FROM centers").fetchall()
+        keys_of = {cid: key for cid, key, _, _, _ in raw}
+        by_identity = collections.defaultdict(set)
+        for cid, identity in identities(raw, self.towns).items():
+            by_identity[identity].add(keys_of[cid])
+        spanning = {identity: keys for identity, keys in by_identity.items()
+                    if len(keys) > 1}
+        self.assertEqual(spanning, {})
+
+    def test_the_cases_the_rule_has_to_get_right(self):
+        placed, _, _ = place_sites(site_activity(self.con, towns=self.towns), self.postcodes)
+        by_name = collections.defaultdict(list)
+        for site in placed:
+            by_name[site.name].append(site)
+
+        # One organisation, three real towns: three sites, not one.
+        ico = by_name["Institut Catala d'Oncologia"]
+        self.assertEqual(
+            {site.localidad for site in ico if len(site.center_ids) > 1},
+            {"Badalona", "Girona"})
+        self.assertGreaterEqual(len(ico), 3)
+
+        # One organisation, one town spelled two ways: one site.
+        navarra = [site for site in placed
+                   if site.name == "Clinica Universidad de Navarra"]
+        pamplona = [site for site in navarra
+                    if site.localidad.startswith("Pamplona")]
+        self.assertEqual(len(pamplona), 1)
+        self.assertGreater(len(pamplona[0].center_ids), 1)
+        # ...and its Madrid site stays its own.
+        self.assertTrue(any(site.localidad == "Madrid" for site in navarra))
 
     def test_every_point_is_inside_spain(self):
         # Including the Canaries, which is why the longitude floor is -18.2.
-        placed, _, _ = place_sites(site_activity(self.con), self.postcodes)
+        placed, _, _ = place_sites(site_activity(self.con, towns=self.towns), self.postcodes)
         for site in placed:
             with self.subTest(site=site.name):
                 self.assertTrue(27.5 <= site.lat <= 43.9, site.lat)
