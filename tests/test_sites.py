@@ -23,8 +23,10 @@ import unittest
 from pathlib import Path
 
 from analysis import registry
-from analysis.geography import (Site, load_postcodes, normalise_postcode,
-                                place_sites, site_activity, studies_at)
+from analysis.geography import (BASE_LAYER, Site, load_postcodes,
+                                normalise_postcode, place_sites,
+                                provinces_with_sites, site_activity,
+                                sites_figure, studies_at)
 from tests.test_loader import LoaderTestCase
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "trials.db"
@@ -104,10 +106,12 @@ class TestPlaceSites(unittest.TestCase):
 class SiteQueryTestCase(LoaderTestCase):
     def corpus(self):
         def at(hospital, postcode, date):
+            # The province and region spellings are REEC's own, uppercase and
+            # inverted -- the vocabularies in geography.py are keyed on them.
             return dict(centros={"centro": [
                 {"referencia": "ORG-" + hospital, "nombre": hospital,
                  "localidad": "Madrid", "codPostal": postcode,
-                 "provincia": "Madrid", "ccaa": "Madrid"}]},
+                 "provincia": "MADRID", "ccaa": "MADRID, COMUNIDAD DE"}]},
                 calendario={"fechaAutorizacionAEMPS": date})
 
         self.write_year(2019, [
@@ -146,6 +150,52 @@ class TestStudiesAt(SiteQueryTestCase):
         con = self.corpus()
         la_paz = site_activity(con)[0][0]
         self.assertEqual(len(studies_at(con, la_paz, since=2019)), 1)
+
+
+class TestProvincesWithSites(SiteQueryTestCase):
+    def test_it_names_the_provinces_with_something_in_the_window(self):
+        # Every fixture centre is in Madrid, INE 28.
+        self.assertEqual(provinces_with_sites(self.corpus()), {"28"})
+
+    def test_an_empty_window_names_nothing(self):
+        self.assertEqual(
+            provinces_with_sites(self.corpus(), since=2020, until=2021), set())
+
+
+class TestSitesFigure(unittest.TestCase):
+    GEOMETRY = {"features": [
+        {"id": "28", "properties": {"name": "Madrid"}},
+        {"id": "08", "properties": {"name": "Barcelona"}},
+    ]}
+    SITES = [Site(1, "La Paz", "Madrid", "Madrid", 500, 40.46, -3.69)]
+
+    def figure(self, active=("28",)):
+        return sites_figure(self.SITES, self.GEOMETRY, set(active), "T", "S")
+
+    def test_the_backdrop_is_drawn_before_the_dots(self):
+        # Plotly draws in order, so a backdrop drawn last covers what it backs.
+        self.assertEqual([trace.type for trace in self.figure().data],
+                         ["choropleth", "choropleth",
+                          "scattergeo", "scattergeo"])
+
+    def test_the_backdrop_is_named_so_the_theme_can_find_it(self):
+        base = [trace for trace in self.figure().data
+                if trace.type == "choropleth"]
+        self.assertTrue(all(trace.name == BASE_LAYER for trace in base))
+
+    def test_a_province_is_filled_only_if_it_ran_something(self):
+        base = self.figure(active=["28"]).data[0]
+        self.assertEqual(dict(zip(base.locations, base.z)), {"28": 1, "08": 0})
+
+    def test_the_backdrop_carries_no_colour_bar(self):
+        # It measures nothing; a scale bar would say it did.
+        self.assertFalse(self.figure().data[0].showscale)
+
+    def test_marks_are_sized_by_area(self):
+        # Radius-sizing would draw four times the trials as sixteen times
+        # the ink.
+        dots = self.figure().data[2]
+        self.assertEqual(dots.marker.sizemode, "area")
 
 
 class TestRegistry(unittest.TestCase):

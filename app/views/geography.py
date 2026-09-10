@@ -68,6 +68,8 @@ def site_map(_con, since, until):
     sites, lost_sites, lost_trials = placed_sites(_con, since, until)
     return geography.sites_figure(
         sites,
+        geography.load_geometry(GRAINS["province"][0]),
+        geography.provinces_with_sites(_con, since, until),
         "Sites and their trials, {}–{}".format(since, until),
         geography.sites_subtitle(sites, lost_sites, lost_trials,
                                  since, until))

@@ -23,6 +23,8 @@ import colorsys
 import tomllib
 from pathlib import Path
 
+from analysis.geography import BASE_LAYER
+
 CONFIG = Path(__file__).resolve().parents[1] / ".streamlit" / "config.toml"
 
 
@@ -125,12 +127,28 @@ def apply(figure):
     # Choropleths carry the sequential ramp, the polygon borders (drawn in the
     # surface colour so the gaps read as background rather than as ink) and a
     # colour bar with its own two fonts.
+    # Two kinds of choropleth, told apart by name rather than by type: the
+    # participation maps carry a sequential ramp, and the dot map's backdrop
+    # is two flat colours. A selector on the type alone would give the
+    # backdrop a magnitude scale it is not measuring anything with.
     figure.update_traces(
-        selector=dict(type="choropleth"),
+        selector=lambda trace: (trace.type == "choropleth"
+                                and trace.name != BASE_LAYER),
         colorscale=ACCENT_RAMP,
         marker_line_color=SURFACE,
         colorbar_tickfont_color=MUTED,
         colorbar_title_font_color=MUTED)
+
+    # The backdrop. Provinces that ran something take a tint of the accent
+    # pale enough to sit under the marks without competing with them; the
+    # rest stay the page's own surface, so an empty province reads as empty
+    # rather than as a lighter shade of busy. The borders are the point of
+    # the layer, so they are drawn in the secondary text colour rather than
+    # the grid colour -- against a tinted fill, grid-on-tint disappears.
+    figure.update_traces(
+        selector=dict(name=BASE_LAYER),
+        colorscale=[[0, SURFACE], [1, mix(SURFACE, ACCENT, 0.16)]],
+        marker_line_color=mix(SURFACE, INK, 0.30))
 
     # Scattergeo carries the dot map. Only the two colours are touched: the
     # marker sizes encode trial counts and are the figure's business, not the

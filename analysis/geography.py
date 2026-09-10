@@ -158,7 +158,7 @@ INE = {
 Place = collections.namedtuple("Place", "code trials share")
 
 
-def _pairs(con, region_column, codes, since):
+def _pairs(con, region_column, codes, since, until=None):
     """[(study_id, code)] for one geographic grain, corrections applied.
 
     The corrections are applied here, in Python, rather than as a CASE in the
@@ -180,8 +180,9 @@ def _pairs(con, region_column, codes, since):
                  FROM study_centers sc
                  JOIN centers c ON c.center_id = sc.center_id
                  JOIN studies st ON st.identificador = sc.study_id
-                WHERE st.fecha_autorizacion_aemps >= ?""",
-            ("{}-01-01".format(since),)):
+                WHERE st.fecha_autorizacion_aemps >= ?
+                  AND st.fecha_autorizacion_aemps < ?""",
+            (_first_of(since), _first_of((until or 9998) + 1))):
         correction = CENTER_CORRECTIONS.get((key, localidad, postcode))
         if correction is not None:
             region, province = correction.ccaa, correction.provincia
@@ -191,14 +192,14 @@ def _pairs(con, region_column, codes, since):
     return pairs
 
 
-def region_pairs(con, since=COVERAGE_START):
+def region_pairs(con, since=COVERAGE_START, until=None):
     """[(study_id, NUTS 2 code)]."""
-    return _pairs(con, True, NUTS, since)
+    return _pairs(con, True, NUTS, since, until)
 
 
-def province_pairs(con, since=COVERAGE_START):
+def province_pairs(con, since=COVERAGE_START, until=None):
     """[(study_id, INE province code)]."""
-    return _pairs(con, False, INE, since)
+    return _pairs(con, False, INE, since, until)
 
 
 def participation(pairs, trials):
@@ -321,6 +322,18 @@ def place_sites(rows, postcodes):
             lost_sites, lost_trials)
 
 
+def provinces_with_sites(con, since=COVERAGE_START, until=None):
+    """{INE code} of provinces holding at least one trial in the window.
+
+    Binary on purpose. The province choropleth already draws participation as
+    a magnitude, and shading this layer by the same magnitude under dots that
+    are *also* sized by it would spend two channels saying one thing. What
+    this adds is the thing the dots cannot show: which provinces have no
+    trial at all in the window, which is empty map rather than absent ink.
+    """
+    return {code for _, code in province_pairs(con, since, until)}
+
+
 def studies_at(con, center_id, since=COVERAGE_START, until=None):
     """[(identificador, es_ctis, year)] for one centre, newest first.
 
@@ -436,8 +449,20 @@ def figure(places, geometry, title, subtitle_text):
     return fig
 
 
-def sites_figure(sites, title, subtitle_text):
+# The name the base layer answers to. app/theme.py restyles choropleths by
+# name, because this one is a two-colour backdrop and the participation maps
+# are a sequential ramp, and a selector on the trace type alone cannot tell
+# them apart.
+BASE_LAYER = "provinces"
+
+
+def sites_figure(sites, geometry, active, title, subtitle_text):
     """The dot map: one mark per centre, area proportional to trials.
+
+    Drawn over the provinces, which are filled where a trial ran in the
+    window and left as background where none did. The fill is two colours,
+    not a ramp: how much is already the dots' job, and the backdrop's job is
+    where the borders are and which of them are empty.
 
     **Area, not radius.** Plotly's `sizemode="area"` is what makes a hospital
     with 400 trials read as four times one with 100; sizing the radius by the
@@ -475,10 +500,27 @@ def sites_figure(sites, title, subtitle_text):
             hovertemplate="<b>%{text}</b><br>%{customdata[0]}"
                           "<br>%{customdata[1]:,} trials<extra></extra>")
 
+    def base(geo):
+        """The provinces, filled where something ran in the window."""
+        codes = [feature["id"] for feature in geometry["features"]]
+        names = names_in(geometry)
+        return go.Choropleth(
+            geojson=geometry, featureidkey="id", geo=geo, name=BASE_LAYER,
+            locations=codes,
+            z=[1 if code in active else 0 for code in codes],
+            zmin=0, zmax=1, showscale=False,
+            text=[names[code] for code in codes],
+            colorscale=[[0, SURFACE], [1, GRID]],
+            marker=dict(line=dict(color=MUTED, width=0.4)),
+            hovertemplate="%{text}<extra></extra>")
+
     mainland = [site for site in sites if site.lon > -12]
     canaries = [site for site in sites if site.lon <= -12]
 
-    fig = go.Figure([dots(mainland, "geo"), dots(canaries, "geo2")])
+    # Base first, dots second: Plotly draws traces in order, and a backdrop
+    # drawn last is a backdrop over the thing it backs.
+    fig = go.Figure([base("geo"), base("geo2"),
+                     dots(mainland, "geo"), dots(canaries, "geo2")])
     fig.update_layout(
         # y and yanchor are set rather than left to "auto", which puts the
         # title *below* its own two-line subtitle here and overlaps them by
