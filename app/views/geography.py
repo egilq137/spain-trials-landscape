@@ -15,7 +15,7 @@ dashboard cannot quote different corpus sizes.
 
 import streamlit as st
 
-from analysis import geography, registry
+from analysis import geography, registry, therapeutic
 from analysis.volume import COVERAGE_START
 from app import charts
 from app.session import GEO_DIR, open_database
@@ -56,44 +56,100 @@ def participation_map(_con, grain, trials):
 
 
 @st.cache_data
-def placed_sites(_con, since, until):
-    """([Site], centres lost, trials lost) for a window."""
-    return geography.place_sites(
-        geography.site_activity(_con, since, until),
-        geography.load_postcodes(POSTCODES))
+def areas(_con):
+    """[(eutct_code, label)] biggest first, for the area filter."""
+    return [(code, "{} ({:,})".format(therapeutic.leaf(name), trials))
+            for code, name, trials in therapeutic.trials_per_area(_con)]
 
 
 @st.cache_data
-def site_map(_con, since, until):
-    sites, lost_sites, lost_trials = placed_sites(_con, since, until)
+def placed_sites(_con, since, until, area, provinces):
+    """([Site], centres lost, trials lost) for a window and its filters."""
+    rows = geography.only_provinces(
+        geography.site_activity(_con, since, until, area), provinces)
+    return geography.place_sites(rows, geography.load_postcodes(POSTCODES))
+
+
+@st.cache_data
+def site_map(_con, since, until, area, provinces, note):
+    sites, _, _ = placed_sites(_con, since, until, area, provinces)
     return geography.sites_figure(
         sites,
         geography.load_geometry(GRAINS["province"][0]),
-        geography.provinces_with_sites(_con, since, until),
+        geography.provinces_with_sites(_con, since, until, area, provinces),
         "Sites and their trials, {}–{}".format(since, until),
-        geography.sites_subtitle(sites, lost_sites, lost_trials,
-                                 since, until))
+        geography.sites_subtitle(note))
+
+
+def _window(data_cut_year):
+    """From and to as two pickers rather than one slider.
+
+    A range slider over fourteen years puts both handles at the far end of a
+    long track, so any change is a drag across the whole width. Two lists are
+    two clicks and land exactly on the year meant.
+
+    `To` only offers years at or after `From`, so an inverted range is not
+    something to validate afterwards -- it cannot be chosen.
+    """
+    years = list(range(COVERAGE_START, data_cut_year + 1))
+    from_column, to_column = st.columns(2)
+    since = from_column.selectbox(
+        "From", years, index=len(years) - 3)
+    until = to_column.selectbox(
+        "To", [year for year in years if year >= since],
+        index=len(years) - 1 - years.index(since))
+    return since, until
+
+
+def _filters(con):
+    """The area and province pickers, and the note that names their effect."""
+    area_column, province_column = st.columns(2)
+
+    options = areas(con)
+    labels = dict(options)
+    area = area_column.selectbox(
+        "Therapeutic area", [code for code, _ in options], index=None,
+        placeholder="All areas",
+        format_func=lambda code: labels[code])
+
+    provinces = province_column.multiselect(
+        "Province", sorted(geography.INE), placeholder="All provinces")
+    return area, provinces
 
 
 def dot_map(con, data_cut_year):
-    since, until = st.slider(
-        "Trials authorised in", COVERAGE_START, data_cut_year,
-        (data_cut_year - 2, data_cut_year))
-    if until == data_cut_year:
-        st.caption(
-            "{} is a partial year — the data cut is mid-year, so its marks "
-            "are smaller than a full year's.".format(data_cut_year))
+    since, until = _window(data_cut_year)
+    area, provinces = _filters(con)
 
-    sites, _, _ = placed_sites(con, since, until)
+    notes = []
+    if area:
+        notes.append(dict(areas(con))[area].rsplit(" (", 1)[0])
+    if provinces:
+        notes.append(", ".join(province.title() for province in provinces))
+    note = " · ".join(notes) if notes else None
+
+    sites, lost_sites, lost_trials = placed_sites(
+        con, since, until, area, tuple(provinces))
     if not sites:
-        st.info("No sites in these years.")
+        st.info("No sites match these filters.")
         return
 
-    charts.render_fixed(site_map(con, since, until))
-    _site_detail(con, sites, since, until)
+    charts.render_fixed(
+        site_map(con, since, until, area, tuple(provinces), note))
+
+    # Only when there is something to report: "0 sites have no usable
+    # postcode" is a sentence about nothing, and it was on the page every
+    # time the filters happened to exclude the ones that do.
+    if lost_sites:
+        st.caption(
+            "{:,} more sites have no usable postcode and are not on the map, "
+            "nor are the {:,} trials they ran.".format(
+                lost_sites, lost_trials))
+
+    _site_detail(con, sites, since, until, area)
 
 
-def _site_detail(con, sites, since, until):
+def _site_detail(con, sites, since, until, area):
     """The trials at one hospital, as links to the register holding them.
 
     A picker rather than a click on the map, for two reasons. Hospitals
@@ -115,7 +171,7 @@ def _site_detail(con, sites, since, until):
     if chosen is None:
         return
 
-    studies = geography.studies_at(con, chosen.center_id, since, until)
+    studies = geography.studies_at(con, chosen.center_id, since, until, area)
     st.caption("{:,} trials authorised {}–{}, newest first.".format(
         len(studies), since, until))
     for identificador, es_ctis, year in studies[:50]:

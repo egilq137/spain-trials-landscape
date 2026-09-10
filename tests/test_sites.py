@@ -23,8 +23,9 @@ import unittest
 from pathlib import Path
 
 from analysis import registry
-from analysis.geography import (BASE_LAYER, Site, load_postcodes,
-                                normalise_postcode, place_sites,
+from analysis.geography import (BASE_LAYER, Site, display_name,
+                                load_postcodes, normalise_postcode,
+                                only_provinces, place_sites,
                                 provinces_with_sites, site_activity,
                                 sites_figure, studies_at)
 from tests.test_loader import LoaderTestCase
@@ -67,6 +68,69 @@ class TestNormalisePostcode(unittest.TestCase):
 
     def test_it_refuses_the_empty_string(self):
         self.assertIsNone(normalise_postcode(""))
+
+
+class TestDisplayName(unittest.TestCase):
+    """One consistent case, so a list of centres stops looking like two lists.
+
+    It never changes which centre a name belongs to: the two spellings below
+    stay two rows, because centres sharing a key are sometimes one
+    organisation at several addresses and sometimes unrelated clinics under a
+    placeholder name, and no merge can be right for both.
+    """
+
+    def test_it_settles_the_two_spellings_on_one(self):
+        # Catalan elides its article and keeps it lowercase: d'Hebron.
+        self.assertEqual(display_name("HOSPITAL UNIVERSITARI VALL D'HEBRON"),
+                         "Hospital Universitari Vall d'Hebron")
+        self.assertEqual(display_name("Clínica privada"), "Clínica Privada")
+        self.assertEqual(display_name("CLÍNICA PRIVADA"), "Clínica Privada")
+
+    def test_particles_stay_lowercase_inside_a_name(self):
+        self.assertEqual(display_name("HOSPITAL 12 DE OCTUBRE"),
+                         "Hospital 12 de Octubre")
+        self.assertEqual(display_name("VIRGEN DE LAS NIEVES"),
+                         "Virgen de las Nieves")
+        # Catalan `i` is "and", not an initial.
+        self.assertEqual(display_name("GERMANS TRIAS I PUJOL"),
+                         "Germans Trias i Pujol")
+
+    def test_a_leading_particle_is_still_capitalised(self):
+        self.assertEqual(display_name("DE LA PAZ"), "De la Paz")
+
+    def test_an_article_opening_a_name_keeps_its_capital(self):
+        # `La Paz` and `La Fe` are what the hospitals are called; lowercasing
+        # the article reads as a typo to anyone who knows them. An article
+        # following a connector is a different thing and stays down.
+        self.assertEqual(display_name("HOSPITAL UNIVERSITARIO LA PAZ"),
+                         "Hospital Universitario La Paz")
+        self.assertEqual(display_name("HOSPITAL VIRGEN DE LAS NIEVES"),
+                         "Hospital Virgen de las Nieves")
+
+    def test_acronyms_survive(self):
+        self.assertEqual(display_name("CAE Oroitu"), "CAE Oroitu")
+        self.assertEqual(display_name("HOSPITAL DE CANARIAS (H.U.C)"),
+                         "Hospital de Canarias (H.U.C)")
+
+    def test_a_short_word_is_not_an_acronym_just_for_being_short(self):
+        # The name around it is the evidence: everything here is uppercase
+        # because the whole string is, so PAZ is a word and not an initialism.
+        self.assertEqual(display_name("HOSPITAL DE LA PAZ"),
+                         "Hospital de la Paz")
+        self.assertEqual(display_name("HOSPITAL DEL MAR"), "Hospital del Mar")
+
+    def test_titles_are_not_acronyms(self):
+        self.assertEqual(display_name("HOSPITAL DR. PESET"),
+                         "Hospital Dr. Peset")
+
+    def test_apostrophes_and_hyphens_capitalise_both_parts(self):
+        self.assertEqual(display_name("INSTITUTO GÓMEZ-ULLA"),
+                         "Instituto Gómez-Ulla")
+
+    def test_an_already_tidy_name_is_left_as_it_is(self):
+        for name in ["Instituto Oftalmológico Gómez-Ulla",
+                     "Corporació Sanitària Parc Taulí"]:
+            self.assertEqual(display_name(name), name)
 
 
 class TestPlaceSites(unittest.TestCase):
@@ -152,6 +216,55 @@ class TestStudiesAt(SiteQueryTestCase):
         self.assertEqual(len(studies_at(con, la_paz, since=2019)), 1)
 
 
+class TestFilters(SiteQueryTestCase):
+    """The area filter, and the province filter's correction hazard."""
+
+    def areas_corpus(self):
+        def study(label, area_code, date):
+            return self.study(
+                label,
+                areasTerapeuticas={"area": [
+                    {"eutct": area_code, "nombre_es": area_code,
+                     "nombre_en": area_code}]},
+                centros={"centro": [
+                    {"referencia": "ORG-1", "nombre": "La Paz",
+                     "localidad": "Madrid", "codPostal": "28046",
+                     "provincia": "MADRID",
+                     "ccaa": "MADRID, COMUNIDAD DE"}]},
+                calendario={"fechaAutorizacionAEMPS": date})
+
+        self.write_year(2019, [study("a", "C04", "04-03-2015"),
+                               study("b", "C04", "02-06-2019"),
+                               study("c", "C14", "02-06-2019")])
+        con, _ = self.load()
+        return con
+
+    def test_the_area_filter_narrows_the_count(self):
+        con = self.areas_corpus()
+        self.assertEqual(site_activity(con)[0][5], 3)
+        self.assertEqual(site_activity(con, area="C04")[0][5], 2)
+        self.assertEqual(site_activity(con, area="C14")[0][5], 1)
+
+    def test_an_area_nobody_ran_leaves_no_sites(self):
+        self.assertEqual(site_activity(self.areas_corpus(), area="C99"), [])
+
+    def test_the_drill_down_counts_what_the_mark_counts(self):
+        # If the dot says 2 and the list runs to 3, one of them is lying.
+        con = self.areas_corpus()
+        centre, trials = site_activity(con, area="C04")[0][0], 2
+        self.assertEqual(len(studies_at(con, centre, area="C04")), trials)
+
+    def test_provinces_filters_on_the_corrected_value(self):
+        rows = site_activity(self.areas_corpus())
+        self.assertEqual(len(only_provinces(rows, ["MADRID"])), 1)
+        self.assertEqual(len(only_provinces(rows, ["BARCELONA"])), 0)
+
+    def test_no_provinces_named_means_all_of_them(self):
+        rows = site_activity(self.areas_corpus())
+        self.assertEqual(only_provinces(rows, []), rows)
+        self.assertEqual(only_provinces(rows, None), rows)
+
+
 class TestProvincesWithSites(SiteQueryTestCase):
     def test_it_names_the_provinces_with_something_in_the_window(self):
         # Every fixture centre is in Madrid, INE 28.
@@ -160,6 +273,15 @@ class TestProvincesWithSites(SiteQueryTestCase):
     def test_an_empty_window_names_nothing(self):
         self.assertEqual(
             provinces_with_sites(self.corpus(), since=2020, until=2021), set())
+
+    def test_it_takes_every_filter_the_marks_take(self):
+        # The backdrop must not shade a province the dots are not in: with a
+        # province filter on, the filled provinces are the filtered ones.
+        con = self.corpus()
+        self.assertEqual(provinces_with_sites(con, provinces=["MADRID"]),
+                         {"28"})
+        self.assertEqual(provinces_with_sites(con, provinces=["BARCELONA"]),
+                         set())
 
 
 class TestSitesFigure(unittest.TestCase):

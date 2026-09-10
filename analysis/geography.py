@@ -277,25 +277,171 @@ def load_postcodes(path):
         return {code: (float(lat), float(lon)) for code, lat, lon in rows}
 
 
-def site_activity(con, since=COVERAGE_START, until=None):
+def _area_join(area):
+    """The two SQL fragments an optional therapeutic-area filter adds."""
+    if area is None:
+        return "", ()
+    return ("""JOIN study_therapeutic_areas sta
+                 ON sta.study_id = s.identificador AND sta.eutct_code = ?""",
+            (area,))
+
+
+def site_activity(con, since=COVERAGE_START, until=None, area=None):
     """[(center_id, name, localidad, provincia, postcode, trials)].
 
     Counted over trials authorised in the window, so a centre that ran
     nothing in it is absent rather than drawn as a zero -- an empty dot would
     claim the hospital exists on the map and did nothing, when what the data
     says is that it took part in no trial authorised in these years.
+
+    **The province comes back corrected**, through the same CENTER_CORRECTIONS
+    table the choropleths use. `centers.provincia` is a clean vocabulary
+    containing wrong assignments and the schema says not to group on it
+    directly; a filter reading it raw would put a handful of hospitals in a
+    province the province map does not have them in, and the two views would
+    disagree about the same seven centres.
+
+    `area` is an EUTCT code. A trial listing several areas is counted in each,
+    but the filter picks one, so within a filtered view each trial is counted
+    once per centre and the marks stay comparable.
     """
-    return list(con.execute(
+    join, params = _area_join(area)
+    rows = con.execute(
         """SELECT c.center_id, c.nombre, c.localidad, c.provincia,
-                  c.cod_postal, count(DISTINCT sc.study_id) AS trials
+                  c.cod_postal, c.center_key,
+                  count(DISTINCT s.identificador) AS trials
              FROM centers c
              JOIN study_centers sc ON sc.center_id = c.center_id
              JOIN studies s ON s.identificador = sc.study_id
+             {}
             WHERE s.fecha_autorizacion_aemps >= ?
               AND s.fecha_autorizacion_aemps < ?
          GROUP BY c.center_id
-         ORDER BY trials DESC""",
-        (_first_of(since), _first_of((until or 9998) + 1))))
+         ORDER BY trials DESC""".format(join),
+        params + (_first_of(since), _first_of((until or 9998) + 1)))
+
+    corrected = []
+    for cid, name, localidad, provincia, postcode, key, trials in rows:
+        correction = CENTER_CORRECTIONS.get((key, localidad, postcode))
+        if correction is not None:
+            provincia = correction.provincia
+        corrected.append((cid, name, localidad, provincia, postcode, trials))
+    return corrected
+
+
+# Connectors are lowercase anywhere inside a name: Hospital Clinic de
+# Barcelona, Germans Trias i Pujol.
+CONNECTORS = {"de", "del", "y", "i", "en", "da", "do", "dos", "a"}
+
+# Articles are only lowercase when they follow a connector. `Virgen de las
+# Nieves` takes one, and `Hospital La Paz` does not: there the article opens
+# the hospital's actual name -- La Paz, La Fe, El Bierzo -- and lowercasing it
+# reads as a typo to anyone who knows the place.
+ARTICLES = {"la", "las", "los", "el"}
+
+# Short and uppercase, but titles rather than acronyms: `DR. PESET` wants to
+# become `Dr. Peset`, where `(H.U.C)` wants to stay as it is.
+ABBREVIATIONS = {"dr", "dra", "sr", "sra", "sta", "sto", "san"}
+
+# Catalan articles, elided onto the word they precede.
+ELISIONS = {"d'", "l'", "d’", "l’"}
+
+
+def _capitalised(word):
+    """One word, with each apostrophe- or hyphen-separated part capitalised.
+
+    Split on both, so `d'hebron` becomes `D'Hebron` and `gomez-ulla` becomes
+    `Gomez-Ulla` rather than `D'hebron` and `Gomez-ulla`.
+    """
+    for separator in ("'", "’", "-"):
+        if separator in word:
+            return separator.join(_capitalised(part)
+                                  for part in word.split(separator))
+    return word[:1].upper() + word[1:].lower()
+
+
+def display_name(nombre):
+    """A centre's name in one consistent case.
+
+    REEC spells the same hospital several ways and the loader keeps the most
+    frequent one per site, so a list of centres mixes `HOSPITAL UNIVERSITARI
+    VALL D'HEBRON` with `Hospital Universitari Vall D Hebron` and reads as
+    though they were two places. They are not, and neither are they merged --
+    see the note on centre identity below.
+
+    Short all-uppercase words are left alone, because they are acronyms and
+    `CAE Oroitu` is not improved by becoming `Cae Oroitu`. Everything else is
+    recased from scratch rather than only when it arrives shouting: recasing
+    only the uppercase spellings would leave `Clínica privada` beside
+    `Clínica Privada`, which is the same inconsistency one step quieter.
+
+    **This changes how a name looks and never which centre it is.** Identity
+    stays the loader's, so two entries that differ only in case remain two
+    entries -- and they have to, because the centres sharing a key are
+    sometimes one organisation at several addresses (Institut Català
+    d'Oncologia in Badalona and in Girona) and sometimes unrelated clinics
+    sharing a placeholder name (`Clínica privada` in Bilbao and in Murcia).
+    A merge would be wrong in one of those two directions whichever way it
+    was made, so the locality travels with the name instead.
+    """
+    # Whether a short uppercase word is an acronym or an ordinary word cannot
+    # be told from the word: `CAE` is one and `PAZ` is not. It can be told
+    # from the name around it. In a name that is shouting throughout, every
+    # word is uppercase because the whole string is, so none of them is
+    # evidence of anything and all of them get recased. In a name that is
+    # not, an uppercase word among lowercase ones was made uppercase on
+    # purpose, and is left alone.
+    shouting = nombre == nombre.upper()
+
+    out = []
+    after_particle = False
+    for position, word in enumerate(nombre.split()):
+        letters = "".join(c for c in word if c.isalpha())
+        dotted = "." in word[:-1] and letters.isupper()
+        elided = word[:2].lower()
+        lowered = word.lower()
+        # Being a particle and being written as one are different: a name
+        # opening on `De` capitalises it, and the `la` after it is still
+        # following a particle.
+        is_particle = (lowered in CONNECTORS
+                       or (lowered in ARTICLES and after_particle))
+        particle = position and is_particle
+        after_particle = is_particle
+        if particle:
+            out.append(lowered)
+        elif position and elided in ELISIONS:
+            # Catalan elides its articles onto the next word, and they stay
+            # lowercase inside a name the way `de` does: Vall d'Hebron,
+            # L'Hospitalet becomes l'Hospitalet after the first word.
+            out.append(elided + _capitalised(word[2:]))
+        elif letters.lower() in ABBREVIATIONS:
+            out.append(_capitalised(word))
+        elif dotted:
+            # `(H.U.C)` is an acronym in any name, shouting or not.
+            out.append(word)
+        elif (not shouting and letters and letters.isupper()
+              and len(letters) <= 4):
+            out.append(word)
+        else:
+            out.append(_capitalised(word))
+    return " ".join(out)
+
+
+PROVINCIA = 3
+
+
+def only_provinces(rows, provinces):
+    """site_activity rows in the named provinces; all of them when none are.
+
+    Applied here rather than as a WHERE on `centers.provincia`, and the
+    reason is the same one that makes site_activity correct the column at
+    all: the corrections happen in Python, so a SQL filter would be reading
+    the uncorrected value and would drop the very centres the correction
+    table exists to move.
+    """
+    if not provinces:
+        return rows
+    return [row for row in rows if row[PROVINCIA] in provinces]
 
 
 def place_sites(rows, postcodes):
@@ -316,13 +462,14 @@ def place_sites(rows, postcodes):
             lost_sites += 1
             lost_trials += trials
             continue
-        placed.append(Site(center_id, name, localidad, provincia, trials,
-                           *point))
+        placed.append(Site(center_id, display_name(name), localidad,
+                           provincia, trials, *point))
     return (sorted(placed, key=lambda site: -site.trials),
             lost_sites, lost_trials)
 
 
-def provinces_with_sites(con, since=COVERAGE_START, until=None):
+def provinces_with_sites(con, since=COVERAGE_START, until=None, area=None,
+                         provinces=None):
     """{INE code} of provinces holding at least one trial in the window.
 
     Binary on purpose. The province choropleth already draws participation as
@@ -330,27 +477,44 @@ def provinces_with_sites(con, since=COVERAGE_START, until=None):
     are *also* sized by it would spend two channels saying one thing. What
     this adds is the thing the dots cannot show: which provinces have no
     trial at all in the window, which is empty map rather than absent ink.
+
+    Derived from the sites rather than from province_pairs, and taking every
+    filter the marks take, so that the backdrop and the marks answer to the
+    same question. A filter has to empty a province on the backdrop at the
+    same moment it removes its last dot; a backdrop still shading fifty-one
+    provinces under the dots of one is describing a set the map is not
+    drawing.
     """
-    return {code for _, code in province_pairs(con, since, until)}
+    return {INE[provincia]
+            for _, _, _, provincia, _, _ in only_provinces(
+                site_activity(con, since, until, area), provinces)
+            if provincia in INE}
 
 
-def studies_at(con, center_id, since=COVERAGE_START, until=None):
+def studies_at(con, center_id, since=COVERAGE_START, until=None, area=None):
     """[(identificador, es_ctis, year)] for one centre, newest first.
 
-    What a reader gets after clicking a dot. The identifier is the key to the
-    registry that holds the record -- see analysis/registry.py, and note that
-    REEC itself publishes no per-study URL to link to.
+    What a reader gets after picking a hospital. The identifier is the key to
+    the registry that holds the record -- see analysis/registry.py, and note
+    that REEC itself publishes no per-study URL to link to.
+
+    Takes the same filters as the marks, `area` included, because the list is
+    read as the mark broken open: if the dot is sized by 40 trials and the
+    list runs to 300, one of the two is lying about what it counted.
     """
+    join, params = _area_join(area)
     return list(con.execute(
         """SELECT s.identificador, s.es_ctis,
                   substr(s.fecha_autorizacion_aemps, 1, 4) AS year
              FROM studies s
              JOIN study_centers sc ON sc.study_id = s.identificador
+             {}
             WHERE sc.center_id = ?
               AND s.fecha_autorizacion_aemps >= ?
               AND s.fecha_autorizacion_aemps < ?
-         ORDER BY s.fecha_autorizacion_aemps DESC""",
-        (center_id, _first_of(since), _first_of((until or 9998) + 1))))
+         ORDER BY s.fecha_autorizacion_aemps DESC""".format(join),
+        params + (center_id, _first_of(since),
+                  _first_of((until or 9998) + 1))))
 
 
 def load_geometry(path):
@@ -522,18 +686,24 @@ def sites_figure(sites, geometry, active, title, subtitle_text):
     fig = go.Figure([base("geo"), base("geo2"),
                      dots(mainland, "geo"), dots(canaries, "geo2")])
     fig.update_layout(
-        # y and yanchor are set rather than left to "auto", which puts the
-        # title *below* its own two-line subtitle here and overlaps them by
-        # eight pixels. Anchoring the block's top to the top of the paper
-        # makes the order the reading order whatever the subtitle wraps to.
-        title=dict(text=title, x=0, xref="paper", xanchor="left",
-                   y=0.98, yref="container", yanchor="top",
-                   subtitle=dict(text=subtitle_text,
-                                 font=dict(size=12, color=MUTED)),
-                   font=dict(size=17, color=INK)),
+        # The subtitle is a second line of the title's own text rather than
+        # Plotly's `title.subtitle`, which on this figure renders *above* the
+        # title and overlaps it. The choropleths use `title.subtitle` and are
+        # fine, and the difference was not the margin, the title anchoring or
+        # the second subplot's visibility -- all three were tried. Two lines
+        # of one string cannot come out in the wrong order, so the layout
+        # stops depending on which of those it was.
+        title=dict(
+            text="{}<br><span style='font-size:12px;font-weight:400;"
+                 "color:{}'>{}</span>".format(title, MUTED, subtitle_text),
+            font=dict(size=17, color=INK)),
         plot_bgcolor=SURFACE, paper_bgcolor=SURFACE, showlegend=False,
         font=dict(family="system-ui, sans-serif", color=MUTED, size=12),
-        margin=dict(t=110, r=10, b=60, l=10), width=760, height=600,
+        # t is 95, the same as the choropleths, and it is not a free choice:
+        # Plotly anchors the subtitle to the top of the paper and the title
+        # relative to the margin, so a *larger* top margin slides the title
+        # down past its own subtitle and prints one over the other.
+        margin=dict(t=95, r=10, b=60, l=10), width=760, height=600,
         annotations=[
             dict(x=0.01, y=0.31, xref="paper", yref="paper", xanchor="left",
                  showarrow=False, font=dict(size=10, color=MUTED),
@@ -542,25 +712,41 @@ def sites_figure(sites, geometry, active, title, subtitle_text):
                  showarrow=False, font=dict(size=10, color=MUTED),
                  text="Boundaries © EuroGeographics (Eurostat GISCO, NUTS). "
                       "Sites placed by postcode (GeoNames, CC BY 4.0)")])
-    fig.update_geos(visible=True, projection_type="mercator", bgcolor=SURFACE,
-                    showcountries=True, showland=True,
-                    landcolor=SURFACE, countrycolor=GRID, coastlinecolor=GRID,
-                    showsubunits=False)
+    # visible=False on the geo frames, exactly as the choropleths have it.
+    # The land under the dots is drawn by the province layer above, so the
+    # base map has nothing left to contribute -- and leaving the second
+    # subplot visible is what put the title underneath its own subtitle: an
+    # inset that draws its own frame claims margin at the top of the paper,
+    # and Plotly resolves the collision by moving the title rather than the
+    # subtitle.
+    fig.update_geos(visible=False, projection_type="mercator",
+                    bgcolor=SURFACE)
     fig.update_layout(
         geo=dict(domain=dict(x=[0, 1], y=[0, 1]), **MAINLAND),
-        geo2=dict(domain=dict(x=[0.0, 0.22], y=[0.0, 0.30]), **CANARIES))
+        geo2=dict(domain=dict(x=[0.0, 0.22], y=[0.0, 0.30]),
+                  visible=False, bgcolor=SURFACE, **CANARIES))
     return fig
 
 
-def sites_subtitle(sites, lost_sites, lost_trials, since, until):
+def sites_subtitle(note=None):
     """What the dots cannot say for themselves.
 
-    Two short lines rather than one long one: the figure is 760px wide and a
-    subtitle that runs past it is clipped rather than wrapped.
+    One short line, because the figure is 760px wide and a subtitle that runs
+    past it is clipped rather than wrapped -- and because on the unfiltered
+    first view every extra line is clutter the reader has to get past before
+    reaching the map.
+
+    `note` names the filters in force. Without it a filtered map is a map of
+    everything as far as the reader can tell, and every count under it -- all
+    of the filtered set -- would read as a claim about the corpus.
+
+    What the map cannot place is deliberately *not* here. It belongs with the
+    reader who is asking about coverage rather than in the way of the one
+    reading the map, so it is a line underneath, and only when there is
+    something to report.
     """
-    return ("Hospitals sharing a postcode share a point.<br>"
-            "{:,} sites have no usable postcode and are not here, nor are "
-            "the {:,} trials they ran.".format(lost_sites, lost_trials))
+    line = "Hospitals sharing a postcode share a point."
+    return "{} · {}".format(note, line) if note else line
 
 
 def subtitle(places, geometry, unplaced, grain):
