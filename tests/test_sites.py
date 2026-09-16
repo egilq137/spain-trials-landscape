@@ -30,6 +30,7 @@ from analysis.geography import (BASE_LAYER, Site, display_name, identities,
                                 only_provinces, place_sites,
                                 provinces_with_sites, resolve_town,
                                 site_activity, sites_figure, studies_at)
+from db.cleaning_rules import match_key
 from tests.test_loader import LoaderTestCase
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "trials.db"
@@ -187,7 +188,11 @@ class TestIdentities(unittest.TestCase):
     """Which centre rows are one site."""
 
     def rows(self, *rows):
-        return identities(rows, {"29010": "Malaga"})
+        """(id, key, name, town, postcode, reference), name defaulting."""
+        return identities(
+            [(cid, key, "Hospital " + key, town, postcode, reference)
+             for cid, key, town, postcode, reference in rows],
+            {"29010": "Malaga"})
 
     def test_one_reference_and_one_town_is_one_site(self):
         out = self.rows((1, "k", "Barcelona", "08036", "ORG-1"),
@@ -201,11 +206,19 @@ class TestIdentities(unittest.TestCase):
                         (2, "k", "Girona", "17007", "ORG-1"))
         self.assertNotEqual(out[1], out[2])
 
-    def test_no_reference_is_never_merged(self):
-        # The placeholder-name hazard: two `Clínica privada` rows in one town
-        # are two clinics, and nothing here says otherwise.
-        out = self.rows((1, "clinicaprivada", "Madrid", "28001", None),
-                        (2, "clinicaprivada", "Madrid", "28002", None))
+    def test_rows_with_no_reference_merge_on_their_name_and_place(self):
+        # REEC leaves rows without a reference and issues several references
+        # for one hospital, so the name has to be an identity of its own:
+        # 12 de Octubre files at 28041 under an ORG- code, a numeric code,
+        # two ORL- codes and nothing at all.
+        out = self.rows((1, "k", "Madrid", "28041", "ORG-1"),
+                        (2, "k", "Madrid", "28041", None),
+                        (3, "k", "Madrid", "28041", "280035"))
+        self.assertEqual(len({out[i] for i in (1, 2, 3)}), 1)
+
+    def test_two_names_in_one_town_are_still_two_sites(self):
+        out = self.rows((1, "clinicauna", "Madrid", "28001", None),
+                        (2, "clinicaotra", "Madrid", "28002", None))
         self.assertNotEqual(out[1], out[2])
 
     def test_a_row_with_no_town_joins_a_key_that_has_only_one(self):
@@ -244,11 +257,12 @@ class TestIdentities(unittest.TestCase):
     def test_a_postcode_known_to_be_wrong_joins_nothing(self):
         # The one exception in the corpus: Institut Català d'Oncologia gives
         # three real hospitals L'Hospitalet's postcode.
-        reference, postcode = next(iter(geography.KEEP_APART))
+        postcode = next(iter(geography.KEEP_APART))
+        name = "Institut Català d'Oncologia"
         out = identities(
-            [(1, "k", "L'Hospitalet de Llobregat", postcode, reference),
-             (2, "k", "Badalona", postcode, reference),
-             (3, "k", "Girona", postcode, reference)], {})
+            [(1, "k", name, "L'Hospitalet de Llobregat", postcode, "ORG-1"),
+             (2, "k", name, "Badalona", postcode, "ORG-1"),
+             (3, "k", name, "Girona", postcode, "ORG-1")], {})
         self.assertEqual(len({out[i] for i in (1, 2, 3)}), 3)
 
     def test_a_shared_reference_alone_never_merges(self):
@@ -510,26 +524,29 @@ class TestAgainstDatabase(unittest.TestCase):
                 self.assertEqual(
                     len(studies_at(self.con, center_ids)), trials)
 
-    def test_no_merge_fuses_two_different_hospitals(self):
-        """The guard on the whole rule, checked against the real corpus.
+    def test_no_placeholder_name_has_two_rows_in_one_town(self):
+        """The canary on the name rule, checked against the real corpus.
 
-        A merge only ever joins rows the loader already gave one identity to.
-        If a data refresh ever produces a group spanning two centre keys, the
-        reference it merged on is being shared by places that are not the
-        same hospital -- the `Clínica privada` hazard arriving through the
-        reference column instead of the name -- and this fails rather than
-        the map quietly gaining a hospital nobody has.
+        Linking rows that share a name and a place is safe here and is not
+        safe in principle: `Clínica privada` is what fourteen unrelated
+        private clinics are called, and two of them in one town would merge
+        into a clinic that does not exist. It does not happen -- the fourteen
+        are in ten different towns, none of them twice -- so the rule is left
+        as it is rather than carrying a list of names it must refuse.
+
+        If a data refresh puts two of them in one town, this fails, and the
+        list of refusals becomes worth writing.
         """
-        raw = self.con.execute(
-            "SELECT center_id, center_key, localidad, cod_postal, referencia "
-            "FROM centers").fetchall()
-        keys_of = {cid: key for cid, key, _, _, _ in raw}
-        by_identity = collections.defaultdict(set)
-        for cid, identity in identities(raw, self.towns).items():
-            by_identity[identity].add(keys_of[cid])
-        spanning = {identity: keys for identity, keys in by_identity.items()
-                    if len(keys) > 1}
-        self.assertEqual(spanning, {})
+        rows = self.con.execute(
+            "SELECT nombre, localidad, cod_postal FROM centers").fetchall()
+        placed = collections.Counter(
+            (match_key(name), resolve_town(localidad or "", postcode,
+                                           self.towns))
+            for name, localidad, postcode in rows)
+        clinics = {place: count for (key, place), count in placed.items()
+                   if key == "clinicaprivada" and place}
+        self.assertEqual([place for place, count in clinics.items()
+                          if count > 1], [])
 
     def test_the_cases_the_rule_has_to_get_right(self):
         placed, _, _ = place_sites(site_activity(self.con, towns=self.towns), self.postcodes)

@@ -30,6 +30,7 @@ import csv
 import json
 import unicodedata
 
+from db import cleaning_rules
 from analysis.sponsors import REVIEW_STYLE
 from analysis.volume import COVERAGE_START, GRID, INK, MUTED, SERIES, SURFACE
 
@@ -352,11 +353,16 @@ def normalise_town(localidad):
 # merge rows whose towns disagree; 79 of them disagree because one row wrote
 # the province in the town field, or lost an accent, or wrote the hospital's
 # own name there. This is the one where the towns are simply three towns.
+# Keyed on the postcode alone rather than on (reference, postcode), because
+# the rows it has to keep apart share their name as well as their reference:
+# a block that only stopped the reference from linking them would let the
+# name link them instead, one line further down.
 KEEP_APART = {
-    ("ORG-100030394", "08908"):
+    "08908":
         "Institut Català d'Oncologia: L'Hospitalet, Badalona and Girona are "
-        "three hospitals sharing one reference, and the Girona and Badalona "
-        "rows carry L'Hospitalet's postcode. See CHECKED_UNCHANGED above.",
+        "three hospitals sharing one reference and one name, and the Girona "
+        "and Badalona rows carry L'Hospitalet's postcode. They are separated "
+        "by their towns, which are right. See CHECKED_UNCHANGED above.",
 }
 
 
@@ -392,52 +398,51 @@ def identities(rows, towns):
     """
     resolved, by_key = {}, collections.defaultdict(set)
     prepared = []
-    for center_id, center_key, localidad, cod_postal, referencia in rows:
+    for center_id, center_key, nombre, localidad, cod_postal, referencia \
+            in rows:
         town = resolve_town(localidad or "", cod_postal, towns)
         resolved[center_id] = town
         prepared.append((center_id, center_key, referencia,
-                         normalise_postcode(cod_postal or "")))
+                         normalise_postcode(cod_postal or ""),
+                         cleaning_rules.match_key(nombre or "")))
         if town:
             by_key[center_key].add(town)
 
     # A row with no town of its own takes its key's, when its key has one.
-    for center_id, center_key, _, _ in prepared:
+    for center_id, center_key, _, _, _ in prepared:
         if not resolved[center_id] and len(by_key[center_key]) == 1:
             resolved[center_id] = next(iter(by_key[center_key]))
 
-    parent = {center_id: center_id for center_id, _, _, _ in prepared}
-    for referencia, group in _by_reference(prepared).items():
-        for field, index in ((resolved, 0), (None, 3)):
+    # Four ways to be the same hospital, each a shared identity and a shared
+    # place. The reference is one identity and the name is another, and both
+    # are needed: REEC issues several reference codes for one hospital and
+    # leaves some rows with none -- 12 de Octubre files at 28041 under
+    # ORG-100028548, under 280035, under two ORL- codes and under nothing --
+    # so rows of one hospital routinely share everything except a reference.
+    parent = {row[0]: row[0] for row in prepared}
+    for identity_index in (2, 4):
+        for place_index in (0, 3):
             seen = {}
-            for center_id, _, _, postcode in group:
-                value = resolved[center_id] if field else postcode
-                if not value or (field is None
-                                 and (referencia, value) in KEEP_APART):
+            for row in prepared:
+                identity = row[identity_index]
+                place = (resolved[row[0]] if place_index == 0 else row[3])
+                if not identity or not place:
                     continue
-                if value in seen:
-                    _link(parent, seen[value], center_id)
+                if place_index == 3 and place in KEEP_APART:
+                    continue
+                pair = (identity, place)
+                if pair in seen:
+                    _link(parent, seen[pair], row[0])
                 else:
-                    seen[value] = center_id
+                    seen[pair] = row[0]
 
     out = {}
-    for center_id, _, referencia, _ in prepared:
-        if not referencia:
-            out[center_id] = center_id
-            continue
-        root = center_id
+    for row in prepared:
+        root = row[0]
         while parent[root] != root:
             root = parent[root]
-        out[center_id] = ((referencia, root) if resolved[center_id] or
-                          root != center_id else center_id)
+        out[row[0]] = root
     return out
-
-
-def _by_reference(prepared):
-    groups = collections.defaultdict(list)
-    for row in prepared:
-        if row[2]:
-            groups[row[2]].append(row)
-    return groups
 
 
 def merge_key(referencia, town):
@@ -513,8 +518,8 @@ def site_activity(con, since=COVERAGE_START, until=None, area=None,
     # two counts would make it two. Same reason _pairs fetches its pairs.
     rows = list(rows)
     identity_of = identities(
-        {(cid, key, localidad, postcode, referencia)
-         for cid, _, localidad, _, postcode, key, referencia, _ in rows},
+        {(cid, key, name, localidad, postcode, referencia)
+         for cid, name, localidad, _, postcode, key, referencia, _ in rows},
         towns)
 
     studies = collections.defaultdict(set)
@@ -803,8 +808,8 @@ def centre_groups(con, towns, since=COVERAGE_START, until=None):
 
     rows = list(rows)
     identity_of = identities(
-        {(cid, key, localidad, postcode, referencia)
-         for key, cid, _, localidad, postcode, referencia, _ in rows},
+        {(cid, key, name, localidad, postcode, referencia)
+         for key, cid, name, localidad, postcode, referencia, _ in rows},
         towns)
 
     members = collections.defaultdict(dict)
