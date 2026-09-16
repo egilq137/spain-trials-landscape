@@ -12,6 +12,7 @@ database, and `mode=ro` makes that a property of the connection rather than a
 promise.
 """
 
+import collections
 import sqlite3
 from pathlib import Path
 
@@ -147,9 +148,12 @@ def write_hospital_matches(con, docs_dir=DOCS_DIR):
     matched = hospitals.match_centres(con, index)
     path = docs_dir / "hospital-matches.html"
     path.write_text(hospitals.review_page(matched), encoding="utf-8")
-    hit = sum(1 for row in matched if row[4].hospital)
-    print("{}: {:,} of {:,} centres matched to a national hospital".format(
-        path, hit, len(matched)))
+    counts = collections.Counter(row[4].verdict for row in matched)
+    print("{}: {:,} of {:,} centres matched; {:,} ambiguous, {:,} near "
+          "misses, {:,} with no plausible candidate".format(
+              path, counts[hospitals.MATCHED], len(matched),
+              counts[hospitals.AMBIGUOUS], counts[hospitals.NEAR_MISS],
+              counts[hospitals.NO_CANDIDATE]))
     return path
 
 

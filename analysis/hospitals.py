@@ -34,10 +34,20 @@ Hospital = collections.namedtuple(
                 "dependencia complejo")
 
 Match = collections.namedtuple(
-    "Match", "hospital closest score runner_up why")
+    "Match", "hospital closest score runner_up verdict why")
 # `hospital` is the accepted match and is None unless one was accepted;
 # `closest` is the best candidate whatever the verdict, because a rejection
 # a reader cannot see the near-miss for is one they cannot judge.
+
+# The four things this module is able to say. They are deliberately about the
+# *evidence*, not about the centre: a catalogue of hospitals cannot establish
+# that something is not a hospital, only that nothing in it resembles the
+# name. Absence of a match is not evidence of absence, and the vocabulary
+# should not pretend otherwise.
+MATCHED = "matched"
+AMBIGUOUS = "ambiguous"        # two catalogue entries the name cannot separate
+NEAR_MISS = "near miss"        # something similar exists; worth a reading
+NO_CANDIDATE = "no candidate"  # nothing in the catalogue resembles it
 
 # Accept at 0.50, and only 0.10 clear of the runner-up.
 #
@@ -52,6 +62,23 @@ Match = collections.namedtuple(
 # Paz, and a tie between those two should be read by a person.
 ACCEPT = 0.50
 MARGIN = 0.10
+
+# Below the floor, one more line: is there anything down there worth reading?
+#
+# Measured on the rows the matcher refuses, 1,378 of the 1,978 score under
+# 0.25 and carry 3.9% of the trial-site links between them -- the catalogue
+# holds nothing resembling those names, and most of them are research
+# institutes, health centres and private clinics it does not list. The 517
+# between 0.25 and the floor are a different animal: a real hospital under a
+# name the rule could not follow hides there (`HOSPITAL UNIVERSITARIO ALVARO
+# CUNQUEIRO`, listed under its complex in Vigo) beside things that genuinely
+# are not hospitals (`Vall d'Hebron Institut de Recerca`).
+#
+# **This line sorts the reading, not the world.** It cannot be calibrated
+# against the coded rows, because those all have a right answer by
+# construction; it was read off the distribution above and chosen where the
+# volume falls away.
+NEAR = 0.25
 
 # The same word in another language, folded onto one token. Only language
 # variants and connectors belong here -- **no hospital is named in this
@@ -209,12 +236,12 @@ def match(index, nombre, localidad, cod_postal):
     if alias is not None:
         hospital = index.by_code.get(alias.codcnh)
         if hospital is not None:
-            return Match(hospital, hospital, 1.0, 0.0,
+            return Match(hospital, hospital, 1.0, 0.0, MATCHED,
                          "alias: " + alias.why)
 
     candidates = index.candidates(localidad, cod_postal)
     if not candidates:
-        return Match(None, None, 0.0, 0.0,
+        return Match(None, None, 0.0, 0.0, NO_CANDIDATE,
                      "no hospital shares its postcode, town or province")
 
     ranked = sorted(((similarity(nombre, hospital.nombre), hospital)
@@ -222,16 +249,20 @@ def match(index, nombre, localidad, cod_postal):
     score, best = ranked[0]
     runner_up = ranked[1][0] if len(ranked) > 1 else 0.0
 
+    if score < NEAR:
+        return Match(None, best, score, runner_up, NO_CANDIDATE,
+                     "best of {} candidates scores {:.2f}: nothing in the "
+                     "catalogue resembles this name".format(
+                         len(candidates), score))
     if score < ACCEPT:
-        return Match(None, best, score, runner_up,
-                     "best of {} candidates scores {:.2f}, under {:.2f} -- "
-                     "probably not a hospital, or not in the catalogue"
-                     .format(len(candidates), score, ACCEPT))
+        return Match(None, best, score, runner_up, NEAR_MISS,
+                     "best of {} candidates scores {:.2f}, under the {:.2f} "
+                     "floor".format(len(candidates), score, ACCEPT))
     if score - runner_up < MARGIN:
-        return Match(None, best, score, runner_up,
+        return Match(None, best, score, runner_up, AMBIGUOUS,
                      "{:.2f} against {:.2f} for the next candidate is too "
                      "close to call".format(score, runner_up))
-    return Match(best, best, score, runner_up,
+    return Match(best, best, score, runner_up, MATCHED,
                  "{:.2f}, next best {:.2f}".format(score, runner_up))
 
 
@@ -270,30 +301,47 @@ def match_centres(con, index, since=None):
 def review_page(matched, shown=120):
     """The page the matches get read on, in the shape of the sibling pages.
 
-    Rejections are listed as prominently as matches, because the rule cannot
-    report the hospital it failed to find and reading the refusals is the
-    only way to notice one.
+    Split by verdict rather than into matched and everything-else, because
+    those outcomes are not one thing. A catalogue of hospitals *should* fail
+    to match a research institute or a health centre, and filing that beside
+    a genuine miss under one heading both overstates the work left and
+    buries the rows that actually need reading.
+
+    So three tables are printed and one bucket is only counted: the rows
+    with no plausible candidate are an answer, not a queue.
     """
     import html
 
-    accepted = [row for row in matched if row[4].hospital is not None]
-    rejected = [row for row in matched if row[4].hospital is None]
+    groups = collections.defaultdict(list)
+    for row in matched:
+        groups[row[4].verdict].append(row)
     trials = sum(row[3] for row in matched) or 1
 
-    def rows_for(group, limit):
-        out = []
+    def share(group):
+        return 100 * sum(row[3] for row in group) / trials
+
+    def table(group, limit, last_column):
+        opening = ("<table><thead><tr><th>REEC centre</th><th>Town</th>"
+                   "<th class='n'>Trials</th><th>{}</th><th>Why</th></tr>"
+                   "</thead><tbody>".format(last_column))
+        body = []
         for center_id, nombre, localidad, count, result in group[:limit]:
-            shown_hospital = result.hospital or result.closest
-            official = shown_hospital.nombre if shown_hospital else "—"
-            code = shown_hospital.codcnh if shown_hospital else ""
-            out.append(
+            hospital = result.hospital or result.closest
+            official = hospital.nombre if hospital else "—"
+            code = hospital.codcnh if hospital else ""
+            body.append(
                 "<tr><td>{}</td><td>{}</td><td class='n'>{:,}</td>"
                 "<td>{}</td><td class='tag'>{}</td></tr>".format(
                     html.escape(nombre), html.escape(localidad or "—"),
                     count,
                     "{} {}".format(code, html.escape(official)).strip(),
                     html.escape(result.why)))
-        return "".join(out)
+        return opening + "".join(body) + "</tbody></table>"
+
+    accepted = groups[MATCHED]
+    ambiguous = groups[AMBIGUOUS]
+    near = groups[NEAR_MISS]
+    nothing = groups[NO_CANDIDATE]
 
     return "\n".join([
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>",
@@ -305,24 +353,49 @@ def review_page(matched, shown=120):
         "Generated by <code>run_analysis.py</code>. Origen de los datos: "
         "Ministerio de Sanidad, Consumo y Bienestar Social; data updated "
         "31 December 2024.</p>",
-        "<p><strong>Nothing here merges anything.</strong> A match says "
-        "which hospital a row is, and only that.</p>",
+        "<p><strong>Nothing here merges anything.</strong> A match says which "
+        "hospital a row is, and only that. Not every row has one: the "
+        "catalogue lists hospitals, and a trial site can perfectly well be a "
+        "research institute, a health centre or a private clinic that belongs "
+        "in none of these tables. The verdicts below are about the evidence "
+        "rather than about the centre &mdash; nothing in a catalogue of "
+        "hospitals can establish that something <em>is not</em> one.</p>",
+
         "<h2>{:,} matched, carrying {:.0f}% of the trial-site links</h2>"
-        .format(len(accepted),
-                100 * sum(row[3] for row in accepted) / trials),
+        .format(len(accepted), share(accepted)),
         "<p>Read the score: 1.00 is the same words in another order or "
-        "another language. Anything near the 0.50 floor is worth an eye.</p>",
-        "<table><thead><tr><th>REEC centre</th><th>Town</th>"
-        "<th class='n'>Trials</th><th>Matched to</th><th>Why</th></tr>"
-        "</thead><tbody>", rows_for(accepted, shown), "</tbody></table>",
-        "<h2>{:,} sent to review, carrying {:.0f}%</h2>".format(
-            len(rejected), 100 * sum(row[3] for row in rejected) / trials),
-        "<p>These should be research institutes, health centres and clinics "
-        "the catalogue does not list -- it is a catalogue of hospitals. "
-        "<strong>A hospital in this table is a miss</strong>, and the fix is "
-        "either a spelling the synonym table has not met or a line in "
+        "another language. Anything near the {:.2f} floor is worth an "
+        "eye.</p>".format(ACCEPT),
+        table(accepted, shown, "Matched to"),
+
+        "<h2>{:,} ambiguous, carrying {:.0f}%</h2>".format(
+            len(ambiguous), share(ambiguous)),
+        "<p>These score above the floor &mdash; the hospital is almost "
+        "certainly in the catalogue &mdash; but two entries score within "
+        "{:.2f} of each other and the name cannot separate them, usually one "
+        "hospital the catalogue lists once per campus. <strong>The densest "
+        "rows on the page</strong>, and the only ones where the matcher is "
+        "asking a question rather than reporting a result.</p>".format(MARGIN),
+        table(ambiguous, shown, "Closest"),
+
+        "<h2>{:,} near misses, carrying {:.0f}%</h2>".format(
+            len(near), share(near)),
+        "<p>Something in the catalogue resembles the name without reaching "
+        "the floor, so this is the pile worth a reading: a real hospital "
+        "under a name the rule could not follow sits here beside an "
+        "institute that correctly does not match. The fix for the first kind "
+        "is a spelling the synonym table has not met, or a line in "
         "<code>ALIASES</code>.</p>",
-        "<table><thead><tr><th>REEC centre</th><th>Town</th>"
-        "<th class='n'>Trials</th><th>Closest</th><th>Why</th></tr>"
-        "</thead><tbody>", rows_for(rejected, shown), "</tbody></table>",
+        table(near, shown, "Closest"),
+
+        "<h2>{:,} with no plausible candidate, carrying {:.0f}%</h2>".format(
+            len(nothing), share(nothing)),
+        "<p>Nothing in the same postcode, town or province scores {:.2f} "
+        "against these names. <strong>Not a queue.</strong> This is the "
+        "matcher's answer for a site the state does not catalogue as a "
+        "hospital, and printing {:,} rows of it would make the page longer "
+        "without making it more true. It is also the honest size of the "
+        "exclusion idea: limiting the analysis to recognised hospitals would "
+        "cost these {:.0f}% of links, not everything the matcher "
+        "declined.</p>".format(NEAR, len(nothing), share(nothing)),
         "</body></html>"])

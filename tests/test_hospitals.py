@@ -12,19 +12,24 @@ Success criteria:
   match: accepts only above the floor and clear of the runner-up, and says
     why in every other case
   aliases: the hospitals whose official name shares nothing with REEC's
+  verdicts: four outcomes, not two. A catalogue of hospitals is supposed to
+    refuse a research institute, and that refusal is an answer -- it must not
+    be reported in the same breath as a hospital the rule failed to follow
   against the database: the 324 rows carrying a CODCNH are the calibration
     set, and the accuracy measured on them is pinned here so a change to the
     synonym table or the thresholds cannot quietly trade it away
 """
 
+import collections
 import re
 import sqlite3
 import unittest
 from pathlib import Path
 
 from analysis import hospitals
-from analysis.hospitals import (ACCEPT, Index, load_hospitals, match,
-                                similarity, tokens)
+from analysis.hospitals import (ACCEPT, AMBIGUOUS, MATCHED, NEAR,
+                                NEAR_MISS, NO_CANDIDATE, Index,
+                                load_hospitals, match, similarity, tokens)
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "data" / "trials.db"
@@ -153,12 +158,30 @@ class TestMatch(unittest.TestCase):
                        "08916")
         self.assertGreaterEqual(result.score, ACCEPT)
         self.assertIsNone(result.hospital)
-        self.assertIn("too close", result.why)
+        self.assertEqual(result.verdict, AMBIGUOUS)
 
     def test_it_refuses_what_is_not_a_hospital(self):
         result = match(self.index, "CAP Balafia-Pardinyes", "Madrid", "28046")
         self.assertIsNone(result.hospital)
-        self.assertIn("under", result.why)
+        self.assertEqual(result.verdict, NO_CANDIDATE)
+
+    def test_a_near_miss_is_not_filed_as_an_absence(self):
+        # IRYCIS shares two words with the hospital it sits inside and
+        # nothing else: 0.29, above NEAR and under ACCEPT. That band is
+        # where a hospital under an unfamiliar name hides, so it is a
+        # verdict of its own and not part of the no-candidate count.
+        result = match(self.index,
+                       "Instituto Ramón y Cajal de Investigación Sanitaria",
+                       "Madrid", "28001")
+        self.assertIsNone(result.hospital)
+        self.assertEqual(result.verdict, NEAR_MISS)
+        self.assertGreaterEqual(result.score, NEAR)
+        self.assertLess(result.score, ACCEPT)
+
+    def test_a_match_says_so(self):
+        result = match(self.index, "HOSPITAL UNIVERSITARIO LA PAZ", "Madrid",
+                       "28046")
+        self.assertEqual(result.verdict, MATCHED)
 
     def test_a_refusal_still_names_the_closest(self):
         # A rejection a reader cannot see the near-miss for is one they
@@ -169,6 +192,7 @@ class TestMatch(unittest.TestCase):
     def test_nowhere_to_look_is_its_own_answer(self):
         result = match(self.index, "Hospital", "", "")
         self.assertIsNone(result.hospital)
+        self.assertEqual(result.verdict, NO_CANDIDATE)
         self.assertIn("no hospital", result.why)
 
 
@@ -263,6 +287,27 @@ class TestAgainstDatabase(unittest.TestCase):
             with self.subTest(nombre=nombre):
                 self.assertIsNone(
                     match(self.index, nombre, localidad, cod_postal).hospital)
+
+    def test_the_refusals_are_two_different_answers(self):
+        """The reason the verdict exists.
+
+        Most refusals are the catalogue correctly not listing something that
+        is not a hospital; a much smaller pile is worth reading. If a change
+        ever collapses that split -- everything landing in one bucket -- the
+        page goes back to implying thousands of rows of pending work.
+        """
+        verdicts = collections.Counter(
+            match(self.index, nombre, localidad, cod_postal).verdict
+            for nombre, localidad, cod_postal in self.con.execute(
+                "SELECT nombre, localidad, cod_postal FROM centers"))
+        self.assertGreater(verdicts[NO_CANDIDATE], verdicts[NEAR_MISS])
+        self.assertGreater(verdicts[NEAR_MISS], 0)
+        self.assertGreater(verdicts[AMBIGUOUS], 0)
+        # Note what this does *not* assert. Counted by centre, the rows with
+        # no plausible candidate outnumber the matches -- REEC's long tail is
+        # institutes and health centres. Matching dominates by trial-site
+        # link, not by row, and the review page has to say which it means.
+        self.assertGreater(verdicts[MATCHED], verdicts[NEAR_MISS])
 
 
 if __name__ == "__main__":
