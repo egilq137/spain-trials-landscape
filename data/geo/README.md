@@ -1,8 +1,20 @@
-# Geometry
+# Reference data
 
 The only files in `data/` that are committed. `data/raw/` is gitignored
 because it is 208 MB and re-fetchable; these are small and would be tedious to
 rebuild by hand, so they live in the repo and the provenance lives here.
+
+Four files, from three sources, and all of the same kind: small, external,
+licensed, and describing *Spain* rather than describing this corpus. Two are
+geometry, one is a gazetteer and one is a directory of hospitals; the
+directory named this file when it only held polygons, and the files have not
+been moved because a path in a committed artefact is worth more than a tidy
+name.
+
+**Nothing derived from the trials belongs here.** Which centre is which
+hospital, which sponsor is which company, which trial counts where -- those
+are conclusions, they live in `analysis/` where they can be argued with, and
+`PROJECT_SPEC` 3.3 explains why for the sponsor case.
 
 ## `spain-ccaa.geojson`
 
@@ -129,3 +141,68 @@ trailing punctuation, digit separators, a dropped leading zero. **It refuses
 anything still holding a letter**, which costs 11 centres and is worth it:
 stripping letters instead turns `3584 AE`, a Dutch postcode, into `03584`,
 which is a real place in Alicante.
+
+## `hospitals.csv`
+
+848 rows, one per hospital in Spain: `codcnh`, `nombre`, `municipio`,
+`provincia`, `cod_postal`, `camas`, `clase`, `dependencia`, `complejo`.
+
+| | |
+|---|---|
+| Source | Catálogo Nacional de Hospitales 2025, sheet `DIRECTORIO DE HOSPITALES` of `CNH_2025.xlsx` |
+| URL | https://www.sanidad.gob.es/estadEstudios/estadisticas/sisInfSanSNS/ofertaRecursos/hospitales/docs/CNH_2025.xlsx |
+| Retrieved | 2026-09-16 (file last modified 2025-10-30) |
+| Data updated | **31 December 2024** -- the catalogue is revised annually on 31 December and takes effect the following 1 January |
+| Licence | Free reuse, including commercial. https://sede.mscbs.gob.es/datosabiertos/condiciones.htm |
+
+**The licence requires all of the following wherever this data is
+published**, and the pages built from it carry them:
+
+- the source, worded as **"Origen de los datos: Ministerio de Sanidad,
+  Consumo y Bienestar Social"**
+- the date the data was updated, above
+- no suggestion that the Ministry participates in, sponsors or endorses this
+  work -- it does not
+- no distortion of the meaning of the information
+
+### How it was cut down
+
+The workbook has nine sheets; this is the first one, with 9 of its 22 columns
+kept. Dropped: the street address, telephone and email (contact details this
+project has no use for and PROJECT_SPEC 3.2b's rule against personal data
+points away from), the internal `CCN` identifier, and the numeric codes that
+duplicate the labels kept -- `Cód. Clase de Centro` beside `Clase de Centro`,
+and so on. The two code tables the workbook ships are readable in full and
+are not reproduced: their labels are already spelled out in these rows.
+
+Recorded here rather than scripted, the same rule as the files above: it ran
+once and the output is the artefact.
+
+### What it is for, and what it is not
+
+It is an **authority list**: 848 hospitals the state recognises, each with an
+official name, a municipality and a postcode. REEC's centre rows are messy in
+four languages, and matching each of them against one clean list is a smaller
+and far more checkable problem than matching 3,293 messy rows against each
+other -- a row gets an official hospital name assigned, and a reader can see
+whether it is the right one.
+
+`codcnh` is a real key into this data and REEC already carries it: **324 of
+REEC's numeric `referencia` values are `CODCNH` codes**, verified by name and
+postcode, not merely by format. The rest of REEC's numeric references are a
+second series in the 11xxxx-12xxxx band covering health centres of every
+kind, which is why they are absent from a catalogue of hospitals.
+
+**It does not settle the matching on its own.** The catalogue holds
+near-name collisions within one municipality: Madrid has both `Hospital
+Universitario La Paz` (966 beds, general, public) and `Clínica Nuestra Señora
+de La Paz` (99 beds, mental health, private); Barcelona has both `Hospital
+Universitari Vall D'Hebron` (1,315 beds) and `Centre Sociosanitari Sant Jordi
+de la Vall D'Hebron` (57 beds). A match on name similarity alone picks the
+wrong one often enough to matter, which is why `camas`, `clase` and
+`cod_postal` are kept: they are what makes a match checkable.
+
+`complejo` names the 41 hospital complexes, covering 114 hospitals. It is the
+ministry's own answer to a question this project keeps meeting -- whether two
+sites are one organisation -- and it is worth more than any string rule that
+could be written for it.
