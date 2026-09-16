@@ -15,7 +15,8 @@ promise.
 import sqlite3
 from pathlib import Path
 
-from analysis import geography, phases, sponsors, therapeutic, volume
+from analysis import (geography, hospitals, phases, sponsors, therapeutic,
+                      volume)
 
 # div_id is pinned to the file name on every write_html below. Plotly
 # generates a fresh uuid otherwise, so re-running the analysis would rewrite
@@ -26,6 +27,7 @@ CHART_DIR = DOCS_DIR / "charts"
 REGIONS = Path("data") / "geo" / "spain-ccaa.geojson"
 PROVINCES = Path("data") / "geo" / "spain-provinces.geojson"
 POSTCODES = Path("data") / "geo" / "postcodes.csv"
+HOSPITALS = Path("data") / "geo" / "hospitals.csv"
 
 
 def open_database(path=DEFAULT_DB):
@@ -134,6 +136,23 @@ def write_centre_review(con, docs_dir=DOCS_DIR):
     return path
 
 
+def write_hospital_matches(con, docs_dir=DOCS_DIR):
+    """The page the hospital matches get read on.
+
+    Nothing downstream reads the matches yet -- this writes the evidence
+    first, so the merging built on it later is built on something that was
+    read.
+    """
+    index = hospitals.Index(hospitals.load_hospitals(HOSPITALS))
+    matched = hospitals.match_centres(con, index)
+    path = docs_dir / "hospital-matches.html"
+    path.write_text(hospitals.review_page(matched), encoding="utf-8")
+    hit = sum(1 for row in matched if row[4].hospital)
+    print("{}: {:,} of {:,} centres matched to a national hospital".format(
+        path, hit, len(matched)))
+    return path
+
+
 def write_geography_charts(con, chart_dir=CHART_DIR):
     write_map(con, "region", REGIONS, "regional-participation.html",
               "Where Spanish trials run: regional participation since {}"
@@ -224,6 +243,7 @@ def main():
         write_area_race_chart(con)
         write_geography_charts(con)
         write_centre_review(con)
+        write_hospital_matches(con)
         write_phase_charts(con)
         write_sponsor_charts(con)
     finally:
