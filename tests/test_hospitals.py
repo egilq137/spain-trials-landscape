@@ -349,34 +349,71 @@ class TestAmbiguousCases(unittest.TestCase):
         trials = [case.trials for case in self.cases]
         self.assertEqual(trials, sorted(trials, reverse=True))
 
-    def test_the_suggestion_is_offered_only_when_it_is_unambiguous(self):
+    def test_every_suggestion_states_a_reason(self):
+        """A pre-ticked radio nobody can disagree with is not a question."""
         for case in self.cases:
-            if case.suggested is None:
+            with self.subTest(nombre=case.nombre):
+                self.assertEqual(bool(case.suggested), bool(case.reason))
+
+    def test_a_suggestion_is_either_read_or_the_only_one_in_town(self):
+        for case in self.cases:
+            if not case.suggested:
                 continue
             with self.subTest(nombre=case.nombre):
-                hospital = self.index.by_code[case.suggested]
-                self.assertEqual(hospitals._town(hospital.municipio),
-                                 hospitals._town(case.localidad))
-                here = [h for score, h in case.candidates
-                        if score >= case.candidates[0][0] - hospitals.MARGIN
-                        and hospitals._town(h.municipio)
-                        == hospitals._town(case.localidad)]
-                self.assertEqual(len(here), 1)
+                key = (" ".join(hospitals.fold(case.nombre)),
+                       hospitals._town(case.localidad))
+                if key in hospitals.PROPOSED:
+                    self.assertEqual(
+                        case.suggested,
+                        hospitals.PROPOSED[key].codcnh or "NONE")
+                else:
+                    self.assertEqual(
+                        case.suggested, hospitals._same_town(case.candidates,
+                                                             case.localidad))
 
-    def test_a_suggestion_can_lose_on_the_name(self):
-        """The reason the town is worth consulting at all.
+    def test_a_proposal_changes_nothing_until_it_is_confirmed(self):
+        """The whole reason PROPOSED is a second table.
 
-        The catalogue lists the Institut Català d'Oncologia once per campus,
-        so the Girona row's best name match is the L'Hospitalet entry and
-        its right answer is the Girona one.
+        Every key in it is still an unanswered question, so the matcher must
+        still refuse those rows -- a proposal that quietly behaved like a
+        decision would be a decision nobody made.
         """
-        girona = [case for case in self.cases
-                  if "oncologia" in " ".join(hospitals.fold(case.nombre))
-                  and hospitals._town(case.localidad) ==
-                  hospitals._town("Girona")]
-        self.assertEqual(len(girona), 1)
-        self.assertEqual(girona[0].suggested, "170299")
-        self.assertNotEqual(girona[0].candidates[0][1].codcnh, "170299")
+        self.assertTrue(hospitals.PROPOSED)
+        for case in self.cases:
+            key = (" ".join(hospitals.fold(case.nombre)),
+                   hospitals._town(case.localidad))
+            if key not in hospitals.PROPOSED:
+                continue
+            with self.subTest(nombre=case.nombre):
+                self.assertEqual(
+                    match(self.index, case.nombre, case.localidad,
+                          case.cod_postal).verdict, AMBIGUOUS)
+
+    def test_the_answers_are_reachable(self):
+        """A key that matches no row is a decision that does nothing.
+
+        Both tables are keyed on a folded name and a normalised town, and
+        either of those can be retyped wrong or go stale when the pipeline
+        is rebuilt. This is how that gets noticed.
+        """
+        rows = {(" ".join(hospitals.fold(nombre)), hospitals._town(localidad))
+                for nombre, localidad in self.con.execute(
+                    "SELECT nombre, localidad FROM centers")}
+        for table in (hospitals.ANSWERS, hospitals.PROPOSED):
+            for key in table:
+                with self.subTest(key=key):
+                    self.assertIn(key, rows)
+
+    def test_a_decision_overrules_both_the_score_and_the_town(self):
+        """Ribera Salud runs the Alzira hospital; REEC files the row in
+        Valencia. Neither the name nor the geography gets there, which is
+        what a read decision is for."""
+        result = match(self.index, "Hospital Ribera Salud", "Valencia",
+                       "46600")
+        self.assertEqual(result.verdict, MATCHED)
+        self.assertEqual(result.hospital.codcnh, "460351")
+        self.assertEqual(result.hospital.municipio, "Alzira")
+        self.assertIn("read:", result.why)
 
     def test_the_page_offers_every_candidate_and_the_two_ways_out(self):
         page = ambiguous_page(self.cases[:3])

@@ -171,6 +171,324 @@ ALIASES = {
 }
 
 
+
+# ---------------------------------------------------------------------------
+# The rows a person decided
+# ---------------------------------------------------------------------------
+# The matcher refuses 83 rows as ambiguous -- two catalogue entries score
+# within MARGIN of each other and the name cannot separate them -- and those
+# rows carry 6.6% of the trial-site links, so they are worth a reading rather
+# than a better rule. They were read on docs/hospital-ambiguous.html on
+# 16 September 2026; these are the answers.
+#
+# Keyed the way the form grouped them, on the folded name and the normalised
+# town, so a decision covers every spelling REEC files the centre under.
+#
+# **ANSWERS overrules the score, and that is the point.** A decision here is
+# a claim about the world that the string measure could not reach, so each
+# one says why and can be checked against the official name above it. Three
+# kinds recur:
+#
+#   a campus  -- the catalogue lists one institution once per site, and the
+#                name is the same on all of them (Institut Catala
+#                d'Oncologia, Sant Joan de Deu)
+#   a rename  -- REEC files the hospital under a name it no longer uses
+#                (Juan Canalejo, Hospital General Universitario de Alicante)
+#   a complex -- REEC names the complex and the catalogue lists its members,
+#                which the `complejo` column makes checkable
+#
+# A `codcnh` of None is a decision too: the centre is not in the catalogue.
+Answer = collections.namedtuple("Answer", "codcnh why")
+
+ANSWERS = {
+    # Institut Catalá D'Oncologia - Hospital Duran I Reynals  [c01]
+    ('institut catala d oncologia',
+     "l'hospitalet de llobregat"): Answer('081461',
+        'ICO is catalogued once per campus; Duran i Reynals is the '
+        "L'Hospitalet one"),
+    # Hospital Universitario HM Sanchinarro  [c02]
+    ('hospital universitario madrid sanchinarro',
+     'madrid'): Answer('281225',
+        'the catalogue prefixes the chain, HM Sanchinarro'),
+    # Hospital Universitario de Salamanca. Complejo Asistencial Universitario de Salmanca  [c03]
+    ('hospital universitario de salamanca',
+     'salamanca'): Answer('370037',
+        "the complex's acute hospital, not Los Montalvos"),
+    # Hospital Universitario de Burgos. Complejo Asistencial Universitario de Burgos  [c07]
+    ('hospital universitario de burgos',
+     'burgos'): Answer('090155',
+        "the complex's own hospital in Burgos"),
+    # Hospital Universitario Clínico San Cecilio  [c08]
+    ('hospital san cecilio',
+     'granada'): Answer('180150',
+        'San Cecilio is the Granada clinical hospital'),
+    # Fundacio Hospital Sant Joan de Deu (Martorell)  [c09]
+    ('fundacio hospital sant joan de deu',
+     'martorell'): Answer('080898',
+        'the Martorell foundation has its own entry'),
+    # Hospital Provincial de Zamora Complejo Asistencial de Zamora  [c10]
+    ('complejo asistencial de zamora',
+     'zamora'): Answer('490028',
+        'every tied candidate belongs to the Zamora complex'),
+    # Benito Menni, Complex Assistencial En Salut Mental  [c15]
+    ('benito menni complex assistencial en salut mental',
+     'sant boi de llobregat'): Answer('080977',
+        'Sant Boi, not the Granollers unit of the same name'),
+    # Hospital Universitario Dr. Peset Aleixandre  [c17]
+    ('hospital universitario doctor peset',
+     'valencia'): Answer('460023',
+        'Doctor Peset, Valencia'),
+    # Hospital Universitario de Jaén  [c18]
+    ('complejo hospitalario de jaen',
+     'jaen'): Answer('230011',
+        "the complex's university hospital in Jaen"),
+    # Hospital Universitario La Paz  [c19]
+    ('fundacion para la investigacion biomedica del hospital universitario la paz',
+     'madrid'): Answer('280014',
+        "the foundation is La Paz's research arm"),
+    # Hospital Universitari Germans Trías I Pujol de Badalona  [c21]
+    ('hospital germans trias i pujol',
+     'badalona'): Answer('080667',
+        'Germans Trias i Pujol, Badalona'),
+    # HM Modelo-Belen  [c22]
+    ('hospital hm modelo',
+     'a coruna'): Answer('150354',
+        'HM Modelo, A Coruna'),
+    # Hospital Universitario de Salamanca. Complejo Asistencial Universitario de Salmanca  [c23]
+    ('complejo asistencial universitario de salamanca',
+     'salamanca'): Answer('370037',
+        "the Salamanca complex's acute hospital"),
+    # Hospital General de Vic  [c26]
+    ('hospital universitari de vic',
+     'vic'): Answer('081108',
+        'Hospital Universitari de Vic'),
+    # Hospital Quirón Salud Valle del Henares  [c27]
+    ('hospital quironsalud valle del henares',
+     'torrejon de ardoz'): Answer('281456',
+        'Quironsalud Valle del Henares'),
+    # Hospital Universitario de Torrevieja  [c28]
+    ('hospital de torrevieja',
+     'alicante'): Answer('030339',
+        'Torrevieja; REEC files the province as the town'),
+    # Complexo Hospitalario Universitario de Santiago  [c31]
+    ('complejo hospitalario universitario',
+     'santiago de compostela'): Answer('150200',
+        'the Santiago de Compostela complex'),
+    # Hospital Universitario de La Princesa  [c32]
+    ('fundacion para la investigacion biomedica del hospital universitario la princesa',
+     'madrid'): Answer('280127',
+        "the foundation is La Princesa's research arm"),
+    # Hospital Provincial de Zamora Complejo Asistencial de Zamora  [c33]
+    ('hospital provincial de zamora',
+     'zamora'): Answer('490028',
+        'Hospital Provincial de Zamora by name'),
+    # Consorcio Hospital General Universitario de Valencia  [c34]
+    ('hospital general de valencia',
+     'valencia'): Answer('460060',
+        'the Consorcio Hospital General Universitario'),
+    # Hospital Clínico Universitario de Valencia  [c35]
+    ('universidad de valencia',
+     'valencia'): Answer('460044',
+        "the Clinico is the Universitat de Valencia's"),
+    # Hospital Universitario de Salamanca. Complejo Asistencial Universitario de Salmanca  [c37]
+    ('hospital universitario de salamanca complejo asistencial universitario de',
+     'salamanca'): Answer('370037',
+        "the Salamanca complex's acute hospital"),
+    # Hospital Quironsalud Zaragoza  [c38]
+    ('hospital quiron zaragoza',
+     'zaragoza'): Answer('500129',
+        'Quiron Zaragoza'),
+    # Hospital Universitario y Politécnico La Fe  [c39]
+    ('hospital universitario la fe de valencia',
+     'valencia'): Answer('460018',
+        'La Fe, Valencia'),
+    # Hospital Universitario San Pedro  [c40]
+    ('complejo hospitalario san pedro hospital de la rioja',
+     'logro?o'): Answer('260027',
+        "San Pedro is the complex's acute hospital"),
+    # Hospital Universitari Quirón Dexeus  [c41]
+    ('hospital quiron',
+     'barcelona'): Answer('080446',
+        'Quiron Dexeus, Barcelona'),
+    # Hospital Santa Maria del Rosell  [c42]
+    ('hospital general universitario santa maria del rosell',
+     'murcia'): Answer('300145',
+        'Santa Maria del Rosell is in Cartagena; the name decides and '
+        'REEC files the province as the town'),
+    # Hospital Quironsalud Málaga  [c43]
+    ('hospital quiron malaga',
+     'malaga'): Answer('290449',
+        'Quiron Malaga'),
+    # Hospital Universitario de La Ribera  [c46]
+    ('hospital ribera salud',
+     'valencia'): Answer('460351',
+        'Ribera Salud runs La Ribera in Alzira; the name decides '
+        'against the town'),
+    # Hospital Quironsalud Zaragoza  [c47]
+    ('hospital quiron de zaragoza',
+     'zaragoza'): Answer('500129',
+        'Quiron Zaragoza'),
+    # Hospital Universitari Mutua de Terrassa  [c50]
+    ('hospital mutua de terrassa',
+     'terrassa'): Answer('081094',
+        'Mutua de Terrassa'),
+    # Hospital Universitario Quironsalud Madrid  [c51]
+    ('hospital universitario quiron madrid',
+     'pozuelo de alarcon'): Answer('281203',
+        'Quironsalud Madrid, in Pozuelo'),
+    # Hospital Quirón Salud Valle del Henares  [c53]
+    ('hospital quironsalud valle de henares',
+     'torrejon de ardoz'): Answer('281456',
+        'Quironsalud Valle del Henares'),
+    # Hospital de Sant Joan de Deu (Manresa)  [c54]
+    ('hospital san joan de deu',
+     'manresa'): Answer('080863',
+        'Sant Joan de Deu Manresa'),
+    # Hospital G. Universitario J.M. Morales Meseguer  [c56]
+    ('hospital general universitario morales meseguer',
+     'murcia'): Answer('300269',
+        'Morales Meseguer, Murcia'),
+    # Hospital 9 de Octubre  [c57]
+    ('hospital vithas valencia 9 de octubre',
+     'valencia'): Answer('460291',
+        'Vithas Valencia 9 de Octubre'),
+    # Hospital Universitario de Salamanca. Complejo Asistencial Universitario de Salmanca  [c59]
+    ('hospital clinico universitario de salamanca complejo asistencial univ sa',
+     'salamanca'): Answer('370037',
+        "the Salamanca complex's acute hospital"),
+    # Hospital Quironsalud Málaga  [c60]
+    ('quiron hospital malaga',
+     'malaga'): Answer('290449',
+        'Quiron Malaga'),
+    # Hospital Santa Maria del Rosell  [c61]
+    ('hospital general universitario santa maria del rosell',
+     'cartagena'): Answer('300145',
+        'Santa Maria del Rosell, Cartagena'),
+    # Hospital San Rafael  [c62]
+    ('el hospital universitario san rafael de madrid',
+     'madrid'): Answer('280339',
+        'Hospital San Rafael, Madrid'),
+}
+
+
+# Read but not decided. Everything below was looked up in the catalogue in
+# answer to a question the form came back with -- twenty cards marked
+# "cannot tell", plus four whose answer sat in a different municipality than
+# the row it was chosen for.
+#
+# **Nothing here changes what the code does.** `match` ignores PROPOSED; the
+# form pre-ticks it, states the reason on the card, and the answer moves to
+# ANSWERS only when somebody confirms it. A proposal that quietly behaved
+# like a decision would be a decision nobody made.
+PROPOSED = {
+    # Juaneda Miramar  [c36]
+    ('juaneda',
+     'palma de mallorca'): Answer('070131',
+        'the decision on this card was Clinica Juaneda, but REEC files this '
+        'row itself under CODCNH 070131 and postcode 07011, which are '
+        'Juaneda Miramar; Clinica Juaneda is 070110 at 07014'),
+    # Institut Catalá D'Oncologia - Hospital Germans Trías I Pujol  [c04]
+    ('institut catala d oncologia',
+     'badalona'): Answer('081694',
+        'ICO Badalona is the Germans Trias campus, as ICO '
+        "L'Hospitalet is Duran i Reynals"),
+    # Hospital General Universitario Dr. Balmis  [c05]
+    ('hospital general universitario de alicante',
+     'alicante'): Answer('030015',
+        'renamed: the Hospital General Universitario de Alicante '
+        "became Dr. Balmis in 2021. Sant Joan d'Alacant is a "
+        'different hospital in another town'),
+    # Institut Catalá D'Oncologia Girona - Hospital Josep Trueta  [c06]
+    ('institut catala d oncologia',
+     'girona'): Answer('170299',
+        'ICO Girona is the Josep Trueta campus'),
+    # Hospital Universitario de Cáceres  [c11]
+    ('complejo hospitalario de caceres',
+     'caceres'): Answer('100115',
+        "the catalogue's complejo column says Hospital Universitario "
+        'de Caceres belongs to the Complejo Hospitalario de Caceres; '
+        'Quironsalud belongs to none'),
+    # Complexo Hospitalario Universitario de Vigo  [c12]
+    ('hospital xeral de vigo',
+     'vigo'): Answer('360368',
+        'the Xeral was absorbed into the Vigo complex and has no '
+        'entry of its own; Fremap scores on the word Vigo'),
+    # Hospital Universitario San Pedro  [c13]
+    ('complejo hospitalario san pedro hospital de la rioja',
+     'logrono'): Answer('260027',
+        'the same row as c40, split by mojibake in the town'),
+    # Complexo Hospitalario Universitario A Coruña  [c14]
+    ('complejo hospitalario universitario juan canalejo',
+     'a coruna'): Answer('150011',
+        'renamed: Juan Canalejo became the Complexo Hospitalario '
+        'Universitario A Coruna'),
+    # Hospital de Sant Joan de Deu.  [c16]
+    ('fundacio sant joan de deu',
+     'esplugues de llobregat'): Answer('080713',
+        'the row is in Esplugues and so is this hospital; the '
+        'Martorell foundation is a different one'),
+    # Clínica Universidad de Navarra  [c20]
+    ('universidad de navarra',
+     'pamplona'): Answer('310060',
+        "the university's own hospital is the Clinica Universidad de "
+        'Navarra; the Hospital Universitario de Navarra is the public '
+        'complex'),
+    # Hospital Rio Carrión. Complejo Asistencial Universitario de Palencia.  [c24]
+    ('complejo asistencial universitario de palencia',
+     'palencia'): Answer('340014',
+        'both tied candidates carry the Palencia complex in their '
+        'complejo column, so the complex is catalogued -- Rio Carrion '
+        'is its acute hospital'),
+    # Hospital Santa Barbara ,Complejo Asistencial de Soria  [c25]
+    ('complejo asistencial de soria',
+     'soria'): Answer('420011',
+        'both belong to the Complejo Asistencial de Soria; Santa '
+        'Barbara is its acute hospital'),
+    # Hospital Universitario y Politécnico La Fe  [c29]
+    ('hospital la fe de valencia',
+     'valencia'): Answer('460018',
+        'La Fe by name, and the same answer as c39'),
+    # Institut Catalá D'Oncologia - Hospital Duran I Reynals  [c30]
+    ('institut catala d oncologia',
+     'institut catala d oncologia l hospitalet'): Answer('081461',
+        "the town column holds the centre's own name, and it says "
+        "L'Hospitalet"),
+    # not in the catalogue  [c44]
+    ('hospital odontologic universitat de barcelona',
+     'barcelona'): Answer(None,
+        "the Universitat de Barcelona's dental hospital is a "
+        'university clinic and is not in the catalogue; Hospital de '
+        'Barcelona is an unrelated private hospital'),
+    # Institut Catalá D'Oncologia - Hospital Germans Trías I Pujol  [c45]
+    ('institut catala d oncologia',
+     'institut catala d oncologia badalona'): Answer('081694',
+        "the town column holds the centre's own name, and it says "
+        'Badalona'),
+    # Hospital Universitario Quironsalud Madrid  [c48]
+    ('hospital universitario quiron',
+     'madrid'): Answer('281203',
+        'the same centre as c51: a damaged postcode, 28.223 for '
+        '28223. The right answer was never on the card'),
+    # Hospital Universitario HM Monteprincipe  [c49]
+    ('hospital de madrid monteprincipe',
+     'boadilla del monte'): Answer('281090',
+        "HM Monteprincipe, in the row's own town"),
+    # not in the catalogue  [c52]
+    ('hospital de alta resolucion de ecija',
+     'ecija'): Answer(None,
+        'the catalogue has no entry in Ecija at all'),
+    # not in the catalogue  [c55]
+    ('hospital odontologic universitat de barcelona',
+     "l'hospitalet de llobregat"): Answer(None,
+        'the same dental hospital as c44'),
+    # not in the catalogue  [c58]
+    ('hospital odontologic universitat de barcelona',
+     'hospitalet de llobregat'): Answer(None,
+        'the same dental hospital as c44; Hospital de Barcelona is a '
+        'different hospital in a different town'),
+}
+
+
 def load_hospitals(path):
     """[Hospital]. See data/geo/README.md for provenance and the licence."""
     with open(path, encoding="utf-8") as handle:
@@ -238,6 +556,15 @@ def match(index, nombre, localidad, cod_postal):
         if hospital is not None:
             return Match(hospital, hospital, 1.0, 0.0, MATCHED,
                          "alias: " + alias.why)
+
+    answer = ANSWERS.get((" ".join(fold(nombre)), _town(localidad)))
+    if answer is not None:
+        if answer.codcnh is None:
+            return Match(None, None, 0.0, 0.0, NO_CANDIDATE,
+                         "read: " + answer.why)
+        hospital = index.by_code[answer.codcnh]
+        return Match(hospital, hospital, 1.0, 0.0, MATCHED,
+                     "read: " + answer.why)
 
     candidates = index.candidates(localidad, cod_postal)
     if not candidates:
@@ -415,7 +742,8 @@ def review_page(matched, shown=120):
 # decision would be written down, the same way ALIASES records a read alias.
 
 Case = collections.namedtuple(
-    "Case", "key nombre localidad cod_postal trials rows candidates suggested")
+    "Case", "key nombre localidad cod_postal trials rows candidates "
+            "suggested reason")
 
 
 def ambiguous_cases(con, index, since=None):
@@ -456,9 +784,15 @@ def ambiguous_cases(con, index, since=None):
             ((similarity(nombre, hospital.nombre), hospital)
              for hospital in index.candidates(localidad, cod_postal)),
             key=lambda pair: -pair[0])[:5]
+        proposal = PROPOSED.get(key)
+        if proposal is not None:
+            suggested, reason = proposal.codcnh or "NONE", proposal.why
+        else:
+            suggested = _same_town(ranked, localidad)
+            reason = "the only tied candidate in this town"
         cases.append(Case("c{:02d}".format(index_of), nombre, localidad,
-                          cod_postal, trials, count, ranked,
-                          _same_town(ranked, localidad)))
+                          cod_postal, trials, count, ranked, suggested,
+                          reason if suggested else ""))
     cases.sort(key=lambda case: -case.trials)
     # Renumbered after sorting so the ids on the page read in the order the
     # cards appear; an id that jumps around is one more thing to misread.
@@ -605,7 +939,9 @@ body.hide-done .case.done {{ display:none; }}
 .opt .score {{ font-variant-numeric:tabular-nums; color:{accent};
         font-weight:600; margin-right:8px; }}
 .opt .facts {{ color:{muted}; font-size:12.5px; }}
-.opt.suggested .facts b {{ color:{accent}; }}
+.opt.suggested {{ font-weight:600; }}
+.reason {{ color:{muted}; font-size:12.5px; margin:9px 0 0;
+        padding-left:11px; border-left:2px solid {accent}; }}
 .case textarea {{ width:100%; box-sizing:border-box; margin-top:8px;
         font:inherit; font-size:12.5px; padding:5px 7px; border-radius:5px;
         border:1px solid {grid}; background:transparent; color:inherit;
@@ -634,16 +970,19 @@ def ambiguous_page(cases):
                 "<label class='opt{}'><input type='radio' name='{}' "
                 "value='{}'{}><span class='score'>{:.2f}</span>{} "
                 "<span class='facts'>{} beds \u00b7 {} \u00b7 "
-                "{}{}</span></label>".format(
+                "{}</span></label>".format(
                     " suggested" if suggested else "", case.key,
                     hospital.codcnh, " checked" if suggested else "", score,
                     html.escape(hospital.nombre), hospital.camas or "?",
-                    html.escape(hospital.clase), html.escape(hospital.municipio),
-                    " \u00b7 <b>same town</b>" if suggested else ""))
+                    html.escape(hospital.clase),
+                    html.escape(hospital.municipio)))
+        none = case.suggested == "NONE"
         options.append(
-            "<label class='opt'><input type='radio' name='{}' value='NONE'>"
+            "<label class='opt{}'><input type='radio' name='{}' value='NONE'{}>"
             "<span class='facts'>None of these \u2014 not a hospital the "
-            "catalogue lists</span></label>".format(case.key))
+            "catalogue lists</span></label>".format(
+                " suggested" if none else "", case.key,
+                " checked" if none else ""))
         options.append(
             "<label class='opt'><input type='radio' name='{}' value='UNSURE'>"
             "<span class='facts'>Cannot tell from here</span></label>".format(
@@ -651,7 +990,7 @@ def ambiguous_page(cases):
         cards.append(
             "<div class='case' data-id='{}' data-trials='{}' data-name=\"{}\">"
             "<h3>{}</h3><p class='where'>{} \u00b7 {} \u00b7 <b>{:,}</b> "
-            "trials{}</p>{}<textarea name='{}' placeholder='why, if it is "
+            "trials{}</p>{}{}<textarea name='{}' placeholder='why, if it is "
             "not obvious'></textarea></div>".format(
                 case.key, case.trials,
                 html.escape(case.nombre.replace('"', "'")),
@@ -660,7 +999,7 @@ def ambiguous_page(cases):
                 html.escape(case.cod_postal or "no postcode"), case.trials,
                 "" if case.rows == 1 else
                 " \u00b7 {} REEC spellings".format(case.rows),
-                "".join(options), case.key))
+                "".join(options), _reason(case.reason), case.key))
 
     return "\n".join([
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>",
@@ -678,11 +1017,11 @@ def ambiguous_page(cases):
         "de Sanidad, Consumo y Bienestar Social; data updated 31 December "
         "2024.</p>".format(len(cases), ACCEPT, MARGIN),
         "<p><b>Pick one per card, then press Copy decisions and paste the "
-        "result back into the conversation.</b> Cards where exactly one tied "
-        "candidate sits in the row\u2019s own municipality open with that one "
-        "chosen and marked <b>same town</b> \u2014 a suggestion to confirm or "
-        "overrule, not an answer. Answers are saved in this browser as you "
-        "go.</p>",
+        "result back into the conversation.</b> Each card opens with an "
+        "answer already ticked and the reason for it stated underneath "
+        "\u2014 a proposal to confirm or overrule, not a decision. Nothing "
+        "pre-ticked has changed what the code does. Answers are saved in "
+        "this browser as you go.</p>",
         "<div class='bar'><span id='progress'></span>",
         "<button id='copy' type='button' disabled>Copy decisions</button>",
         "<button id='show' class='ghost' type='button'>Show as text</button>",
@@ -692,6 +1031,20 @@ def ambiguous_page(cases):
         "<pre id='dump' hidden></pre>",
         "<script>", FORM_SCRIPT, "</script>",
         "</body></html>"])
+
+
+def _reason(reason):
+    """The line under the options saying why one of them is pre-ticked.
+
+    A pre-ticked radio with no stated reason is an answer the reader has no
+    way to disagree with, which makes confirming it worth nothing.
+    """
+    import html
+
+    if not reason:
+        return ""
+    return ("<p class='reason'>Pre-ticked: {}. Overrule it if that is "
+            "wrong.</p>".format(html.escape(reason)))
 
 
 def _readable(nombre):

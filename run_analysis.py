@@ -168,7 +168,7 @@ def write_ambiguous_form(con, docs_dir=DOCS_DIR):
     cases = hospitals.ambiguous_cases(con, index)
     path = docs_dir / "hospital-ambiguous.html"
     path.write_text(hospitals.ambiguous_page(cases), encoding="utf-8")
-    print("{}: {} cases, {:,} trial-links, {} opening on a same-town "
+    print("{}: {} cases left, {:,} trial-links, {} opening on a "
           "suggestion".format(path, len(cases),
                               sum(case.trials for case in cases),
                               sum(1 for case in cases if case.suggested)))
