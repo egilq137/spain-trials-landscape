@@ -27,7 +27,7 @@ import re
 import unicodedata
 
 from analysis.sponsors import REVIEW_STYLE
-from analysis.volume import GRID, INK, MUTED, SURFACE
+from analysis.volume import GRID, INK, MUTED, SERIES, SURFACE
 
 Hospital = collections.namedtuple(
     "Hospital", "codcnh nombre municipio provincia cod_postal camas clase "
@@ -399,3 +399,301 @@ def review_page(matched, shown=120):
         "cost these {:.0f}% of links, not everything the matcher "
         "declined.</p>".format(NEAR, len(nothing), share(nothing)),
         "</body></html>"])
+
+
+# ---------------------------------------------------------------------------
+# The ambiguous rows, as a form
+# ---------------------------------------------------------------------------
+# 83 rows the matcher could not separate carry 6.6% of the trial-site links --
+# the densest refusal on the page and the only one where the answer is a
+# decision rather than a rule. They collapse to 62 distinct name-and-town
+# cases, which is few enough for a person to read, and the page below is what
+# they get read on: one card each, the candidates as radio buttons, and a
+# button that copies the answers back out as text.
+#
+# Nothing here decides anything. The page proposes; ANSWERS is where a read
+# decision would be written down, the same way ALIASES records a read alias.
+
+Case = collections.namedtuple(
+    "Case", "key nombre localidad cod_postal trials rows candidates suggested")
+
+
+def ambiguous_cases(con, index, since=None):
+    """[Case], busiest first: the rows a person has to separate.
+
+    Grouped on the folded name and town, because REEC spells the same centre
+    several ways -- `Institut Catala D'oncologia` and `Institut Catala
+    D’oncologia` in Badalona are one question asked twice, and a form
+    that asks it twice gets two chances to be answered differently.
+    """
+    from analysis.geography import normalise_town
+    from analysis.volume import COVERAGE_START
+
+    floor = "{}-01-01".format(COVERAGE_START if since is None else since)
+    rows = con.execute(
+        """SELECT c.nombre, c.localidad, c.cod_postal,
+                  count(DISTINCT s.identificador) AS trials
+             FROM centers c
+             LEFT JOIN study_centers sc ON sc.center_id = c.center_id
+             LEFT JOIN studies s ON s.identificador = sc.study_id
+                  AND s.fecha_autorizacion_aemps >= ?
+         GROUP BY c.center_id""", (floor,))
+
+    grouped = collections.OrderedDict()
+    for nombre, localidad, cod_postal, trials in rows:
+        if match(index, nombre, localidad, cod_postal).verdict != AMBIGUOUS:
+            continue
+        key = (" ".join(fold(nombre)), normalise_town(localidad or ""))
+        if key not in grouped:
+            grouped[key] = [nombre, localidad, cod_postal, 0, 0]
+        grouped[key][3] += trials
+        grouped[key][4] += 1
+
+    cases = []
+    for index_of, (key, value) in enumerate(grouped.items(), start=1):
+        nombre, localidad, cod_postal, trials, count = value
+        ranked = sorted(
+            ((similarity(nombre, hospital.nombre), hospital)
+             for hospital in index.candidates(localidad, cod_postal)),
+            key=lambda pair: -pair[0])[:5]
+        cases.append(Case("c{:02d}".format(index_of), nombre, localidad,
+                          cod_postal, trials, count, ranked,
+                          _same_town(ranked, localidad)))
+    cases.sort(key=lambda case: -case.trials)
+    # Renumbered after sorting so the ids on the page read in the order the
+    # cards appear; an id that jumps around is one more thing to misread.
+    return [case._replace(key="c{:02d}".format(number))
+            for number, case in enumerate(cases, start=1)]
+
+
+def _same_town(ranked, localidad):
+    """The tied candidate in the row's own municipality, if exactly one is.
+
+    A suggestion, not a rule, and it is only offered when it is unambiguous:
+    the catalogue lists the Institut Catala d'Oncologia once per campus, so
+    the Girona row's answer is the Girona entry even though the L'Hospitalet
+    one scores higher on the name. Where two tied candidates share the town,
+    or none does, the card opens with nothing chosen.
+    """
+    from analysis.geography import normalise_town
+
+    if not ranked:
+        return None
+    town = normalise_town(localidad or "")
+    if not town:
+        return None
+    tied = [hospital for score, hospital in ranked
+            if score >= ranked[0][0] - MARGIN]
+    here = [hospital for hospital in tied
+            if normalise_town(hospital.municipio) == town]
+    return here[0].codcnh if len(here) == 1 else None
+
+
+FORM_SCRIPT = """
+const KEY = 'hospital-ambiguous-v1';
+
+// Every read and write is guarded. A page opened straight off the disk can
+// have no storage to speak of -- the browser refuses it on some origins, and
+// a private window hands back nothing -- and the form has to keep working
+// when that happens. Losing the saved answers is a nuisance; a page whose
+// buttons do not respond looks broken.
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function store() {
+  try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+}
+const saved = load();
+
+function progress() {
+  const cards = document.querySelectorAll('.case');
+  let done = 0, links = 0, total = 0;
+  cards.forEach(card => {
+    const n = Number(card.dataset.trials);
+    total += n;
+    const picked = card.querySelector('input:checked');
+    card.classList.toggle('done', !!picked);
+    if (picked) { done += 1; links += n; }
+  });
+  document.getElementById('progress').textContent =
+    done + ' of ' + cards.length + ' decided \\u2014 ' +
+    links.toLocaleString() + ' of ' + total.toLocaleString() + ' trial-links';
+  document.getElementById('copy').disabled = done === 0;
+}
+
+function restore() {
+  Object.entries(saved).forEach(([name, value]) => {
+    const input = document.querySelector(
+      'input[name="' + name + '"][value="' + value + '"]');
+    if (input) input.checked = true;
+  });
+  document.querySelectorAll('textarea').forEach(box => {
+    if (saved['note:' + box.name]) box.value = saved['note:' + box.name];
+  });
+  progress();
+}
+
+document.addEventListener('change', event => {
+  if (event.target.type !== 'radio') return;
+  saved[event.target.name] = event.target.value;
+  store();
+  progress();
+});
+
+document.addEventListener('input', event => {
+  if (event.target.tagName !== 'TEXTAREA') return;
+  saved['note:' + event.target.name] = event.target.value;
+  store();
+});
+
+function decisions() {
+  const lines = ['HOSPITAL-AMBIGUOUS-DECISIONS v1'];
+  document.querySelectorAll('.case').forEach(card => {
+    const picked = card.querySelector('input:checked');
+    if (!picked) return;
+    const note = card.querySelector('textarea').value.trim();
+    lines.push(card.dataset.id + ' = ' + picked.value +
+               '   # ' + card.dataset.name +
+               (note ? '  //  ' + note : ''));
+  });
+  return lines.join('\\n');
+}
+
+document.getElementById('copy').addEventListener('click', () => {
+  const text = decisions();
+  navigator.clipboard.writeText(text).then(() => {
+    document.getElementById('copy').textContent = 'Copied \\u2014 paste it back';
+  }, () => {
+    document.getElementById('dump').textContent = text;
+    document.getElementById('dump').hidden = false;
+  });
+});
+
+document.getElementById('show').addEventListener('click', () => {
+  const box = document.getElementById('dump');
+  box.textContent = decisions();
+  box.hidden = !box.hidden;
+});
+
+document.getElementById('hide-done').addEventListener('change', event => {
+  document.body.classList.toggle('hide-done', event.target.checked);
+});
+
+restore();
+"""
+
+FORM_STYLE = """
+.bar {{ position:sticky; top:0; z-index:5; background:{surface};
+        border-bottom:1px solid {grid}; padding:10px 0 12px; margin:0 0 18px;
+        display:flex; gap:14px; align-items:center; flex-wrap:wrap; }}
+.bar button {{ font:inherit; font-size:13px; padding:6px 13px; border-radius:6px;
+        border:1px solid {accent}; background:{accent}; color:{surface};
+        cursor:pointer; }}
+.bar button.ghost {{ background:transparent; color:{accent}; }}
+.bar button[disabled] {{ opacity:.45; cursor:default; }}
+#progress {{ font-variant-numeric:tabular-nums; font-weight:600; }}
+.bar label {{ font-size:13px; color:{muted}; }}
+.case {{ border:1px solid {grid}; border-left:4px solid {grid};
+        border-radius:8px; padding:12px 15px; margin:0 0 12px; }}
+.case.done {{ border-left-color:{accent}; }}
+body.hide-done .case.done {{ display:none; }}
+.case h3 {{ font-size:15px; margin:0 0 2px; }}
+.case .where {{ color:{muted}; font-size:12.5px; margin:0 0 10px; }}
+.opt {{ display:block; padding:4px 0; font-size:13.5px; }}
+.opt input {{ margin-right:8px; }}
+.opt .score {{ font-variant-numeric:tabular-nums; color:{accent};
+        font-weight:600; margin-right:8px; }}
+.opt .facts {{ color:{muted}; font-size:12.5px; }}
+.opt.suggested .facts b {{ color:{accent}; }}
+.case textarea {{ width:100%; box-sizing:border-box; margin-top:8px;
+        font:inherit; font-size:12.5px; padding:5px 7px; border-radius:5px;
+        border:1px solid {grid}; background:transparent; color:inherit;
+        resize:vertical; min-height:30px; }}
+#dump {{ white-space:pre-wrap; font-family:ui-monospace, monospace;
+        font-size:12.5px; border:1px solid {grid}; border-radius:6px;
+        padding:12px; margin-top:16px; }}
+"""
+
+
+def ambiguous_page(cases):
+    """The form. One card per case, and the answers come back as text.
+
+    A form rather than a table because the outcome is a decision per row and
+    a table cannot take one. Answers are kept in `localStorage`, so the page
+    survives a reload; `Copy decisions` is what leaves the browser.
+    """
+    import html
+
+    cards = []
+    for case in cases:
+        options = []
+        for score, hospital in case.candidates:
+            suggested = hospital.codcnh == case.suggested
+            options.append(
+                "<label class='opt{}'><input type='radio' name='{}' "
+                "value='{}'{}><span class='score'>{:.2f}</span>{} "
+                "<span class='facts'>{} beds \u00b7 {} \u00b7 "
+                "{}{}</span></label>".format(
+                    " suggested" if suggested else "", case.key,
+                    hospital.codcnh, " checked" if suggested else "", score,
+                    html.escape(hospital.nombre), hospital.camas or "?",
+                    html.escape(hospital.clase), html.escape(hospital.municipio),
+                    " \u00b7 <b>same town</b>" if suggested else ""))
+        options.append(
+            "<label class='opt'><input type='radio' name='{}' value='NONE'>"
+            "<span class='facts'>None of these \u2014 not a hospital the "
+            "catalogue lists</span></label>".format(case.key))
+        options.append(
+            "<label class='opt'><input type='radio' name='{}' value='UNSURE'>"
+            "<span class='facts'>Cannot tell from here</span></label>".format(
+                case.key))
+        cards.append(
+            "<div class='case' data-id='{}' data-trials='{}' data-name=\"{}\">"
+            "<h3>{}</h3><p class='where'>{} \u00b7 {} \u00b7 <b>{:,}</b> "
+            "trials{}</p>{}<textarea name='{}' placeholder='why, if it is "
+            "not obvious'></textarea></div>".format(
+                case.key, case.trials,
+                html.escape(case.nombre.replace('"', "'")),
+                html.escape(_readable(case.nombre)),
+                html.escape(case.localidad or "\u2014"),
+                html.escape(case.cod_postal or "no postcode"), case.trials,
+                "" if case.rows == 1 else
+                " \u00b7 {} REEC spellings".format(case.rows),
+                "".join(options), case.key))
+
+    return "\n".join([
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>",
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+        "<title>Ambiguous hospital matches</title><style>",
+        REVIEW_STYLE.format(surface=SURFACE, ink=INK, muted=MUTED, grid=GRID),
+        FORM_STYLE.format(surface=SURFACE, muted=MUTED, grid=GRID,
+                          accent=SERIES),
+        "</style></head><body>",
+        "<h1>Which hospital is this?</h1>",
+        "<p>{} cases the matcher could not separate, busiest first. Each "
+        "scores above the {:.2f} floor \u2014 the hospital is almost "
+        "certainly one of the candidates \u2014 but two of them score within "
+        "{:.2f} and the name cannot choose. Origen de los datos: Ministerio "
+        "de Sanidad, Consumo y Bienestar Social; data updated 31 December "
+        "2024.</p>".format(len(cases), ACCEPT, MARGIN),
+        "<p><b>Pick one per card, then press Copy decisions and paste the "
+        "result back into the conversation.</b> Cards where exactly one tied "
+        "candidate sits in the row\u2019s own municipality open with that one "
+        "chosen and marked <b>same town</b> \u2014 a suggestion to confirm or "
+        "overrule, not an answer. Answers are saved in this browser as you "
+        "go.</p>",
+        "<div class='bar'><span id='progress'></span>",
+        "<button id='copy' type='button' disabled>Copy decisions</button>",
+        "<button id='show' class='ghost' type='button'>Show as text</button>",
+        "<label><input type='checkbox' id='hide-done'> hide decided</label>",
+        "</div>",
+        "".join(cards),
+        "<pre id='dump' hidden></pre>",
+        "<script>", FORM_SCRIPT, "</script>",
+        "</body></html>"])
+
+
+def _readable(nombre):
+    from analysis.geography import display_name
+    return display_name(nombre)

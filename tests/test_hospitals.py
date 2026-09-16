@@ -28,6 +28,7 @@ from pathlib import Path
 
 from analysis import hospitals
 from analysis.hospitals import (ACCEPT, AMBIGUOUS, MATCHED, NEAR,
+                                ambiguous_cases, ambiguous_page,
                                 NEAR_MISS, NO_CANDIDATE, Index,
                                 load_hospitals, match, similarity, tokens)
 
@@ -312,3 +313,81 @@ class TestAgainstDatabase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@requires_database
+class TestAmbiguousCases(unittest.TestCase):
+    """The form the undecidable rows get decided on."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.con = sqlite3.connect(
+            "file:{}?mode=ro".format(DB_PATH.as_posix()), uri=True)
+        cls.index = Index(load_hospitals(CATALOGUE))
+        cls.cases = ambiguous_cases(cls.con, cls.index)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.con.close()
+
+    def test_a_question_is_asked_once(self):
+        """REEC spells Institut Català d'Oncologia several ways in Badalona.
+        Asked twice, a form gets two chances to be answered differently."""
+        keys = [(" ".join(hospitals.fold(case.nombre)), case.localidad)
+                for case in self.cases]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_every_ambiguous_row_reaches_the_form(self):
+        rows = [row for row in hospitals.match_centres(self.con, self.index)
+                if row[4].verdict == AMBIGUOUS]
+        self.assertEqual(sum(case.rows for case in self.cases), len(rows))
+        self.assertEqual(sum(case.trials for case in self.cases),
+                         sum(row[3] for row in rows))
+
+    def test_the_busiest_case_is_first(self):
+        # The page is read from the top, so the rows that matter are there.
+        trials = [case.trials for case in self.cases]
+        self.assertEqual(trials, sorted(trials, reverse=True))
+
+    def test_the_suggestion_is_offered_only_when_it_is_unambiguous(self):
+        for case in self.cases:
+            if case.suggested is None:
+                continue
+            with self.subTest(nombre=case.nombre):
+                hospital = self.index.by_code[case.suggested]
+                self.assertEqual(hospitals._town(hospital.municipio),
+                                 hospitals._town(case.localidad))
+                here = [h for score, h in case.candidates
+                        if score >= case.candidates[0][0] - hospitals.MARGIN
+                        and hospitals._town(h.municipio)
+                        == hospitals._town(case.localidad)]
+                self.assertEqual(len(here), 1)
+
+    def test_a_suggestion_can_lose_on_the_name(self):
+        """The reason the town is worth consulting at all.
+
+        The catalogue lists the Institut Català d'Oncologia once per campus,
+        so the Girona row's best name match is the L'Hospitalet entry and
+        its right answer is the Girona one.
+        """
+        girona = [case for case in self.cases
+                  if "oncologia" in " ".join(hospitals.fold(case.nombre))
+                  and hospitals._town(case.localidad) ==
+                  hospitals._town("Girona")]
+        self.assertEqual(len(girona), 1)
+        self.assertEqual(girona[0].suggested, "170299")
+        self.assertNotEqual(girona[0].candidates[0][1].codcnh, "170299")
+
+    def test_the_page_offers_every_candidate_and_the_two_ways_out(self):
+        page = ambiguous_page(self.cases[:3])
+        for case in self.cases[:3]:
+            for _, hospital in case.candidates:
+                self.assertIn("value='{}'".format(hospital.codcnh), page)
+        self.assertIn("value='NONE'", page)
+        self.assertIn("value='UNSURE'", page)
+
+    def test_the_page_never_shows_the_score_without_its_candidate(self):
+        # A radio with no label is a decision made blind.
+        page = ambiguous_page(self.cases)
+        self.assertEqual(page.count("<input type='radio'"),
+                         sum(len(case.candidates) + 2 for case in self.cases))

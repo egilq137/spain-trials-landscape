@@ -157,6 +157,24 @@ def write_hospital_matches(con, docs_dir=DOCS_DIR):
     return path
 
 
+def write_ambiguous_form(con, docs_dir=DOCS_DIR):
+    """The form the 83 ambiguous rows get decided on.
+
+    A form and not a chart: those rows are the one refusal the matcher
+    cannot resolve by rule, and what comes back from this page is a set of
+    read decisions to be written down.
+    """
+    index = hospitals.Index(hospitals.load_hospitals(HOSPITALS))
+    cases = hospitals.ambiguous_cases(con, index)
+    path = docs_dir / "hospital-ambiguous.html"
+    path.write_text(hospitals.ambiguous_page(cases), encoding="utf-8")
+    print("{}: {} cases, {:,} trial-links, {} opening on a same-town "
+          "suggestion".format(path, len(cases),
+                              sum(case.trials for case in cases),
+                              sum(1 for case in cases if case.suggested)))
+    return path
+
+
 def write_geography_charts(con, chart_dir=CHART_DIR):
     write_map(con, "region", REGIONS, "regional-participation.html",
               "Where Spanish trials run: regional participation since {}"
@@ -248,6 +266,7 @@ def main():
         write_geography_charts(con)
         write_centre_review(con)
         write_hospital_matches(con)
+        write_ambiguous_form(con)
         write_phase_charts(con)
         write_sponsor_charts(con)
     finally:
