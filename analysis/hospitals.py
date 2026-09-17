@@ -214,7 +214,7 @@ Answer = collections.namedtuple("Answer", "codcnh why")
 ANSWERS = {
     # Institut Catalá D'Oncologia - Hospital Duran I Reynals  [c01]
     ('institut catala d oncologia',
-     "l'hospitalet de llobregat"): Answer('081461',
+     'hospitalet de llobregat'): Answer('081461',
         'ICO is catalogued once per campus; Duran i Reynals is the '
         "L'Hospitalet one"),
     # Hospital Universitario HM Sanchinarro  [c02]
@@ -263,7 +263,7 @@ ANSWERS = {
         'Germans Trias i Pujol, Badalona'),
     # HM Modelo-Belen  [c22]
     ('hospital hm modelo',
-     'a coruna'): Answer('150354',
+     'coruna'): Answer('150354',
         'HM Modelo, A Coruna'),
     # Hospital Universitario de Salamanca. Complejo Asistencial Universitario de Salmanca  [c23]
     ('complejo asistencial universitario de salamanca',
@@ -430,7 +430,7 @@ PROPOSED = {
         'the same row as c40, split by mojibake in the town'),
     # Complexo Hospitalario Universitario A Coruña  [c14]
     ('complejo hospitalario universitario juan canalejo',
-     'a coruna'): Answer('150011',
+     'coruna'): Answer('150011',
         'renamed: Juan Canalejo became the Complexo Hospitalario '
         'Universitario A Coruna'),
     # Hospital de Sant Joan de Deu.  [c16]
@@ -488,11 +488,7 @@ PROPOSED = {
     ('hospital de alta resolucion de ecija',
      'ecija'): Answer(None,
         'the catalogue has no entry in Ecija at all'),
-    # not in the catalogue  [c55]
-    ('hospital odontologic universitat de barcelona',
-     "l'hospitalet de llobregat"): Answer(None,
-        'the same dental hospital as c44'),
-    # not in the catalogue  [c58]
+    # not in the catalogue  [c55 and c58, one row since the article went]
     ('hospital odontologic universitat de barcelona',
      'hospitalet de llobregat'): Answer(None,
         'the same dental hospital as c44; Hospital de Barcelona is a '

@@ -395,6 +395,43 @@ class TestAmbiguousCases(unittest.TestCase):
                     match(self.index, case.nombre, case.localidad,
                           case.cod_postal).verdict, AMBIGUOUS)
 
+    def test_no_decision_is_written_twice(self):
+        """A duplicate key in a dict literal loses silently: Python keeps the
+        last one and nothing complains, so a decision can be overwritten by
+        another without anybody seeing it. It has happened once -- stripping
+        the leading article made two spellings of the dental hospital's town
+        into one key. Read from the source, because by the time the module is
+        imported the evidence is gone."""
+        import ast
+
+        source = ast.parse(
+            (ROOT / "analysis" / "hospitals.py").read_text(encoding="utf-8"))
+        for node in ast.walk(source):
+            if not isinstance(node, ast.Assign):
+                continue
+            name = getattr(node.targets[0], "id", "")
+            if name not in ("ANSWERS", "PROPOSED"):
+                continue
+            with self.subTest(table=name):
+                keys = [ast.literal_eval(key) for key in node.value.keys]
+                self.assertEqual(len(keys), len(set(keys)))
+
+    def test_a_key_survives_its_own_normaliser(self):
+        """Both tables are keyed on `normalise_town`'s output, so a change to
+        that function silently invalidates every key written before it.
+
+        It has happened once: stripping the leading article turned
+        `l'hospitalet de llobregat` into `hospitalet de llobregat` and the
+        ICO decision, 1,316 trial-links of it, stopped applying. Nothing
+        errored; the rows simply went back to being ambiguous.
+        """
+        from analysis.geography import normalise_town
+
+        for table in (hospitals.ANSWERS, hospitals.PROPOSED):
+            for name, town in table:
+                with self.subTest(town=town):
+                    self.assertEqual(normalise_town(town), town)
+
     def test_the_answers_are_reachable(self):
         """A key that matches no row is a decision that does nothing.
 

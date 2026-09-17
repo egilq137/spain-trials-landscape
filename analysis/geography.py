@@ -327,6 +327,29 @@ def resolve_town(localidad, cod_postal, towns):
     return normalise_town(towns.get(code, "")) if code else ""
 
 
+# The articles Spanish, Catalan, Galician and Valencian town names begin
+# with. `l'` is written against the noun rather than spaced, so it is handled
+# separately; the rest are whole words.
+TOWN_ARTICLES = {"a", "o", "la", "el", "lo", "las", "los", "les", "els"}
+
+
+def _without_article(words):
+    """The town's words, minus a leading article. Only the first one.
+
+    `La Línea de la Concepción` keeps its second `la`: the article being
+    dropped is the one the catalogues move, and a rule that removed every
+    article would start merging towns that differ by one.
+    """
+    if not words:
+        return words
+    if words[0] in TOWN_ARTICLES:
+        return words[1:]
+    if words[0].startswith("l'"):
+        first = words[0][2:]
+        return ([first] if first else []) + list(words[1:])
+    return words
+
+
 def normalise_town(localidad):
     """A town name comparable across spellings, or '' when there is none.
 
@@ -335,11 +358,20 @@ def normalise_town(localidad):
     `Manresa`. All three shapes qualify the town with something larger, so
     everything from the first separator onwards is dropped, and what is left
     is compared without case or accents.
+
+    A leading article goes too, because Spain's official town names carry one
+    and the catalogues move it to the end to file them alphabetically: the
+    Ministry writes `Coruña, A` and `Hospitalet de Llobregat, L'` where REEC
+    writes `A Coruña` and `L'Hospitalet de Llobregat`. The comma rule above
+    already strips the catalogue's trailing copy, so without this the two
+    spellings of one town never meet -- 124 REEC centre rows sit in the 16
+    towns this affects, and for them the town was simply never a way to look
+    a hospital up.
     """
     text = localidad.split(",")[0].split("/")[0].split("(")[0]
     text = unicodedata.normalize("NFKD", text.strip().lower())
-    return " ".join("".join(c for c in text if not unicodedata.combining(c))
-                    .split())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return " ".join(_without_article(text.split()))
 
 
 # Postcodes that must not join rows under one reference, because the postcode

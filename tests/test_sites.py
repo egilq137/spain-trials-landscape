@@ -136,6 +136,49 @@ class TestDisplayName(unittest.TestCase):
             self.assertEqual(display_name(name), name)
 
 
+class TestTownArticles(unittest.TestCase):
+    """The article Spain's catalogues move to the end of the name.
+
+    Official town names carry one, and a catalogue files them alphabetically
+    under the noun: the Ministry writes `Coruña, A` where REEC writes
+    `A Coruña`. Without this the two spellings of one town never meet, and
+    the town stops being a way to look a hospital up.
+    """
+
+    def test_the_two_spellings_of_one_town_meet(self):
+        for reec, catalogue in [("A Coruña", "Coruña, A"),
+                                ("L'Hospitalet de Llobregat",
+                                 "Hospitalet de Llobregat, L'"),
+                                ("Las Palmas de Gran Canaria",
+                                 "Palmas de Gran Canaria, Las"),
+                                ("El Ejido", "Ejido, El"),
+                                ("O Barco de Valdeorras",
+                                 "Barco de Valdeorras, O")]:
+            with self.subTest(town=reec):
+                self.assertEqual(geography.normalise_town(reec),
+                                 geography.normalise_town(catalogue))
+
+    def test_only_the_leading_article_goes(self):
+        # A rule that dropped every article would start merging towns that
+        # differ by one.
+        self.assertEqual(
+            geography.normalise_town("La Línea de la Concepción"),
+            "linea de la concepcion")
+
+    def test_a_town_merely_beginning_with_those_letters_is_left_alone(self):
+        for town, expected in [("Elche", "elche"), ("Oviedo", "oviedo"),
+                               ("Laguardia", "laguardia"),
+                               ("Alcorcón", "alcorcon"),
+                               ("Las Rozas de Madrid", "rozas de madrid")]:
+            with self.subTest(town=town):
+                self.assertEqual(geography.normalise_town(town), expected)
+
+    def test_a_name_that_is_only_an_article_does_not_crash(self):
+        self.assertEqual(geography.normalise_town("La"), "")
+        self.assertEqual(geography.normalise_town("L'"), "")
+        self.assertEqual(geography.normalise_town(""), "")
+
+
 class TestTownResolution(unittest.TestCase):
     """Which rows are one site turns on which town they are in.
 
