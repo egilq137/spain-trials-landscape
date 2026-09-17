@@ -62,6 +62,12 @@ class TestTokens(unittest.TestCase):
     def test_accents_and_case_do_not_separate_a_name_from_itself(self):
         self.assertEqual(tokens("HOSPITAL LA PAZ"), tokens("hospital la paz"))
 
+    def test_a_company_that_renamed_itself_is_still_one_company(self):
+        # Quirón became Quirónsalud in 2016; the 2024 catalogue uses the new
+        # name and REEC rows still carry the old one.
+        self.assertEqual(similarity("Hospital Quiron Zaragoza",
+                                    "Hospital Quironsalud Zaragoza"), 1.0)
+
 
 class TestSimilarity(unittest.TestCase):
     def test_word_order_does_not_matter(self):

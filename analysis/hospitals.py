@@ -84,6 +84,16 @@ NEAR = 0.25
 # variants and connectors belong here -- **no hospital is named in this
 # table**, which is what stops it from being tuned until the evaluation
 # passes. Add to it when a new spelling appears, not when a match fails.
+#
+# `quironsalud` is the one entry that is not a language variant, and it is
+# worth stating why it is still not a hospital. The group was Quirón; it
+# merged with IDC Salud in 2016 and renamed itself Quirónsalud, so the 2024
+# catalogue writes the new name in 35 entries while REEC rows still carry the
+# old one. `similarity` compares whole words as a set -- deliberately, since
+# the containment measure it replaced invented a match -- so `quiron` and
+# `quironsalud` are simply two different words and a name sharing everything
+# else scores 0.50. One line covers all 35, and it names a company rather
+# than a hospital.
 SYNONYMS = {
     "university": "univ", "universitario": "univ", "universitaria": "univ",
     "universitari": "univ", "universitaris": "univ", "unibertsitate": "univ",
@@ -99,6 +109,7 @@ SYNONYMS = {
     "fundacio": "fundacion", "fundacion": "fundacion",
     "fundacao": "fundacion", "foundation": "fundacion",
     "general": "general", "generals": "general",
+    "quironsalud": "quiron",
 }
 
 # Words carrying no identity: articles, prepositions, and the legal forms a
