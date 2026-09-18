@@ -308,6 +308,63 @@ class TestIdentities(unittest.TestCase):
              (3, "k", name, "Girona", postcode, "ORG-1")], {})
         self.assertEqual(len({out[i] for i in (1, 2, 3)}), 3)
 
+    def test_a_hospital_code_joins_rows_no_other_rule_could(self):
+        """The reason the code is worth having.
+
+        Santa María del Rosell is filed under Cartagena, where it is, and
+        under Murcia, its province. Two towns, two postcodes, and the code
+        is the only thing saying they are one hospital.
+        """
+        rows = [(1, "k", "H. Santa María del Rosell", "Cartagena", "30203",
+                 "ORG-1"),
+                (2, "k", "H. Santa María del Rosell", "Murcia", "30008",
+                 "ORG-2")]
+        apart = identities(rows, {})
+        self.assertNotEqual(apart[1], apart[2])
+        together = identities(rows, {}, {1: "300145", 2: "300145"})
+        self.assertEqual(together[1], together[2])
+
+    def test_two_codes_do_not_join(self):
+        """Institut Català d'Oncologia, catalogued once per campus.
+
+        One reference and one name across two towns, which the other rules
+        already keep apart; the codes agree with them and add nothing.
+        """
+        out = identities(
+            [(1, "k", "Institut Català d'Oncologia", "L'Hospitalet", "08907",
+              "ORG-1"),
+             (2, "k", "Institut Català d'Oncologia", "Badalona", "08916",
+              "ORG-1")],
+            {}, {1: "081461", 2: "081694"})
+        self.assertNotEqual(out[1], out[2])
+
+    def test_a_code_can_join_but_never_separate(self):
+        """The limit of the rule, stated so it is not mistaken for a feature.
+
+        Merging is union-find: every rule only ever adds links, so two rows
+        the reference and the town already made one site stay one site even
+        when they carry different codes. The code is a reason to merge, not
+        a veto on merging -- which is why a wrong match cannot be undone by
+        the rules around it, and why precision is the property that matters.
+        """
+        rows = [(1, "k", "Hospital k", "Barcelona", "08036", "ORG-1"),
+                (2, "k", "Hospital k", "Barcelona", "08036", "ORG-1")]
+        out = identities(rows, {}, {1: "080109", 2: "080399"})
+        self.assertEqual(out[1], out[2])
+
+    def test_a_row_with_no_code_keeps_the_rules_it_had(self):
+        out = identities(
+            [(1, "k", "Hospital k", "Barcelona", "08036", "ORG-1"),
+             (2, "k", "Hospital k", "Barcelona", "08028", "ORG-1")],
+            {}, {1: "080109"})
+        self.assertEqual(out[1], out[2])
+
+    def test_no_codes_at_all_changes_nothing(self):
+        rows = [(1, "k", "Hospital k", "Barcelona", "08036", "ORG-1"),
+                (2, "k", "Hospital k", "Girona", "17007", "ORG-1")]
+        self.assertEqual(identities(rows, {}),
+                         identities(rows, {}, {}))
+
     def test_a_shared_reference_alone_never_merges(self):
         # REEC files two Madrid rows named Hospital Ramón y Cajal under the
         # reference of the Complexo Hospitalario Universitario de Vigo. The

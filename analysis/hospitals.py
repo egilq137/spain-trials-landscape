@@ -632,6 +632,27 @@ def match_centres(con, index, since=None):
     return sorted(matched, key=lambda row: -row[3])
 
 
+def codes_by_centre(con, index):
+    """{center_id: codcnh} for the rows a hospital was identified for.
+
+    The shape `geography.identities` needs, and the only thing it is given:
+    a centre with no confident match is simply absent, and falls back to the
+    rules that were there before.
+
+    Separate from `match_centres` because the two answer different questions
+    -- that one carries the evidence a person reads, this one carries the
+    conclusion a merge acts on -- and because a merge wants every centre,
+    not the ones active in a window.
+    """
+    return {center_id: result.hospital.codcnh
+            for center_id, result in (
+                (row[0], match(index, row[1], row[2], row[3]))
+                for row in con.execute(
+                    "SELECT center_id, nombre, localidad, cod_postal "
+                    "FROM centers"))
+            if result.hospital is not None}
+
+
 def review_page(matched, shown=120):
     """The page the matches get read on, in the shape of the sibling pages.
 

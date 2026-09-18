@@ -15,7 +15,7 @@ dashboard cannot quote different corpus sizes.
 
 import streamlit as st
 
-from analysis import geography, registry, therapeutic
+from analysis import geography, hospitals, registry, therapeutic
 from analysis.volume import COVERAGE_START
 from app import charts
 from app.session import GEO_DIR, open_database
@@ -29,6 +29,7 @@ GRAINS = {
                  "since {}"),
 }
 POSTCODES = GEO_DIR / "postcodes.csv"
+HOSPITALS = GEO_DIR / "hospitals.csv"
 
 
 @st.cache_data
@@ -62,12 +63,29 @@ def areas(_con):
             for code, name, trials in therapeutic.trials_per_area(_con)]
 
 
+@st.cache_resource
+def hospital_codes(_con):
+    """{center_id: codcnh}: which national hospital each centre row is.
+
+    Cached for the session rather than per call: it reads every centre and
+    the answer does not depend on any filter, so recomputing it each time a
+    year or an area changes would match 3,293 names to redraw one map.
+
+    `cache_resource` and not `cache_data` because the dict is read and never
+    mutated, so the copy `cache_data` would make on every hit is waste.
+    """
+    return hospitals.codes_by_centre(
+        _con, hospitals.Index(hospitals.load_hospitals(HOSPITALS)))
+
+
 @st.cache_data
 def placed_sites(_con, since, until, area, provinces):
     """([Site], centres lost, trials lost) for a window and its filters."""
     towns = geography.load_towns(POSTCODES)
     rows = geography.only_provinces(
-        geography.site_activity(_con, since, until, area, towns), provinces)
+        geography.site_activity(_con, since, until, area, towns,
+                                hospital_codes(_con)),
+        provinces)
     return geography.place_sites(rows, geography.load_postcodes(POSTCODES))
 
 

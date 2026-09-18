@@ -414,10 +414,12 @@ def _link(parent, one, other):
     parent[max(one, other)] = min(one, other)
 
 
-def identities(rows, towns):
+def identities(rows, towns, codes=None):
     """{center_id: identity} -- which rows are one site, decided together.
 
     `rows` are (center_id, center_key, localidad, cod_postal, referencia).
+    `codes` is an optional {center_id: codcnh} from `hospitals.match_centres`
+    -- see the note below on why it is passed in rather than looked up here.
     Decided for the whole set at once rather than row by row, because one of
     the rules needs the row's neighbours: a row with no usable town at all
     takes the town of its key when its key has exactly one. Ramón y Cajal has
@@ -452,6 +454,41 @@ def identities(rows, towns):
     # ORG-100028548, under 280035, under two ORL- codes and under nothing --
     # so rows of one hospital routinely share everything except a reference.
     parent = {row[0]: row[0] for row in prepared}
+
+    # A fifth way, and the only one that needs no place beside it: the
+    # national hospital code.
+    #
+    # The other rules pair an identity with a town or a postcode because
+    # neither a reference nor a name says *where* -- Institut Català
+    # d'Oncologia files three campuses under one reference, so the reference
+    # alone would fuse three real hospitals. A CODCNH is already a place:
+    # 081461 is Duran i Reynals in L'Hospitalet and 081694 is Germans Trias
+    # in Badalona, and the catalogue issues one per site. Pairing it with a
+    # town would undo what it is for, because the rows it has to join are
+    # exactly the ones whose towns disagree -- Santa María del Rosell is
+    # filed under both Cartagena and Murcia, and it is one hospital.
+    #
+    # **It can join and it cannot separate.** Merging is union-find, so every
+    # rule here only adds links: two rows the reference and the town have
+    # already made one site stay one site whatever their codes say. Two
+    # different codes are an absence of a reason to merge, never a veto on
+    # one -- which is why a wrong match cannot be caught by the rules around
+    # it, and why precision is the property the matcher is tuned for.
+    #
+    # It is passed in rather than matched here so that this module keeps
+    # knowing nothing about the catalogue file: the caller owns that
+    # dependency, the way run_analysis owns the database path.
+    if codes:
+        seen = {}
+        for row in prepared:
+            code = codes.get(row[0])
+            if not code:
+                continue
+            if code in seen:
+                _link(parent, seen[code], row[0])
+            else:
+                seen[code] = row[0]
+
     for identity_index in (2, 4):
         for place_index in (0, 3):
             seen = {}
@@ -512,7 +549,7 @@ def _area_join(area):
 
 
 def site_activity(con, since=COVERAGE_START, until=None, area=None,
-                  towns=None):
+                  towns=None, codes=None):
     """[(center_id, name, localidad, provincia, postcode, trials)].
 
     Counted over trials authorised in the window, so a centre that ran
@@ -552,7 +589,7 @@ def site_activity(con, since=COVERAGE_START, until=None, area=None,
     identity_of = identities(
         {(cid, key, name, localidad, postcode, referencia)
          for cid, name, localidad, _, postcode, key, referencia, _ in rows},
-        towns)
+        towns, codes)
 
     studies = collections.defaultdict(set)
     members = collections.defaultdict(dict)
@@ -815,7 +852,7 @@ def _site_label(rows):
     return counted.most_common(1)[0][0] if counted else "no town"
 
 
-def centre_groups(con, towns, since=COVERAGE_START, until=None):
+def centre_groups(con, towns, since=COVERAGE_START, until=None, codes=None):
     """[CentreGroup] where one key covers several centres, biggest first.
 
     Each group carries the *sites* it resolved into, so the page built from
@@ -842,7 +879,7 @@ def centre_groups(con, towns, since=COVERAGE_START, until=None):
     identity_of = identities(
         {(cid, key, name, localidad, postcode, referencia)
          for key, cid, name, localidad, postcode, referencia, _ in rows},
-        towns)
+        towns, codes)
 
     members = collections.defaultdict(dict)
     per_site = collections.defaultdict(set)

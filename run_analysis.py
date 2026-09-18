@@ -121,6 +121,17 @@ def write_map(con, grain, geometry_path, filename, title, chart_dir):
     return path
 
 
+def hospital_codes(con):
+    """{center_id: codcnh}: which national hospital each centre row is.
+
+    The composition root owns the catalogue path, the same way it owns the
+    database path -- `analysis.geography` merges on the codes without
+    knowing where they came from.
+    """
+    return hospitals.codes_by_centre(
+        con, hospitals.Index(hospitals.load_hospitals(HOSPITALS)))
+
+
 def write_centre_review(con, docs_dir=DOCS_DIR):
     """The page the centre duplicates get read on.
 
@@ -129,7 +140,7 @@ def write_centre_review(con, docs_dir=DOCS_DIR):
     sponsor-families.html does for companies.
     """
     towns = geography.load_towns(POSTCODES)
-    groups = geography.centre_groups(con, towns)
+    groups = geography.centre_groups(con, towns, codes=hospital_codes(con))
     path = docs_dir / "centre-duplicates.html"
     path.write_text(geography.centres_review_page(groups), encoding="utf-8")
     print("{}: {} candidate groups, {:,} trial-site links".format(
