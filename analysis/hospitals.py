@@ -379,6 +379,43 @@ ANSWERS = {
     ('el hospital universitario san rafael de madrid',
      'madrid'): Answer('280339',
         'Hospital San Rafael, Madrid'),
+
+    # ---- Wrong matches, found by merging rather than by reading ----
+    #
+    # These did not come off the form. They surfaced when `identities` began
+    # merging on the code and a fertility clinic turned up inside Hospital
+    # Clínic: a name like `Clínica X Barcelona` shares `clinic` and the city
+    # with `Hospital Clinic de Barcelona` and nothing else, which is enough
+    # to clear the floor. **No threshold reaches them.** They score the same
+    # way as `Hospital de Jerez` and `Consorci Hospitalari de Vic`, which are
+    # right, so the scorer is left alone and the six rows are named here.
+    #
+    # Each is a private clinic or a foundation the catalogue does not list,
+    # which is what a `None` says.
+    ('clinica ivi barcelona',
+     'barcelona'): Answer(None,
+        'IVI is a fertility chain, not a campus of Hospital Clinic; the two '
+        'names share only the word clinic and the city'),
+    ('clinica eugin barcelona',
+     'barcelona'): Answer(None,
+        'Eugin is a fertility clinic, matched to Hospital Clinic on the '
+        'word clinic and the city'),
+    ('clinica ginefiv barcelona',
+     'barcelona'): Answer(None,
+        'Ginefiv is a fertility clinic, matched to Hospital Clinic on the '
+        'word clinic and the city'),
+    ('hospital vithas barcelona',
+     'esplugues de llobregat'): Answer(None,
+        'Vithas is a different hospital group; Hospital de Barcelona is '
+        "SCIAS's, in Barcelona, and this row is in Esplugues"),
+    ('hospital fundacio sant pere claver',
+     'barcelona'): Answer(None,
+        "Sant Pere Claver and Fundacio Hospital de l'Esperit Sant are two "
+        'unrelated foundations sharing the word fundacion'),
+    ('fundacio sanitaria sant pere claver',
+     'barcelona'): Answer(None,
+        'the same foundation as the row above, matched to a third unrelated '
+        'one, Fundacio Sanitaria Sant Josep'),
 }
 
 
