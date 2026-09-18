@@ -8,3 +8,6 @@ data/raw/
 
 # Personal study notes — kept local, not part of the portfolio deliverable
 docs/phase2-concepts.html
+
+# Claude Code: the launch config is shared, the local permissions are not
+.claude/settings.local.json
