@@ -151,21 +151,42 @@ class TestMatch(unittest.TestCase):
         self.assertEqual(result.hospital.codcnh, "280029")
 
     def test_it_refuses_when_the_runner_up_is_close(self):
-        # Two catalogue entries the name cannot separate -- the real shape is
-        # Institut Català d'Oncologia, which the catalogue lists once per
-        # campus. Both score well, so the floor lets them through and only
-        # the margin stops the matcher picking one at random.
+        # Two catalogue entries the name cannot separate. Both score well, so
+        # the floor lets them through and only the margin stops the matcher
+        # picking one at random.
+        #
+        # The real shape is Institut Català d'Oncologia, listed once per
+        # campus -- but this fixture must not *be* it. A name a decision
+        # covers never reaches the scoring path at all, so writing one here
+        # would leave a test that passes while measuring nothing. It has
+        # happened: this test used the ICO name until ICO Badalona was
+        # decided, and then it stopped testing the margin.
         index = Index([
-            hospital(codcnh="080001", nombre="Institut Català d'Oncologia",
+            hospital(codcnh="080001", nombre="Institut Oncològic Comarcal",
                      municipio="Badalona", cod_postal="08916"),
-            hospital(codcnh="080002", nombre="Institut Català d'Oncologia",
+            hospital(codcnh="080002", nombre="Institut Oncològic Comarcal",
                      municipio="Badalona", cod_postal="08916"),
         ])
-        result = match(index, "Institut Catala D'oncologia", "Badalona",
+        result = match(index, "Institut Oncologic Comarcal", "Badalona",
                        "08916")
         self.assertGreaterEqual(result.score, ACCEPT)
         self.assertIsNone(result.hospital)
         self.assertEqual(result.verdict, AMBIGUOUS)
+
+    def test_a_decision_naming_a_missing_code_is_reported_not_raised(self):
+        """`index` is injected, so a caller can hand `match` a catalogue that
+        does not hold the hospital a decision names -- this fixture is one.
+
+        The row comes back undecided with the code in `why`, rather than
+        taking the process down or silently falling back to the score.
+        """
+        key = next(key for key, answer in hospitals.ANSWERS.items()
+                   if answer.codcnh is not None)
+        nombre, localidad = key[0], key[1]
+        result = match(self.index, nombre, localidad, "08916")
+        self.assertIsNone(result.hospital)
+        self.assertEqual(result.verdict, NO_CANDIDATE)
+        self.assertIn(hospitals.ANSWERS[key].codcnh, result.why)
 
     def test_it_refuses_what_is_not_a_hospital(self):
         result = match(self.index, "CAP Balafia-Pardinyes", "Madrid", "28046")
@@ -258,6 +279,20 @@ class TestAgainstDatabase(unittest.TestCase):
                 result = match(self.index, nombre, localidad, cod_postal)
                 self.assertIsNotNone(result.hospital, result.why)
                 self.assertEqual(result.hospital.codcnh, expected)
+
+    def test_every_decision_points_at_a_hospital_that_exists(self):
+        """The same guarantee ALIASES has, for the two decision tables.
+
+        A decision naming a code the catalogue does not hold is a decision
+        that cannot be carried out, and `match` reaches for it by key.
+        """
+        for table in (hospitals.ANSWERS, hospitals.PROPOSED):
+            for key, answer in table.items():
+                if answer.codcnh is None:
+                    continue
+                with self.subTest(key=key):
+                    self.assertIn(answer.codcnh, self.index.by_code)
+                    self.assertTrue(answer.why.strip())
 
     def test_every_alias_points_at_a_hospital_that_exists(self):
         for word, alias in hospitals.ALIASES.items():

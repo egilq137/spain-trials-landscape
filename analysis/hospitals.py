@@ -380,6 +380,31 @@ ANSWERS = {
      'madrid'): Answer('280339',
         'Hospital San Rafael, Madrid'),
 
+    # ---- The three the second pass settled ----
+    #
+    # The Institut Català d'Oncologia is one comprehensive cancer centre on
+    # four campuses, owned by the Catalan health department, and each campus
+    # sits inside a host hospital -- which is why the catalogue lists ICO
+    # once per campus under the host's name, and why the campus and not the
+    # name is the answer. The third is a rename.
+    # Institut Català d'Oncologia - Hospital Germans Trias i Pujol
+    ('institut catala d oncologia',
+     'badalona'): Answer('081694',
+        'ICO Badalona is integrated in Hospital Universitari Germans Trias '
+        'i Pujol, and the catalogue lists the campus under that name'),
+    # Institut Català d'Oncologia Girona - Hospital Josep Trueta
+    ('institut catala d oncologia',
+     'girona'): Answer('170299',
+        "medical oncology at Hospital Trueta is run by ICO Girona, which is "
+        'the catalogue entry; the name alone scores higher against the '
+        "L'Hospitalet campus"),
+    # Hospital General Universitario Dr. Balmis
+    ('hospital general universitario de alicante',
+     'alicante'): Answer('030015',
+        'renamed: the Hospital General Universitario de Alicante became Dr. '
+        "Balmis in 2021. Sant Joan d'Alacant is a different hospital in "
+        'another town'),
+
     # ---- Wrong matches, found by merging rather than by reading ----
     #
     # These did not come off the form. They surfaced when `identities` began
@@ -435,21 +460,6 @@ PROPOSED = {
         'the decision on this card was Clinica Juaneda, but REEC files this '
         'row itself under CODCNH 070131 and postcode 07011, which are '
         'Juaneda Miramar; Clinica Juaneda is 070110 at 07014'),
-    # Institut Catalá D'Oncologia - Hospital Germans Trías I Pujol  [c04]
-    ('institut catala d oncologia',
-     'badalona'): Answer('081694',
-        'ICO Badalona is the Germans Trias campus, as ICO '
-        "L'Hospitalet is Duran i Reynals"),
-    # Hospital General Universitario Dr. Balmis  [c05]
-    ('hospital general universitario de alicante',
-     'alicante'): Answer('030015',
-        'renamed: the Hospital General Universitario de Alicante '
-        "became Dr. Balmis in 2021. Sant Joan d'Alacant is a "
-        'different hospital in another town'),
-    # Institut Catalá D'Oncologia Girona - Hospital Josep Trueta  [c06]
-    ('institut catala d oncologia',
-     'girona'): Answer('170299',
-        'ICO Girona is the Josep Trueta campus'),
     # Hospital Universitario de Cáceres  [c11]
     ('complejo hospitalario de caceres',
      'caceres'): Answer('100115',
@@ -606,7 +616,22 @@ def match(index, nombre, localidad, cod_postal):
         if answer.codcnh is None:
             return Match(None, None, 0.0, 0.0, NO_CANDIDATE,
                          "read: " + answer.why)
-        hospital = index.by_code[answer.codcnh]
+        hospital = index.by_code.get(answer.codcnh)
+        if hospital is None:
+            # A decision naming a code this index does not hold. Against the
+            # real catalogue it cannot happen -- a test pins every code in
+            # both tables -- but `index` is injected, so a caller can pass a
+            # partial one, and a unit fixture holding three hospitals did.
+            #
+            # Reported rather than raised, and reported rather than ignored.
+            # Raising would take the whole page down over one row; falling
+            # through to the score would quietly answer a question a person
+            # had already answered, which is the drift the stored keys are
+            # tested against. This says the row is undecided and names the
+            # code that went missing, so the review page carries the repair.
+            return Match(None, None, 0.0, 0.0, NO_CANDIDATE,
+                         "read: {} -- but {} is not in this catalogue".format(
+                             answer.why, answer.codcnh))
         return Match(hospital, hospital, 1.0, 0.0, MATCHED,
                      "read: " + answer.why)
 
