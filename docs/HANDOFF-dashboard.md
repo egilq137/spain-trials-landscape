@@ -6,9 +6,14 @@ The §3.2c/§3.2d sections are the evidence behind the numbers; you do not need
 them to build the dashboard, but you do need them the moment you are tempted
 to change a denominator.
 
-**State:** `main` at `f5d5c72`, clean and pushed. 597 tests pass.
+**State:** `main` at `d448db1`, clean and pushed. 731 tests pass.
 Phases 1–4 are complete except survival analysis, which is deliberately
 after this.
+
+**Two of five dashboard pages are built:** Overview (KPI cards) and Geography
+(three tabs, filters, a dot map). Volume, Therapeutic, Phases and Sponsors
+are not started. See *Next: the volume page* below for the one open decision
+before that work begins.
 
 ```bash
 python run_pipeline.py build      # rebuild data/trials.db from the cache, ~9s
@@ -120,18 +125,98 @@ Recommended: commit the 14 MB database, and write the reason into
 
 ---
 
+## What the app looks like now
+
+Five files, and the shape is worth knowing before adding a sixth.
+
+| file | what it is |
+|---|---|
+| `app/main.py` | the composition root. Pages are a literal list of `st.Page`, each with an explicit `url_path` — every view's entry point is called `page()`, so without it Streamlit infers one pathname for all of them and raises. |
+| `app/session.py` | the one cached read-only connection, and `GEO_DIR`. Nothing else belongs here: cached query wrappers live beside the view that asks. |
+| `app/theme.py` | reads `.streamlit/config.toml` and restyles figures. The palette lives in one file so it can change in one line. |
+| `app/charts.py` | `render()` clears the authored 760px width so a figure fills its column; `render_fixed()` keeps it, for the maps only. Read its docstrings before choosing. |
+| `app/views/overview.py` | the pattern to copy: a `@st.cache_data` passthrough to `analysis/`, then `page()`. ~45 lines, no logic. |
+
+**Adding a page is three steps:** write `app/views/<name>.py` with a `page()`,
+add one `st.Page(...)` line to `main.py` with a fresh `url_path`, restart the
+server.
+
+**The cache decorators are not interchangeable.** `@st.cache_data` returns a
+fresh copy per call, which is what makes `charts.render()`'s mutation of the
+figure safe. `@st.cache_resource` hands out the same object every time — right
+for the connection and for a read-only dict (`geography.hospital_codes`),
+wrong for anything a caller mutates. Arguments prefixed `_` are excluded from
+the cache key; that is how the connection is passed without being hashed, and
+why `since` must *not* have an underscore.
+
+---
+
+## Next: the volume page
+
+**The one decision to make first: `analysis/volume.py` holds a single series.**
+`trials_per_year(con)` and `coverage(con)`, and that is all. Every page built
+so far wrapped three to five existing analysis functions; this one has one
+chart's worth of analysis and a page's worth of screen. So the question is
+what makes it a page, and there are three honest answers:
+
+1. **One chart, unfiltered.** Render `volume.figure(series, cover)` through
+   `charts.render()` and stop. Matches build-order step 3 exactly, costs
+   almost nothing, and is defensible — the chart already carries its own
+   counting rule and its own coverage caveat. A thin page is better than an
+   invented one.
+2. **Add a "since" control.** The chart is already a year axis, so a year
+   *range* filter is close to meaningless — but a floor is not. `since`
+   threads through `trials_per_year` and `coverage` already. Watch the trap:
+   `COVERAGE_START = 2013` exists because REEC's coverage begins there and
+   **nine studies are authorised earlier**. A control that offers a floor
+   below 2013 quietly re-admits them, and `coverage().excluded` is what the
+   subtitle uses to say so.
+3. **Write new analysis.** Cumulative totals, year-on-year change, or a
+   monthly view of the last few years. This is real work in `analysis/` with
+   tests, not dashboard work — and it should be decided as an analysis
+   question, not reached for to fill a page.
+
+Recommendation: start at (1), look at it in the browser, and only then decide
+whether it is too thin. That is the order every other page went in.
+
+**Facts the page must reproduce** (verified at `d448db1`):
+
+- 11,834 trials, 2013 (759) through 2026 (674)
+- `coverage()` → `data_cut='2026-08-26'`, `excluded=9`
+- the subtitle already says all three things: counted on the AEMPS
+  authorisation date, 2026 partial to the data cut, 9 trials excluded before
+  2013
+
+**If you filter anything, re-read the counting table above.** Volume is the
+one chart where a trial appears exactly once, which is precisely why its total
+is the only safe denominator in the project. A therapeutic-area filter applied
+here would silently break that: 363 trials list two or more areas, so the
+filtered bars would no longer sum to a number that means "trials".
+
+**`volume.figure` also draws the CTIS mandate line** at
+`CTIS_MANDATE_BOUNDARY = 2022.5` — between the bars, not on one, because CTIS
+became compulsory on 2023-01-31. Do not move it to 2023 to make it line up.
+
+---
+
 ## Build order (§3.5 says incremental, verify in the browser after each)
 
-1. **`.streamlit/config.toml`** with the existing palette so the app and the
-   charts agree: surface `#fcfcfb`, ink `#0b0b0b`, primary `#2a78d6`. The
-   figures hardcode these in `analysis/volume.py`.
-2. **KPI cards, no filters.** 11,834 trials · 2,957 sponsors · 3,293 centres ·
-   55 therapeutic areas · data cut 2026-08-26. Verify against
-   `run_pipeline.py`'s `EXPECTED_ROWS` — if a card disagrees with that dict,
-   the card is wrong.
+1. ~~**`.streamlit/config.toml`**~~ **Done.** The dashboard uses a teal accent
+   (`#2f6f6b`) on a warm surface, *not* the blue the static charts use.
+   `docs/charts/` stays blue on purpose: those files are the Phase 4
+   deliverable and were not re-rendered. `app/theme.py` reads the config, so
+   the palette changes in one line.
+2. ~~**KPI cards, no filters.**~~ **Done** — `app/views/overview.py`. Note the
+   counts are **2013-scoped** and therefore disagree with
+   `run_pipeline.py`'s `EXPECTED_ROWS` (11,843 rows, 2,959 sponsors) by
+   design. `analysis/overview.py` documents why `EXPECTED_ROWS` is the wrong
+   oracle: it counts what the pipeline loaded, not what the corpus is.
 3. **One page per §3.3 question**, reusing the existing figures unchanged and
    unfiltered. This is the checkpoint: the whole dashboard should work as a
-   read-only report before any widget exists.
+   read-only report before any widget exists. **Geography went further than
+   this** — it has filters and a dot map — because it was built first at the
+   user's request. Volume, Therapeutic, Phases and Sponsors are still at
+   step 3.
 4. **Then filters, one at a time**, re-reading the counting table above each
    time. Year range is the safe one to start with (every chart is already
    keyed on authorisation year and `COVERAGE_START` is shared).
@@ -194,11 +279,46 @@ Two other environment notes from the same phase:
 
 ---
 
+## What the geography phase changed underneath everything
+
+Not needed to build the volume page — volume reads `studies` and nothing
+else — but it is the largest change since this document was written, and it
+moves numbers on any page that counts centres.
+
+REEC centre rows are now matched against the **Catálogo Nacional de
+Hospitales** (`data/geo/hospitals.csv`, 848 state-recognised hospitals) by
+`analysis/hospitals.py`, and `geography.identities` merges rows sharing a
+code. Consequences:
+
+- 1,378 of 3,293 centre rows resolve to a national hospital
+- the dot map draws **1,889 sites**, down from 2,275
+- `docs/hospital-matches.html` and `docs/hospital-ambiguous.html` are the
+  review pages; 19 ambiguous cases worth 93 trial-links are deliberately
+  left undecided, and 512 near misses have never been read
+- decisions a person made live in `ANSWERS` / `PROPOSED` in
+  `analysis/hospitals.py`, each with its reason. **Rules were never tuned to
+  fix individual rows** — that separation is the point, and the thresholds
+  still hold 0 wrong matches on the 324-row calibration set
+
+The one trap it introduced: `ANSWERS` is keyed on `normalise_town`'s output,
+so **changing that function invalidates stored keys**. Two tests guard it
+(`test_a_key_survives_its_own_normaliser`, `test_the_answers_are_reachable`).
+Treat an edit there as a migration, not a refactor.
+
+Attribution requirement: the catalogue needs "Origen de los datos: Ministerio
+de Sanidad, Consumo y Bienestar Social" and its 31 December 2024 update date
+wherever it is shown. The review pages already carry both.
+
+---
+
 ## Known-good verification
 
-- `python -m unittest discover -s tests` → 597 tests, all passing.
-- `python run_analysis.py` → 12 charts and the review page, byte-identical on
-  re-run (`div_id` is pinned per file for exactly this reason).
+- `python -m unittest discover -s tests` → 731 tests, all passing (~35s).
+- `python run_analysis.py` → 12 charts and three review pages,
+  byte-identical on re-run (`div_id` is pinned per file for exactly this
+  reason).
+- `streamlit run app/main.py` → Overview and Geography. There is a
+  `.claude/launch.json` (`dashboard`, port 8502) if your tooling uses it.
 - Headline numbers the dashboard must reproduce: 11,834 trials from 2013;
   cancer 4,239 (35.8%); Cataluña 79.0% and Madrid 75.2% regional
   participation; industry 9,475 (80.1%); phase III 4,468 (37.8%).
